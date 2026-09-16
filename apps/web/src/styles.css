@@ -2341,7 +2341,7 @@ h2 {
 }
 .chat-jump {
   position: absolute;
-  bottom: 175px;
+  bottom: calc(var(--chat-bottom-height, 175px) + 4px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;

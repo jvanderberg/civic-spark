@@ -26,6 +26,8 @@ flowchart TD
 
 Mobile is a required participant and admin interface. Navigation, event/team management, confirmation dialogs, repository history and restore, browser editing, chat, changes and preview controls should be usable on narrow touch screens and short viewports. Preserve drafts and sessions through responsive layout changes. The terminal remains available with the expected phone keyboard/screen limitations; devices without writable folder access use browser editing or upload/download. Verify phone interactions and both system themes in the browser, while identifying physical iOS/Android keyboard and native-picker checks separately.
 
+The workspace follows visual-viewport height and panning while preserving native pinch zoom. On phones and short landscape screens, **Menu** exposes Back to teams, team updates and preview controls without remounting the editor, agent or terminal. Composer text scrolls within the remaining chat space. Viewport/keyboard simulations cover these bounds and session/draft retention; actual iPhone keyboard behavior still needs device verification.
+
 | Person | View and permissions |
 | --- | --- |
 | Signed out | Sign-in page; no event or workspace API data |

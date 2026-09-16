@@ -12,6 +12,7 @@
 
 .workspace-screen .terminal-panel .sprite-terminal {
   flex: 1 1 0;
+  padding: 0;
   height: auto;
   min-height: 0;
   min-width: 0;
@@ -25,4 +26,15 @@
 .sprite-terminal .xterm-helper-textarea {
   /* Prevent focus zoom without changing terminal cell/IME positioning. */
   font-size: 16px;
+}
+
+/* FitAddon subtracts terminal-element padding from the measured host size. */
+.sprite-terminal > .xterm {
+  padding: 4px;
+}
+
+@container (max-height: 400px) {
+  .terminal-panel > .section-heading > div > p {
+    display: none;
+  }
 }

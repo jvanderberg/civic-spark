@@ -92,6 +92,19 @@ export function Agent({
   const [atBottom, setAtBottom] = useState(true);
   const stickToBottom = useRef(true);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const composerBottom = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const bottom = composerBottom.current;
+    if (!bottom) return;
+    const resize = new ResizeObserver(() => {
+      bottom.parentElement?.style.setProperty(
+        "--chat-bottom-height",
+        `${bottom.getBoundingClientRect().height}px`,
+      );
+    });
+    resize.observe(bottom);
+    return () => resize.disconnect();
+  }, []);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [provider, setProvider] = useState<"claude" | "opencode">(() => {
     try {
@@ -582,7 +595,7 @@ export function Agent({
           <ArrowDown size={14} /> Latest
         </button>
       )}
-      <div className="chat-bottom">
+      <div className="chat-bottom" ref={composerBottom}>
         <ComposerSurface.Shell className="chat-composer-wrap">
           <ComposerSurface.Host>
             {(error ||

@@ -14,6 +14,7 @@ import {
   watchBriefRequests,
 } from "./browser-project-brief.ts";
 import { verifySiteEventPortal } from "./browser-site-event.ts";
+import { verifyKeyboardViewport } from "./keyboard-browser-smoke.ts";
 
 // Disposable local APIs and deterministic Sprite transports; never runs participant
 // code or contacts a paid agent. Touch emulation does not claim physical-device QA.
@@ -270,6 +271,7 @@ try {
   await page.getByRole("button", { name: "Terminal", exact: true }).tap();
   await page.getByRole("heading", { name: "Your Sprite terminal" }).waitFor();
   await capture("360-terminal-fallback", true);
+  await page.getByRole("button", { name: "Workspace controls" }).tap();
   await page.getByRole("button", { name: "Back to teams" }).tap();
   await page.getByRole("button", { name: "Admin overview", exact: true }).tap();
   await page.getByRole("button", { name: "Repository", exact: true }).tap();
@@ -378,6 +380,7 @@ try {
     await page.getByRole("button", { name: "Agent connection settings" }).tap();
   }
   await page.setViewportSize({ width: 360, height: 430 });
+  await page.getByRole("button", { name: "Workspace controls" }).tap();
   await page.getByRole("button", { name: "Web server details" }).tap();
   const environment = page.getByRole("region", { name: "Web server and publishing" });
   await inViewport(environment.getByRole("button", { name: "Refresh logs" }));
@@ -418,3 +421,5 @@ try {
 }
 
 await verifySiteEventPortal();
+
+await verifyKeyboardViewport();

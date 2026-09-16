@@ -690,6 +690,8 @@ try {
     animations: "disabled",
     path: join(artifacts, "agent-chat-restored.png"),
   });
+  if (await page.getByRole("button", { name: "Workspace controls" }).isVisible())
+    await page.getByRole("button", { name: "Workspace controls" }).click();
   await page.getByRole("button", { name: "Back to teams" }).click();
   await page.getByRole("button", { name: "My teams", exact: false }).click();
   await page.getByRole("button", { name: "Open my workspace" }).click();

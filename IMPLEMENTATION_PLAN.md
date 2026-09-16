@@ -53,6 +53,7 @@ See [workspace modes and acceptance requirements](docs/product.md#required-works
 - [x] System-following light/dark themes and syntax-highlighted Monaco editing
 - [x] Shared Codex/Claude contributor instructions require mobile support and touch/keyboard/browser verification; participant harness guidance carries the same mobile expectations
 - [x] Phone-width and short-viewport interaction regression coverage across participant, admin and workspace flows (`npm run test:mobile`), plus xterm/chat/desktop-preference regressions
+- [x] Workspace visual-viewport height/pan tracking, compact mobile controls and panel-bounded composer; keyboard resize/scroll/rotation/zoom regressions retain drafts and sessions
 - [ ] Rehearse physical iOS/Android keyboard, rotation and native file-picker behavior; viewport emulation alone does not establish device support
 - [x] Full Monaco filename/extension detection and production-browser token/color checks across major file types, embedded HTML/CSS/JS, file switching, themes, and preserved drafts
 - [x] Copy/adapt T3 Code chat UI and verify realistic conversation/controls in the browser

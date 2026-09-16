@@ -2,6 +2,16 @@
 
 Checkpoint: September 16, 2026, America/Chicago. Rename, admin project briefs and the Fly deployment package are integrated. Hosted demo is live at https://civic-spark.fly.dev; see the live deployment record below.
 
+## Mobile keyboard follow-up (local, not deployed)
+
+The workspace now follows unzoomed visual-viewport height and pan offsets on resize/scroll. Phone and short-landscape workspace controls use a mounted Menu disclosure; draft, agent and terminal sessions survive menu/viewport changes. Chat composer bounds use available panel space, and Latest follows measured composer height. T3 attribution records the adaptation. Portal navigation and account roles are unchanged.
+
+This branch includes root's `67c0a0f` integration of the startup safeguard and terminal touch/input fixes. Integration also moves terminal padding onto the xterm element so FitAddon subtracts it; the terminal description hides below 400px of workspace height to leave output space. Browser helpers wait for viewport geometry before coordinate taps. Keyboard regressions independently vary layout/visual heights, offsets, scroll events, focus/typing, Send, rotation and zoom in both themes; actual xterm rows must fit at 300px.
+
+Validation: `npm run check` passed 144 tests / 36 files, lint, both typechecks and build. Final `test:mobile`, `test:agent-browser`, terminal Chromium/WebKit and keyboard Chromium/WebKit checks passed against the combined build. Phone/short screenshots in both themes were inspected and consoles were clean; evidence is under ignored `artifacts/keyboard-*`, `artifacts/terminal-*` and `artifacts/mobile`.
+
+Physical iPhone/Android keyboard behavior remains unverified. Deployment belongs to root and must account for any active live agent turn. No push, deployment, role change, paid inference or live provisioning was performed here.
+
 ## Local Markdown and single-event update
 
 The `civic-spark-markdown-briefs` branch from `9719554` renders safe GFM in catalog/team cards, with scrollable long-brief disclosures, inert images and unchanged raw Markdown/`PROJECT.md`. A long-code regression exposed and fixed the team card's missing minimum-width constraint.

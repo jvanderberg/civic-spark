@@ -143,9 +143,9 @@ export async function verifySiteEventPortal() {
     // Valid pinned workspace links still reattach and survive refresh.
     await page.goto(`${origin}/#workspace=${pinned.workspace.id}`);
     await page.reload();
-    await page.getByRole("button", { name: "Back to teams" }).waitFor();
+    await page.locator(".workspace-screen").waitFor();
     await page.reload();
-    await page.getByRole("button", { name: "Back to teams" }).waitFor();
+    await page.locator(".workspace-screen").waitFor();
     assert.equal(
       new URLSearchParams(new URL(page.url()).hash.slice(1)).get("workspace"),
       pinned.workspace.id,

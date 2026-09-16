@@ -18,7 +18,14 @@ export async function verifyTerminalInput(page: Page, inputs: string[], artifact
       await page.emulateMedia({ colorScheme: scheme });
       await page.waitForFunction(() => {
         const host = document.querySelector(".sprite-terminal");
-        return host && host.getBoundingClientRect().height > 30;
+        const frame = document.querySelector(".workspace-screen");
+        return (
+          host &&
+          frame &&
+          frame.getBoundingClientRect().height === (visualViewport?.height ?? innerHeight) &&
+          host.getBoundingClientRect().height > 30 &&
+          host.getBoundingClientRect().bottom <= innerHeight
+        );
       });
       await textarea.evaluate((input) => input.blur());
       // Check focus during the trusted touch event itself, before any synthesized

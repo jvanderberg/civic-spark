@@ -136,6 +136,7 @@ try {
       return (
         host &&
         screen &&
+        host.getBoundingClientRect().bottom <= innerHeight &&
         screen.getBoundingClientRect().bottom <= host.getBoundingClientRect().bottom
       );
     });

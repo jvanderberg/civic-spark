@@ -27,8 +27,10 @@ import { EnvironmentControls } from "./EnvironmentControls.tsx";
 import { FileExplorer } from "./FileExplorer.tsx";
 import { decode } from "./folder-sync.ts";
 import { LocalSync } from "./LocalSync.tsx";
+import { MobileMenu } from "./MobileMenu.tsx";
 import { type ResolutionRequest, TeamUpdates } from "./TeamUpdates.tsx";
 import { Terminal } from "./Terminal.tsx";
+import { useWorkspaceViewport } from "./use-workspace-viewport.ts";
 import { WorkspacePreparation } from "./WorkspacePreparation.tsx";
 
 type WorkspaceView = "files" | "changes" | "agent" | "terminal" | "local";
@@ -63,18 +65,7 @@ export function Workspace({
       // Preferences contain no files, messages, or credentials.
     }
   }, [participant.id, view]);
-  // Mobile keyboards resize the visual viewport even when the layout viewport stays tall.
-  const screen = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    const resize = () => {
-      if (viewport?.scale === 1)
-        screen.current?.style.setProperty("--workspace-height", `${viewport.height}px`);
-    };
-    resize();
-    viewport?.addEventListener("resize", resize);
-    return () => viewport?.removeEventListener("resize", resize);
-  }, []);
+  const screen = useWorkspaceViewport();
   const [agentWorking, setAgentWorking] = useState(false);
   const [outgoing, setOutgoing] = useState(false);
   const [teamUpdating, setTeamUpdating] = useState(false);
@@ -249,47 +240,49 @@ export function Workspace({
   return (
     <main ref={screen} className="workspace-screen">
       <header className="workspace-header">
-        <button
-          type="button"
-          className="button small"
-          onClick={() => {
-            if (!dirty || window.confirm("Discard unsaved edits and close?")) onClose();
-          }}
-        >
-          ← Back to teams
-        </button>
         <h1>{participant.teamName}</h1>
-        <span className="workspace-privacy">Your private workspace</span>
-        <Badge tone={pending ? "amber" : "green"}>
-          {remote ? "Sprite running" : "Local checkout"}
-        </Badge>
-        <TeamUpdates
-          workspace={participant.id}
-          disabled={eventClosed || pending}
-          dirty={dirty}
-          working={agentWorking}
-          refreshKey={teamRefresh}
-          completedRequest={completedResolution}
-          onBusy={setTeamUpdating}
-          onOutgoing={setOutgoing}
-          onUpdated={updated}
-          onResolve={(request) => {
-            setResolutionRequest(request);
-            setView("agent");
-          }}
-        />
-        {remote && (
-          <EnvironmentControls
+        <MobileMenu label="Workspace controls">
+          <button
+            type="button"
+            className="button small"
+            onClick={() => {
+              if (!dirty || window.confirm("Discard unsaved edits and close?")) onClose();
+            }}
+          >
+            ← Back to teams
+          </button>
+          <span className="workspace-privacy">Your private workspace</span>
+          <Badge tone={pending ? "amber" : "green"}>
+            {remote ? "Sprite running" : "Local checkout"}
+          </Badge>
+          <TeamUpdates
             workspace={participant.id}
             disabled={eventClosed || pending}
             dirty={dirty}
             working={agentWorking}
+            refreshKey={teamRefresh}
+            completedRequest={completedResolution}
+            onBusy={setTeamUpdating}
+            onOutgoing={setOutgoing}
+            onUpdated={updated}
             onResolve={(request) => {
               setResolutionRequest(request);
               setView("agent");
             }}
           />
-        )}
+          {remote && (
+            <EnvironmentControls
+              workspace={participant.id}
+              disabled={eventClosed || pending}
+              dirty={dirty}
+              working={agentWorking}
+              onResolve={(request) => {
+                setResolutionRequest(request);
+                setView("agent");
+              }}
+            />
+          )}
+        </MobileMenu>
       </header>
       {spritesEnabled && !remote && (
         <div className="cloud-setup">
