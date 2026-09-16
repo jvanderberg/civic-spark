@@ -1,3 +1,9 @@
+## Management backup/restore implementation (local, not deployed)
+
+The isolated backup branch adds `npm run backup -- keygen|create|validate|restore|resume` and [the recovery runbook](backup-restore.md). Capture includes the complete management tree and encrypted operator package; all shared Git refs/objects, auth/users/memberships, lifecycle tables, unknown files and permanent preview bindings survive. Sprite private state is intentionally disposable under the accepted DR policy. No live backup/stop/provider mutation/deletion/publication occurred.
+
+Restore refuses existing targets, validates in private staging, revokes sessions and login links, then fences startup before constructors. Explicit `resume` validates installation/release/auth mode/provider binding and metadata present/404 outcomes, preserves the complete immutable-origin ledger and records missing-resource permissions. Owner-reopen missing-Sprite recreation belongs to the lifecycle integration and must be tested there before end-to-end DR is claimed. Root owns review, publication, first coordinated live backup/off-machine verification and any separate recovery cutover.
+
 # Next-session handoff
 
 Checkpoint: September 16, 2026, America/Chicago. Rename, admin project briefs and the Fly deployment package are integrated. Hosted demo is live at https://civic-spark.fly.dev; see the live deployment record below.

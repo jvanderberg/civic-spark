@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingHttpHeaders } from "node:http";
 import { BlockList, isIP } from "node:net";
 import { isAbsolute, join } from "node:path";
@@ -43,6 +43,8 @@ export function validateDeployment(
   authMode: string,
   env: NodeJS.ProcessEnv = process.env,
 ) {
+  if (existsSync(join(root, ".civic-spark-recovery.json")))
+    throw new Error("Restored installation is fenced pending operator resource reconciliation");
   const settings = deploymentSettings(env);
   const url = new URL(baseURL);
   if (

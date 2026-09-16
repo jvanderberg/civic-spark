@@ -91,7 +91,11 @@ A native helper for syncing while the browser is closed is a possible later exte
 - [ ] Verify deployed Open preview with a dedicated Sprite; preserve participant app/process/session state
 - [ ] Integration Sprite, configured checks and shared app preview
 - [ ] Enforced model budgets and deployment resource limits
-- [ ] GitHub publication, external backups, retention and recovery rehearsal
+- [x] Versioned encrypted whole-management/shared-Git/operator backup, exclusive offline writer coordination, isolated restore validation/session revocation and startup fence; see [backup/restore](docs/backup-restore.md)
+- [x] Explicit recovery reconciliation CLI with provider/org binding, metadata-only present/404 checks and preserved permanent preview-origin ledger; no automatic cloud mutation or model turns
+- [ ] Integrate/test explicit owner-reopen recovery of confirmed-missing ephemeral Sprites from canonical shared Git with lifecycle gates
+- [ ] First coordinated live/off-machine backup and disaster-recovery rehearsal, deployment-owner review and cutover
+- [ ] GitHub publication and scheduled off-machine backup/retention operations
 - [x] Locally validated Fly control-plane deployment package: single-writer volume, canonical HTTPS/auth guards, trusted proxy boundary, pinned build, staged secret setup and restart reconciliation
 - [x] Build/run Linux container and first explicit hosted demo on Fly; real signup/event/project/team/Sprite/files/GLM/terminal, isolation and idle redeploy persistence verified
 - [ ] Verify production email delivery, token rotation and complete dedicated Sprite lifecycle/recovery

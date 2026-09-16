@@ -13,6 +13,7 @@
 !scripts/
 scripts/**
 !scripts/prepare-pty.ts
+!scripts/backup.ts
 !deploy/
 deploy/**
 !deploy/fly/

@@ -145,3 +145,9 @@ Personal web previews and agent environment/Git commands now have a local protot
 ## Hosted demo authentication
 
 Explicit demo deployments allow unverified email entry with a visible warning that anyone entering the same email can access that demo account. Demo accounts/data/cookies are isolated from verified email mode and local prototype mode. Production remains verified-email by default; no identities or participant resources migrate when modes change. Public demo sign-in has a bounded process-local per-client rate limit. Hosted app previews require isolated HTTPS routing configuration; unconfigured installations fail explicitly.
+
+## Operator disaster recovery
+
+Disaster recovery preserves the complete management data tree, all shared Git repositories/refs/objects, and an encrypted operator configuration/receipt/secret package. Sprites are ephemeral in this recovery policy: unshared private edits, saved model credentials, provider conversation histories and process state are excluded. Participants should Share useful changes often, with explicit approval for the current changes; backup never shares automatically. Ordinary reconnect and pause/wake still preserve existing private work.
+
+The [backup/restore CLI](backup-restore.md) requires coordinated offline management capture and restores only into a new isolated, fenced root. It retains user/team/workspace identities, memberships, lifecycle holds and permanent preview-origin reservations, revokes sessions/login links, and requires explicit operator reconciliation before startup. Reconciliation records positive provider missing evidence without creating resources; missing-Sprite owner-reopen recovery depends on the matching lifecycle integration and seeds only shared Git. No restore overwrites a live instance or replays paid agent work automatically.

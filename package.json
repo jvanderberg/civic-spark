@@ -7,6 +7,8 @@
     "node": ">=22.23.0"
   },
   "scripts": {
+    "backup": "tsx scripts/backup.ts",
+    "test:backup": "vitest run tests/backup.test.ts",
     "dev": "concurrently -k -n api,web 'npm:dev:server' 'npm:dev:web'",
     "dev:server": "tsx watch apps/server/src/index.ts",
     "dev:web": "vite --host 127.0.0.1",

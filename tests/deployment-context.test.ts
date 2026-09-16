@@ -8,6 +8,7 @@ it("matches Docker directory re-inclusion and explicit descendant exclusions", (
   const rules = readFileSync(".dockerignore", "utf8").split("\n");
   expect(includedInContext("scripts/browser-smoke.ts", rules)).toBe(false);
   expect(includedInContext("scripts/prepare-pty.ts", rules)).toBe(true);
+  expect(includedInContext("scripts/backup.ts", rules)).toBe(true);
   expect(includedInContext("deploy/fly/local-token.json", rules)).toBe(false);
   expect(includedInContext("deploy/fly/Dockerfile", rules)).toBe(true);
   expect(includedInContext("deploy/fly/preview-ingress.Dockerfile", rules)).toBe(true);

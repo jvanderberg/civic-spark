@@ -54,8 +54,12 @@ export function stageContext(destination: string) {
       throw new Error("Sensitive test fixture would enter build context");
   }
   const scripts = included.filter((path) => path.startsWith("scripts/"));
-  if (scripts.length !== 1 || scripts[0] !== "scripts/prepare-pty.ts")
-    throw new Error("Deployment must include only the install script, not browser/test scripts");
+  if (
+    scripts.length !== 2 ||
+    !scripts.includes("scripts/prepare-pty.ts") ||
+    !scripts.includes("scripts/backup.ts")
+  )
+    throw new Error("Deployment must include only the install and recovery scripts");
   for (const path of included) {
     mkdirSync(dirname(join(destination, path)), { recursive: true });
     copyFileSync(join(root, path), join(destination, path));
