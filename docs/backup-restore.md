@@ -32,6 +32,8 @@ The backup process may create/open the writer-lock database and SQLite read coor
 
 Do not copy a live volume into a temporary directory and bypass its writer lock: copying while the source runs defeats the consistency contract. A provider snapshot taken only after the same coordinated stop can be mounted on an isolated recovery host and then archived. Resume the original management process only after capture finishes and the deployment owner confirms the maintenance window is over.
 
+For the existing Fly Machine, use the concrete [maintenance-mode capture procedure](fly-backup-maintenance.md). It keeps the same mounted volume accessible to SSH/SFTP with no application writer; it does not attempt SSH to a stopped Machine.
+
 ## Prepare private recovery inputs
 
 Run the checked-out, reviewed release with its npm lockfile (`npm ci`). Keep this source release/build image and Node/Git versions available independently; source code is not bundled in the data archive. Set `spriteOrg` to `null` only for installations with no Sprite reservations. The provider organization/API origin are part of the expected installation identity; reconciliation cannot switch them. The manifest records application `civic-spark`, package version `0.1.0`, archive version `1`, a required 40-character release SHA, installation ID, auth mode and origin. Supply the **deployed** release SHA at creation and the identical expected value at recovery; the operator must independently verify the executable release. The script does not guess a deployed SHA from an unrelated laptop checkout.

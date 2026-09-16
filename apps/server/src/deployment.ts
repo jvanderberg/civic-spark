@@ -43,6 +43,8 @@ export function validateDeployment(
   authMode: string,
   env: NodeJS.ProcessEnv = process.env,
 ) {
+  if (env.CIVIC_SPARK_MAINTENANCE !== undefined && env.CIVIC_SPARK_MAINTENANCE !== "off")
+    throw new Error("Application startup is blocked by maintenance mode");
   if (existsSync(join(root, ".civic-spark-recovery.json")))
     throw new Error("Restored installation is fenced pending operator resource reconciliation");
   const settings = deploymentSettings(env);
