@@ -1,3 +1,11 @@
+# Preview preparation and screenshots — integrated, deployment pending
+
+Root `58fd3fb` combines preview `6629ca2`, transitive-cache correction `9c94452`, and image `11637c6` with deployed Teams. Bounded independent review cleared both changes. Preview uses Sprite-only npm preparation without a model/key or full harness bootstrap; full dependency-tree validation catches missing transitive packages before reuse and before writing the install marker. A real Vite/Rolldown regression proves automatic repair, readiness, reuse and unchanged project/lock files.
+
+Images use private validated native provider payloads, owner-only bounded replay, and the shared 6 MiB WebSocket limit with an explicit 64 KiB terminal guard. Both actual pinned harnesses passed image-only, mixed and resumed-image fake-API tests with unchanged model/session IDs and no paid calls. Keyboard validation keeps the layout viewport at 844px while the visual viewport shrinks to 300/350px; container-based attachment layout keeps the focused input above Send. Root inspected both-theme short screenshots.
+
+Combined check passed 288 tests / 52 files, lint, both typechecks and build; clean deployment context passed 146 inputs. Complete combined mobile, agent browser, environment browser and hosted-preview browser suites passed, including real local Vite assets/WebSocket HMR. Root inspected combined image and preview phone/short screenshots; consoles are clean. Ready for idle-safe root rollout. The first root wire rerun needed the documented locked OpenCode runtime installed in this checkout; rerun passed both providers. Live remains Teams `5245524`. No live vision or physical-device claim, and first live backup still awaits a coordinated window.
+
 # Participant Teams LIVE — September 16, 2026
 
 Runtime `5245524` is live at https://civic-spark.fly.dev and pushed to main (source `744901a`). Teams is a separate main-menu destination; Projects no longer embeds team discovery. My teams and Admin → Teams retain their existing scopes. Implementation check passed 270 tests / 48 files plus complete mobile, portal/admin and ten-case Teams checks. The exact runtime/test tree was retained during integration; clean deployment context passed 142 inputs.

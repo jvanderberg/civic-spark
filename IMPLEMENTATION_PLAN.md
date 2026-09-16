@@ -5,13 +5,14 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 ## Agent screenshots
 
 - [x] Add image paste/picker, removable thumbnails and native multimodal requests for the fixed Claude/GLM providers; bounded owner-only transcript/replay and explicit failure/draft retention. See [limits and local verification](docs/agent-images.md).
-- [ ] Integrate the coordinated 6 MiB agent transport change, review the local checks, and separately verify physical-device clipboard/picker and live vision behavior. No participant resources or paid inference used in development.
+- [x] Integrate the coordinated 6 MiB transport and terminal 64 KiB guard; bounded independent review and combined local provider-wire checks pass.
+- [ ] Complete combined browser validation/deployment; physical-device clipboard/picker and live vision remain separately unverified. No paid inference used in development.
 
 ## Current participant workflow requests
 
 - [x] Add a main-menu Teams destination for existing event teams, moving discovery out of the bottom of Projects; retain My teams and separate Admin Teams.
-- [ ] Make fresh team checkout Launch prepare project dependencies and run the shared demo without a coding agent/model/key; visible preparation and retry, all execution inside owner Sprite, lifecycle gates preserved.
-- [ ] Add screenshot paste/file-picker attachments to the agent composer with actual multimodal provider delivery, validated bounded private history and mobile checks.
+- [x] Make fresh team checkout Launch prepare project dependencies and run the shared demo without a coding agent/model/key; visible preparation and retry, all execution inside owner Sprite, lifecycle gates preserved.
+- [x] Add screenshot paste/file-picker attachments to the agent composer with actual multimodal provider delivery, validated bounded private history and mobile checks.
 - [x] Deploy Teams (`5245524`); ten-case live GET-only navigation/list acceptance passed with existing data/resources preserved.
 - [ ] Complete, integrate and deploy preview preparation and image-paste work; no live participant code/resource mutation during development.
 
