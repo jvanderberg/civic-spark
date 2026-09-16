@@ -106,7 +106,7 @@ export async function verifySiteEventPortal() {
         );
         assert.equal(await page.getByText(other.event.name, { exact: true }).count(), 0);
         assert.equal(await page.locator(".brand").innerText(), pinned.event.name);
-        assert.equal(await page.getByRole("button", { name: "Admin overview" }).count(), 0);
+        assert.equal(await page.getByRole("button", { name: "Admin" }).count(), 0);
         assert.equal(
           await page.getByRole("button", { name: "Event admin", exact: true }).count(),
           0,
@@ -150,7 +150,7 @@ export async function verifySiteEventPortal() {
         await page.getByRole("heading", { name: "Projects to explore", exact: true }).waitFor();
         await openPortalMenu(page);
         const portalToggle = page.getByRole("button", { name: "Portal navigation", exact: true });
-        const adminNav = page.getByRole("button", { name: "Admin overview", exact: true });
+        const adminNav = page.getByRole("button", { name: "Admin", exact: true });
         const navBox = await adminNav.boundingBox();
         assert(
           navBox &&

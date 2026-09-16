@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 import type {
   PortalState,
   SessionView,
@@ -31,9 +31,8 @@ import { MobileMenu } from "./MobileMenu.tsx";
 import { ProjectBrief } from "./ProjectBrief.tsx";
 import { Workspace } from "./Workspace.tsx";
 
-type AdminSection = "overview" | "sprites" | "projects" | "teams" | "people";
+type AdminSection = "sprites" | "projects" | "teams" | "people";
 const adminSections: { id: AdminSection; label: string }[] = [
-  { id: "overview", label: "Overview" },
   { id: "sprites", label: "Sprites" },
   { id: "projects", label: "Projects" },
   { id: "teams", label: "Teams" },
@@ -57,7 +56,14 @@ export function App() {
   const [session, setSession] = useState<SessionView | null>(null);
   const [state, setState] = useState<PortalState | null>(null);
   const [eventId, setEventId] = useState("");
-  const [adminSection, setAdminSection] = useState<AdminSection>("overview");
+  const [adminSection, setAdminSection] = useState<AdminSection | null>(null);
+  const adminNavigationId = useId();
+  const [adminExpanded, setAdminExpanded] = useState(false);
+  function openAdmin() {
+    setAdminExpanded(true);
+    setAdminSection(null);
+    setTab("admin");
+  }
   const [projectDirty, setProjectDirty] = useState(false);
   const [tab, setTab] = useState<Tab>("discover");
   const [modal, setModal] = useState<"event" | "team" | null>(null);
@@ -202,7 +208,7 @@ export function App() {
       });
       setEventId(created.id);
       setModal(null);
-      setTab("admin");
+      openAdmin();
     });
   }
   function submitTeam(e: FormEvent<HTMLFormElement>) {
@@ -429,22 +435,6 @@ export function App() {
         </a>
         {session.siteEvent && <p className="site-platform">Powered by Civic Spark</p>}
         <MobileMenu label="Portal navigation" closeOnNavigate>
-          {admin && activeTab === "admin" && (
-            <nav className="main-nav admin-nav" aria-label="Admin navigation">
-              {adminSections.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  className={adminSection === section.id ? "active" : ""}
-                  aria-current={adminSection === section.id ? "page" : undefined}
-                  onClick={() => setAdminSection(section.id)}
-                >
-                  {section.label}
-                </button>
-              ))}
-            </nav>
-          )}
-
           {!session.siteEvent && (
             <div className="sidebar-group">
               <p className="eyebrow">YOUR EVENT</p>
@@ -499,16 +489,46 @@ export function App() {
               <CalendarDays size={19} /> Event schedule
             </button>
             {admin && (
-              <button
-                type="button"
-                className={activeTab === "admin" ? "active" : ""}
-                onClick={() => {
-                  setAdminSection("overview");
-                  setTab("admin");
-                }}
-              >
-                <LayoutDashboard size={19} /> Admin overview
-              </button>
+              <div className="admin-branch">
+                <button
+                  type="button"
+                  className={activeTab === "admin" ? "active" : ""}
+                  aria-expanded={activeTab === "admin" && adminExpanded}
+                  aria-controls={adminNavigationId}
+                  aria-current={activeTab === "admin" && adminSection === null ? "page" : undefined}
+                  onClick={() => {
+                    setAdminExpanded(!(activeTab === "admin" && adminExpanded));
+                    setAdminSection(null);
+                    setTab("admin");
+                  }}
+                >
+                  <LayoutDashboard size={19} /> Admin
+                  <ChevronDown size={16} className="admin-disclosure" />
+                </button>
+                <nav
+                  id={adminNavigationId}
+                  className="main-nav admin-nav"
+                  aria-label="Admin navigation"
+                  hidden={activeTab !== "admin" || !adminExpanded}
+                >
+                  {adminSections.map((section) => (
+                    <button
+                      key={section.id}
+                      type="button"
+                      className={adminSection === section.id ? "active" : ""}
+                      aria-current={
+                        activeTab === "admin" && adminSection === section.id ? "page" : undefined
+                      }
+                      onClick={() => {
+                        setAdminExpanded(true);
+                        setAdminSection(section.id);
+                      }}
+                    >
+                      {section.label}
+                    </button>
+                  ))}
+                </nav>
+              </div>
             )}
           </nav>
           <div className="sidebar-bottom">
@@ -557,7 +577,7 @@ export function App() {
               type="button"
               className="button small admin-entry"
               aria-pressed={activeTab === "admin"}
-              onClick={() => setTab("admin")}
+              onClick={openAdmin}
             >
               <ShieldCheck size={16} /> Event admin
             </button>
@@ -754,8 +774,9 @@ export function App() {
               )}
               {activeTab === "admin" && (
                 <>
-                  {adminSection === "overview" && (
+                  {adminSection === null && (
                     <>
+                      <h2 className="admin-heading">Admin</h2>
                       <section className="metrics" aria-label="Event totals">
                         <Metric
                           label="People in teams"
@@ -775,19 +796,20 @@ export function App() {
                         />
                       </section>
                       <section className="section admin-shortcuts" aria-label="Admin sections">
-                        {adminSections
-                          .filter((section) => section.id !== "overview")
-                          .map((section) => (
-                            <button
-                              className="button"
-                              type="button"
-                              key={section.id}
-                              onClick={() => setAdminSection(section.id)}
-                            >
-                              {section.label}
-                              <ArrowRight size={16} />
-                            </button>
-                          ))}
+                        {adminSections.map((section) => (
+                          <button
+                            className="button"
+                            type="button"
+                            key={section.id}
+                            onClick={() => {
+                              setAdminExpanded(true);
+                              setAdminSection(section.id);
+                            }}
+                          >
+                            {section.label}
+                            <ArrowRight size={16} />
+                          </button>
+                        ))}
                       </section>
                     </>
                   )}

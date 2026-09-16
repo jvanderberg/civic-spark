@@ -170,7 +170,7 @@ export async function verifyLifecyclePortal() {
           assert(await menu.evaluate((el) => el === document.activeElement));
           await menu.press("Enter");
         }
-        await page.getByRole("button", { name: "Admin overview", exact: true }).click();
+        await page.getByRole("button", { name: "Admin", exact: true }).click();
         await openAdminSection(page, "Sprites");
         const inventory = page.getByRole("region", { name: "Workspace Sprites" });
         await inventory.getByText("Workspace owner", { exact: true }).waitFor();
@@ -199,10 +199,7 @@ export async function verifyLifecyclePortal() {
         await owner.reload();
         await owner.getByRole("heading", { name: event.name, exact: true }).waitFor();
         await openPortalMenu(owner);
-        assert.equal(
-          await owner.getByRole("button", { name: "Admin overview", exact: true }).count(),
-          0,
-        );
+        assert.equal(await owner.getByRole("button", { name: "Admin", exact: true }).count(), 0);
         await owner.getByRole("button", { name: /My teams/ }).click();
         await owner.getByRole("button", { name: "Open my workspace" }).click();
         const paused = owner.getByRole("dialog", { name: "Hackathon paused", exact: true });

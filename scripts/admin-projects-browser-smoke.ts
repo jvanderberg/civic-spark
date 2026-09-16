@@ -113,6 +113,7 @@ export async function verifyAdminProjects() {
         [390, 844],
         [1440, 900],
         [360, 430],
+        [900, 390],
       ] as const) {
         await page.setViewportSize({ width, height });
         await page.emulateMedia({ colorScheme: theme });
@@ -120,17 +121,84 @@ export async function verifyAdminProjects() {
         await page.reload();
         await page.getByRole("button", { name: "Event admin", exact: true }).waitFor();
         await visibleBounds(page, page.getByRole("button", { name: "Event admin", exact: true }));
-        await page.getByRole("button", { name: "Event admin", exact: true }).click();
         await openPortalMenu(page);
-        const nav = page.getByRole("navigation", {
+        const menu = page.getByRole("button", { name: "Portal navigation", exact: true });
+        const portal = page.getByRole("navigation", {
+          name: "Event navigation",
+          exact: true,
+          includeHidden: true,
+        });
+        const parent = page.locator(".admin-branch > button");
+        const nav = portal.getByRole("navigation", {
           name: "Admin navigation",
           exact: true,
           includeHidden: true,
         });
-        for (const label of ["Sprites", "Projects", "Teams", "People & roles"])
-          await visibleBounds(page, nav.getByRole("button", { name: label, exact: true }));
+        const childNames = ["Sprites", "Projects", "Teams", "People & roles"];
+        assert.equal(await parent.getAttribute("aria-expanded"), "false");
+        assert.equal(await nav.isVisible(), false);
+        await visibleBounds(page, parent);
+        await page.screenshot({
+          path: join(artifacts, `${theme}-${width}-${height}-menu-collapsed.png`),
+        });
+        await parent.tap();
+        assert.equal(await parent.getAttribute("aria-expanded"), "true");
+        assert.equal(await parent.getAttribute("aria-current"), "page");
+        assert.equal(await parent.getAttribute("aria-controls"), await nav.getAttribute("id"));
+        assert(await nav.isVisible());
+        if (await menu.isVisible())
+          assert.equal(
+            await menu.getAttribute("aria-expanded"),
+            "true",
+            "Admin disclosure keeps Menu open",
+          );
+        assert.deepEqual(
+          (await portal.locator("button").allTextContents()).map((text) => text.trim()),
+          ["Explore projects", "My teams 0", "Event schedule", "Admin", ...childNames],
+        );
+        assert.equal(await page.getByRole("button", { name: "Overview", exact: true }).count(), 0);
+        assert.equal(
+          await page.getByRole("button", { name: "Admin overview", exact: true }).count(),
+          0,
+        );
+        assert(
+          await parent.evaluate(
+            (el) => el.nextElementSibling?.getAttribute("aria-label") === "Admin navigation",
+          ),
+        );
+        const parentBounds = await parent.boundingBox();
+        const firstChildBounds = await nav
+          .getByRole("button", { name: "Sprites", exact: true })
+          .boundingBox();
+        assert(
+          parentBounds &&
+            firstChildBounds &&
+            firstChildBounds.y >= parentBounds.y + parentBounds.height &&
+            firstChildBounds.x > parentBounds.x,
+        );
         await page.screenshot({ path: join(artifacts, `${theme}-${width}-${height}-menu.png`) });
-        const menu = page.getByRole("button", { name: "Portal navigation", exact: true });
+        // A short Menu scrolls internally. Record initial order before explicitly
+        // scrolling the panel, rather than letting click auto-scroll hide clipping.
+        if (height < 500)
+          await page.locator(".sidebar .mobile-menu-content").evaluate((el) => {
+            const last = el.querySelector(".admin-nav button:last-child");
+            if (last)
+              el.scrollTop += Math.max(
+                0,
+                last.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom + 12,
+              );
+          });
+        for (const label of childNames)
+          await visibleBounds(page, nav.getByRole("button", { name: label, exact: true }));
+        await page.screenshot({
+          path: join(artifacts, `${theme}-${width}-${height}-menu-sections.png`),
+        });
+        await parent.press("Enter");
+        assert.equal(await parent.getAttribute("aria-expanded"), "false");
+        assert.equal(await nav.isVisible(), false);
+        if (await menu.isVisible()) assert.equal(await menu.getAttribute("aria-expanded"), "true");
+        await parent.press("Enter");
+        assert.equal(await parent.getAttribute("aria-expanded"), "true");
         if (await menu.isVisible()) {
           await page.keyboard.press("Escape");
           assert.equal(await menu.getAttribute("aria-expanded"), "false");
@@ -144,11 +212,22 @@ export async function verifyAdminProjects() {
               .getAttribute("aria-current"),
             "page",
           );
+          if (await menu.isVisible())
+            assert.equal(
+              await menu.getAttribute("aria-expanded"),
+              "false",
+              "Selecting a section closes Menu",
+            );
+          assert.equal(await parent.getAttribute("aria-current"), null);
           assert.equal(
             await page.getByRole("heading", { name: "People & event roles", exact: true }).count(),
             section === "People & roles" ? 1 : 0,
           );
         }
+        await page.getByRole("button", { name: "Event admin", exact: true }).click();
+        await page.getByRole("heading", { name: "Admin", exact: true }).waitFor();
+        assert.equal(await parent.getAttribute("aria-current"), "page");
+        assert.equal(await parent.getAttribute("aria-expanded"), "true");
         await edit(name);
         const dialog = page.getByRole("dialog", { name: "Edit project", exact: true });
         const project = (await state()).events[0]?.projects.find((p) => p.id === id);

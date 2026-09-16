@@ -109,7 +109,7 @@ try {
   await adminPage.getByRole("heading", { name: "Data neighbors", exact: true }).waitFor();
   await page.reload();
   await page.getByRole("heading", { name: "Teams you can join" }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Admin overview", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Admin", exact: true }).count(), 0);
   await page.screenshot({ path: join(artifacts, "participant-discovery.png"), fullPage: true });
   await verifyProjectBrief(page, page.locator(".team-card"), "Join team", artifacts, "team");
   await page.getByRole("button", { name: "Join team", exact: true }).click();
@@ -180,12 +180,12 @@ try {
   assert.equal(readFileSync(zip).subarray(0, 2).toString(), "PK");
   await adminPage.reload();
   await openPortalMenu(adminPage);
-  await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
+  await adminPage.getByRole("button", { name: "Admin", exact: true }).click();
   await openAdminSection(adminPage, "People & roles");
   await adminPage.getByRole("button", { name: "Make admin", exact: true }).click();
   await page.reload();
   await openPortalMenu(page);
-  await page.getByRole("button", { name: "Admin overview", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Admin", exact: true }).waitFor();
   const coordinator = await testIdentity(authentication, "Jamie Coordinator");
   await app.inject({
     url: "/api/state",
@@ -387,7 +387,7 @@ try {
   assert(anotherEvent.ok());
   await adminPage.reload();
   await openPortalMenu(adminPage);
-  await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
+  await adminPage.getByRole("button", { name: "Admin", exact: true }).click();
   await openAdminSection(adminPage, "Projects");
   await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
   await projectDialog
@@ -399,7 +399,7 @@ try {
   adminPage.once("dialog", (dialog) => void dialog.accept());
   await adminPage.getByLabel("Select event").selectOption((await anotherEvent.json()).id);
   await openPortalMenu(adminPage);
-  await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
+  await adminPage.getByRole("button", { name: "Admin", exact: true }).click();
   await openAdminSection(adminPage, "Projects");
   await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
   assert.equal(await projectDialog.getByLabel("Project name", { exact: true }).inputValue(), "");

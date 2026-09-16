@@ -512,10 +512,25 @@ body:has(.workspace-screen) {
   padding: 20px;
 }
 
-.admin-nav {
-  border-top: 1px solid var(--app-border);
-  padding-top: 8px;
-  margin-top: 8px;
+.admin-branch > button {
+  width: 100%;
+}
+.admin-disclosure {
+  margin-left: auto;
+}
+.admin-branch > button[aria-expanded="false"] .admin-disclosure {
+  transform: rotate(-90deg);
+}
+.sidebar .admin-nav {
+  border-left: 1px solid var(--app-border);
+  padding-left: 12px;
+  margin: 4px 0 0 20px;
+}
+.admin-nav[hidden] {
+  display: none;
+}
+.admin-heading {
+  margin-bottom: 16px;
 }
 .admin-nav button {
   min-height: 44px;

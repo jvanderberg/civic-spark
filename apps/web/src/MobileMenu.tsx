@@ -53,7 +53,8 @@ export function MobileMenu({
           if (
             closeOnNavigate &&
             event.target instanceof Element &&
-            event.target.closest("nav button")
+            event.target.closest("nav button") &&
+            !event.target.closest("nav button[aria-expanded]")
           ) {
             setOpen(false);
             if (button.current?.offsetParent) button.current.focus();

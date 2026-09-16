@@ -279,7 +279,7 @@ try {
   await page.getByRole("button", { name: "Workspace controls" }).tap();
   await page.getByRole("button", { name: "Back to teams" }).tap();
   await openPortalMenu(page);
-  await page.getByRole("button", { name: "Admin overview", exact: true }).tap();
+  await page.getByRole("button", { name: "Admin", exact: true }).tap();
   await openAdminSection(page, "Teams");
   await page.getByRole("button", { name: "Repository", exact: true }).tap();
   const repository = page.getByRole("dialog");
