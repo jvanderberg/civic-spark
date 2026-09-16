@@ -1,5 +1,6 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import type { Workspace } from "../../../packages/domain/src/access-types.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
 import { fail, ok, type Result, type SpritePhase } from "../../../packages/domain/src/types.ts";
@@ -11,14 +12,40 @@ export class WorkspaceProvisioning {
   constructor(
     private service: EventService,
     private root: string,
-  ) {}
+  ) {
+    for (const workspace of service.provisioningRecords()) {
+      if (workspace.spriteStatus === "provisioning" && workspace.spriteName)
+        service.setSprite(
+          workspace.id,
+          workspace.spriteName,
+          "error",
+          "Workspace preparation was interrupted by a server restart. Retry to resume safely.",
+        );
+    }
+  }
+  private limits() {
+    return {
+      total: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(10000)
+        .parse(process.env.CIVIC_SPARK_MAX_SPRITES ?? "100"),
+      concurrent: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .parse(process.env.CIVIC_SPARK_MAX_PROVISIONING ?? "2"),
+    };
+  }
   status(workspace: Workspace): Workspace {
     if (workspace.spriteStatus === "provisioning" && !this.jobs.has(workspace.id)) {
       const error =
         "Workspace preparation was interrupted by a server restart. Retry to resume safely.";
       this.service.setSprite(
         workspace.id,
-        workspace.spriteName ?? `civic-spark-${workspace.id.slice(0, 8)}`,
+        workspace.spriteName ?? `civic-spark-${workspace.id}`,
         "error",
         error,
       );
@@ -29,10 +56,21 @@ export class WorkspaceProvisioning {
   start(workspace: Workspace): Result<{ preparing: boolean }> {
     if (workspace.spriteStatus === "ready") return ok({ preparing: false });
     if (this.jobs.has(workspace.id)) return ok({ preparing: true });
+    const limits = this.limits();
+    if (this.jobs.size >= limits.concurrent)
+      return fail("Workspace preparation is busy. Retry shortly.", 429);
+    if (
+      !workspace.spriteName &&
+      this.service.provisioningRecords().filter((w) => w.spriteName).length >= limits.total
+    )
+      return fail(
+        "This installation has reached its workspace limit. Contact the event admin.",
+        409,
+      );
     const dir = this.service.workspacePath(workspace.id);
     if (git(dir, ["status", "--porcelain"]).toString().trim())
       return fail("Share saved changes before preparing your Sprite", 409);
-    const name = workspace.spriteName ?? `civic-spark-${workspace.id.slice(0, 8)}`;
+    const name = workspace.spriteName ?? `civic-spark-${workspace.id}`;
     const bundle = join(this.root, `${workspace.id}.bundle`);
     const phase = (next: SpritePhase) => {
       const result = this.service.setSprite(workspace.id, name, "provisioning", null, next);

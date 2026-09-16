@@ -1,0 +1,13 @@
+{
+  "app": "choose-a-unique-civic-spark-app",
+  "org": "choose-your-fly-org",
+  "region": "ord",
+  "origin": "https://choose-a-unique-civic-spark-app.fly.dev",
+  "spriteOrg": "choose-your-sprites-org",
+  "emailProvider": "resend",
+  "emailFrom": "Civic Spark <signin@your-verified-domain.example>",
+  "proxyCidrs": ["172.19.0.0/16"],
+  "volumeGb": 10,
+  "maxSprites": 100,
+  "maxProvisioning": 2
+}

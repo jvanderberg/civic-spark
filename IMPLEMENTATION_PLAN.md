@@ -83,8 +83,12 @@ A native helper for syncing while the browser is closed is a possible later exte
 - [ ] Integration Sprite, configured checks and hosted/shared app preview
 - [ ] Enforced model budgets and deployment resource limits
 - [ ] GitHub publication, external backups, retention and recovery rehearsal
-- [ ] Fly deployment with trusted proxy configuration and multi-user security review
+- [x] Locally validated Fly control-plane deployment package: single-writer volume, canonical HTTPS/auth guards, trusted proxy boundary, pinned build, staged secret setup and restart reconciliation
+- [ ] Build/run Linux container and coordinate first Fly deployment; verify email, proxy peers, token rotation and dedicated Sprite lifecycle live
+- [ ] Complete hosted multi-user security review and external backup/restore rehearsal
 
 ## Preserved earlier proof
 
 The initial anonymous organizer rehearsal has been superseded. Its data remains on disk but is not assigned to authenticated users. The original Git bundle round-trip proof and provider-portability/mTLS design remain valid.
+
+Deployment setup, exact commands, constraints and validation gaps: [Fly deployment](docs/fly-deployment.md). Hosted preview opening remains explicitly unavailable; continuous hosted Git/mTLS, complete cross-store crash recovery and unattended-session/budget enforcement are not complete.

@@ -68,7 +68,7 @@ it("persists real provisioning phases, deduplicates starts, exposes errors and s
     expect(await status()).toMatchObject({ spriteStatus: "provisioning", spritePhase: "creating" });
     expect((await app.inject({ method: "POST", url, headers })).statusCode).toBe(202);
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create).toHaveBeenCalledWith(`civic-spark-${id.slice(0, 8)}`);
+    expect(create).toHaveBeenCalledWith(`civic-spark-${id}`);
     finishCreate(fail("Provider connection failed; retry when connected", 502));
     await vi.waitFor(async () =>
       expect(await status()).toMatchObject({

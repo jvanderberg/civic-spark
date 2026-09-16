@@ -49,8 +49,7 @@ export class SpriteClient {
     }
   }
   async create(name: string): Promise<Result<string>> {
-    if (!spriteNamePattern.test(name))
-      return fail("Prototype Sprite names must start with civic-spark-.");
+    if (!spriteNamePattern.test(name)) return fail("Invalid Civic Spark Sprite name.");
     const result = await this.command(["create", "-skip-console", name]);
     return result.ok ? ok(name) : result;
   }

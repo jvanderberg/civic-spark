@@ -117,6 +117,9 @@ try {
   await folder.press("ArrowLeft");
   assert.equal(await folder.getAttribute("aria-expanded"), "false");
   await folder.press("Enter");
+  // Keyboard press does not wait for enabled state like click does. Let the
+  // preceding README read finish before exercising file activation.
+  await sample.and(page.locator('[aria-disabled="false"]')).waitFor();
   await sample.press("Enter");
   await page.getByRole("table").waitFor();
   await page.getByRole("treeitem", { name: "README.md", exact: true }).click();

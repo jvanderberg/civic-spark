@@ -87,7 +87,7 @@ Runtime data stays under ignored `.data/`: `auth.sqlite` stores accounts, hashed
 
 The old anonymous rehearsal is preserved on disk but has no authenticated ownership records and is therefore not exposed or automatically assigned to whoever logs in first. The old `npm run demo` account-seeding flow was removed.
 
-This remains a local development installation. Email delivery needs a real inbox rehearsal with configured sender credentials; cloud jobs need durable recovery and limits; metadata spans separate stores and needs coordinated recovery before deployment. Model budgets are planning amounts, not enforced spending limits. Do not expose the app publicly until the remaining deployment checks are complete.
+A repeatable [Fly deployment package](docs/fly-deployment.md) now prepares a single Machine and persistent volume, explicit authentication, safely staged Sprite credentials, provisioning limits and restart reconciliation. No Fly deployment has been performed. Linux container execution, real email delivery, proxy verification, dedicated Sprite lifecycle and coordinated backup/recovery still need live rehearsal. Model budgets remain planning amounts, not enforced spending limits.
 
 ## Source structure
 

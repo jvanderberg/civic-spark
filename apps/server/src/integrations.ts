@@ -64,7 +64,7 @@ export class WorkspaceIntegrations {
     private service: EventService,
     root: string,
     private busy: Set<string>,
-    portal: string,
+    private portal: string,
     private client = new SpriteClient(),
   ) {
     this.directory = join(root, "agent-integrations");
@@ -206,6 +206,8 @@ export class WorkspaceIntegrations {
   async openPreview(id: string, owner: Identity, authorized: () => Promise<boolean>) {
     const workspace = unwrap(this.service.workspace(owner, id, true));
     if (!workspace.spriteName) throw new Error("Web preview needs a running Sprite.");
+    if (!["127.0.0.1", "localhost"].includes(new URL(this.portal).hostname))
+      throw new Error("Hosted preview is not configured for this installation.");
     const status = await this.preview(id, owner, "status");
     if (!status.ready)
       throw new Error("The web server is not ready. Launch it or inspect its logs.");
