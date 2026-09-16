@@ -4,6 +4,13 @@ import { relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import { validateSpriteToken } from "../packages/sprites/src/credentials.ts";
+import {
+  PreviewSetupError,
+  previewPoolForAction,
+  previewRelaySecret,
+  provisionPreviewPool,
+  requirePreviewPoolReady,
+} from "./fly-preview-setup.ts";
 
 class SetupError extends Error {}
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -24,6 +31,7 @@ export const setupSchema = z
     spriteOrg: slug,
     authMode: z.enum(["email", "demo"]).default("email"),
     siteEventId: z.uuid().optional(),
+    previewIngress: z.boolean().default(false),
     emailProvider: z.enum(["smtp", "resend"]).optional(),
     emailFrom: z
       .string()
@@ -51,7 +59,7 @@ export const setupSchema = z
 export type Setup = z.infer<typeof setupSchema>;
 const volumeName = "civic_spark_data";
 const quote = (value: string) => JSON.stringify(value);
-export function flyConfig(input: Setup) {
+export function flyConfig(input: Setup, previewOriginPool: string[] = []) {
   const env: Record<string, string> = {
     NODE_ENV: "production",
     CIVIC_SPARK_DEPLOYMENT: "hosted",
@@ -68,6 +76,8 @@ export function flyConfig(input: Setup) {
     CIVIC_SPARK_MAX_PROVISIONING: String(input.maxProvisioning),
   };
   if (input.siteEventId) env.CIVIC_SPARK_SITE_EVENT_ID = input.siteEventId;
+  if (previewOriginPool.length)
+    env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL = JSON.stringify(previewOriginPool);
   if (input.authMode === "email")
     Object.assign(env, {
       CIVIC_SPARK_EMAIL_PROVIDER: input.emailProvider,
@@ -230,6 +240,9 @@ export function secretInput(input: Setup, secrets: Record<string, string>) {
   const allowed = new Set([
     "SPRITE_TOKEN",
     "BETTER_AUTH_SECRET",
+    ...(secrets.CIVIC_SPARK_PREVIEW_RELAY_SECRET === undefined
+      ? []
+      : ["CIVIC_SPARK_PREVIEW_RELAY_SECRET"]),
     ...(input.authMode === "demo"
       ? []
       : input.emailProvider === "smtp"
@@ -245,6 +258,13 @@ export function secretInput(input: Setup, secrets: Record<string, string>) {
       throw new SetupError(`Missing or multiline ${name}`);
   if ((secrets.BETTER_AUTH_SECRET?.length ?? 0) < 32)
     throw new SetupError("BETTER_AUTH_SECRET must contain at least 32 characters");
+  if (
+    secrets.CIVIC_SPARK_PREVIEW_RELAY_SECRET &&
+    secrets.CIVIC_SPARK_PREVIEW_RELAY_SECRET.length < 43
+  )
+    throw new SetupError(
+      "Preview relay secret must contain at least 32 random bytes encoded for transport",
+    );
   validateSpriteToken(secrets.SPRITE_TOKEN, input.spriteOrg);
   const envelope = Buffer.from(JSON.stringify(secrets)).toString("base64");
   if (envelope.length > 60000)
@@ -255,16 +275,21 @@ async function main() {
   const [action, path, ...flags] = process.argv.slice(2);
   if (!action || !path || flags.some((flag) => flag !== "--ambient"))
     throw new SetupError(
-      "Usage: npx tsx scripts/fly-setup.ts plan|auth|provision|secrets|verify-sprites|deploy <public-config.json> [--ambient]",
+      "Usage: npx tsx scripts/fly-setup.ts plan|auth|provision|preview-provision|secrets|verify-sprites|deploy <public-config.json> [--ambient]",
     );
   const input = setupSchema.parse(JSON.parse(readFileSync(path, "utf8")));
   const directory = resolve(repositoryRoot, ".data/fly", input.app);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const config = resolve(directory, "fly.toml");
-  writeFileSync(config, flyConfig(input), { mode: 0o600 });
+  const previewPool = previewPoolForAction(input, directory, action);
+  writeFileSync(config, flyConfig(input, previewPool), { mode: 0o600 });
   chmodSync(config, 0o600);
   if (action === "plan") {
     console.log(`Configuration written: ${config}\nNo cloud resources changed.`);
+    if (input.previewIngress)
+      console.log(
+        `Preview capacity: ${input.maxSprites}. Run provision, then preview-provision to prepare the complete origin pool.`,
+      );
     return;
   }
   if (action === "auth") {
@@ -291,10 +316,26 @@ async function main() {
     console.log("App and single volume are ready; no deployment performed.");
     return;
   }
+  if (action === "preview-provision") {
+    if (!input.previewIngress)
+      throw new SetupError("Set previewIngress to true before provisioning preview capacity");
+    authorizeExisting(input, resolve(directory, "receipt.json"));
+    const secrets = z.record(z.string(), z.string()).parse(JSON.parse(readFileSync(0, "utf8")));
+    const relay = previewRelaySecret(directory);
+    const envelope = secretInput(input, { ...secrets, CIVIC_SPARK_PREVIEW_RELAY_SECRET: relay });
+    provisionPreviewPool(input, directory, relay, runFly);
+    runFly(["secrets", "import", "--app", input.app, "--stage"], envelope);
+    console.log(
+      "Preview capacity provisioned; gateway credentials staged. Deploy the management app when active turns are idle.",
+    );
+    return;
+  }
   if (action === "secrets") {
     authorizeExisting(input, resolve(directory, "receipt.json"));
     // JSON arrives on stdin from a password manager or private file outside this repository.
     const secrets = z.record(z.string(), z.string()).parse(JSON.parse(readFileSync(0, "utf8")));
+    if (input.previewIngress)
+      secrets.CIVIC_SPARK_PREVIEW_RELAY_SECRET = previewRelaySecret(directory);
     runFly(["secrets", "import", "--app", input.app, "--stage"], secretInput(input, secrets));
     console.log("Secrets staged; deploy to activate. No secret values logged.");
     return;
@@ -316,6 +357,7 @@ async function main() {
     return;
   }
   if (action === "deploy") {
+    if (input.previewIngress) requirePreviewPoolReady(input, directory);
     if (!existsSync(resolve(directory, "receipt.json")))
       throw new SetupError("Run provision with the original setup receipt before deploying");
     const { volumes } = authorizeExisting(input, resolve(directory, "receipt.json"));
@@ -346,7 +388,7 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
   main().catch((error: unknown) => {
     console.error(
-      error instanceof SetupError
+      error instanceof SetupError || error instanceof PreviewSetupError
         ? error.message
         : "Invalid configuration or unreadable input. Check setup JSON, secret names and file permissions; provider diagnostics and secret values were suppressed.",
     );
