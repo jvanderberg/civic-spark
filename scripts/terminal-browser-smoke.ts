@@ -3,12 +3,14 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { chromium, type WebSocketRoute } from "playwright";
+import { chromium, type WebSocketRoute, webkit } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
+import { verifyTerminalInput } from "./browser-terminal-input.ts";
 
 const root = mkdtempSync(join(tmpdir(), "civic-spark-terminal-browser-"));
-const artifacts = resolve("artifacts");
+const browserType = process.env.TERMINAL_BROWSER === "webkit" ? webkit : chromium;
+const artifacts = resolve("artifacts", `terminal-${browserType.name()}`);
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {
   const server = createServer();
@@ -21,10 +23,15 @@ const port = await new Promise<number>((resolve) => {
 const address = `http://127.0.0.1:${port}`;
 const { app } = await createApp(root, false, address, undefined, "prototype");
 await app.listen({ host: "127.0.0.1", port });
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const browser = await browserType.launch();
+const page = await browser.newPage({
+  viewport: { width: 1280, height: 720 },
+  hasTouch: true,
+  isMobile: true,
+});
 const errors: string[] = [];
 const sizes: { cols: number; rows: number }[] = [];
+const inputs: string[] = [];
 let connections = 0;
 let preparations = 0;
 let failPreparation = false;
@@ -67,6 +74,7 @@ await page.routeWebSocket("**/api/workspaces/*/terminal", (socket) => {
   socket.onMessage((data) => {
     const message = JSON.parse(data.toString());
     if (message.type === "resize") sizes.push(message);
+    if (message.type === "input") inputs.push(message.data);
   });
   socket.send(
     JSON.stringify({
@@ -144,6 +152,8 @@ try {
     });
   }
   await page.setViewportSize({ width: 390, height: 844 });
+  assert.deepEqual(inputs, [], "Opening, theming and resizing never send shell commands");
+  await verifyTerminalInput(page, inputs, artifacts);
   await page.getByRole("button", { name: "Files", exact: true }).click();
   await page.getByRole("button", { name: "Terminal", exact: true }).click();
   await page
@@ -151,6 +161,11 @@ try {
     .filter({ hasText: /^Connected$/ })
     .waitFor();
   assert.equal(connections, 1, "Reopening a healthy terminal reuses the socket");
+  await page.getByRole("button", { name: "Type in terminal", exact: true }).tap();
+  const beforeReopenInput = inputs.length;
+  await page.keyboard.insertText("reopened");
+  await page.waitForTimeout(50);
+  assert.equal(inputs.slice(beforeReopenInput).join(""), "reopened");
   assert.equal(preparations, 1);
   const status = page.locator(".terminal-panel").getByRole("status");
   const waitConnected = () => status.filter({ hasText: /^Connected$/ }).waitFor();
@@ -165,6 +180,11 @@ try {
   await status.filter({ hasText: "Reconnecting (1/3)" }).waitFor();
   await waitConnected();
   assert.equal(connections, 3);
+  await page.getByRole("button", { name: "Type in terminal", exact: true }).tap();
+  const beforeReconnectInput = inputs.length;
+  await page.keyboard.insertText("resumed");
+  await page.waitForTimeout(50);
+  assert.equal(inputs.slice(beforeReconnectInput).join(""), "resumed");
   await page.getByRole("button", { name: "Files", exact: true }).click();
   sockets.at(-1)?.close({ code: 1011, reason: "Hidden transport failure" });
   await page.waitForTimeout(1200);
@@ -228,8 +248,11 @@ try {
   assert(sizes.length >= 3 && sizes.every((size) => size.cols > 0 && size.rows > 0));
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: terminal fits desktop, short windows and mobile; output scrolls internally; auto-connect on open/refresh, healthy tab reuse, deferred hidden reconnect, manual disconnect, bounded retry, auth failure and unavailable guards. Mock transport; no Sprite/model calls.",
+    `PASS (${browserType.name()}): terminal fits desktop, short windows and mobile; trusted touch focus, keyboard action, native text input, exact-once IME, input-only Return/Backspace, uncanceled touch gestures; output scrolls internally; auto-connect on open/refresh, healthy tab reuse, deferred hidden reconnect, manual disconnect, bounded retry, auth failure and unavailable guards. Mock transport; no Sprite/model calls. Physical phone keyboard unverified.`,
   );
+} catch (error) {
+  await page.screenshot({ path: join(artifacts, "terminal-failure.png") });
+  throw error;
 } finally {
   await browser.close();
   await app.close();

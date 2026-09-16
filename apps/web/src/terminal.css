@@ -17,3 +17,12 @@
   min-width: 0;
   overflow: hidden;
 }
+
+.terminal-actions {
+  flex-shrink: 0;
+}
+
+.sprite-terminal .xterm-helper-textarea {
+  /* Prevent focus zoom without changing terminal cell/IME positioning. */
+  font-size: 16px;
+}
