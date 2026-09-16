@@ -1,3 +1,7 @@
+# Outstanding user corrections — September 16, 2026
+
+The prior all-completed claim missed an actual user message omitted from compaction. Root recovered it from Paseo history: compact Sprite list for dozens, per-Sprite Pause/Delete, elapsed runtime and a single estimate assuming up since start, no cost wall. This was never assigned or implemented, not a lost code branch. Agent3b now owns that work from current main. User also corrected navigation: one Admin parent, sections directly below it, no separate menu prepended above Admin overview and no Overview naming. Agent4555 owns this bounded App/menu correction, coordinated to avoid Sprite/backend files. Both remain pending implementation/testing/integration/deployment; root d393aafd owns cloud operations. Do not mark these complete based on the existing deployed console.
+
 # Live admin console and lifecycle acceptance — September 16, 2026
 
 Runtime `b534e71` is deployed at https://civic-spark.fly.dev and pushed to main. This checkpoint supersedes older local-only/deployment-pending statements below. All completed backup, maintenance/recovery, creator-admin, portal navigation, lifecycle and console work is integrated. Older preserved lifecycle stashes are superseded work, not missing features.

@@ -2,6 +2,12 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Outstanding admin feedback — September 16, 2026
+
+- [ ] Replace Sprite cards with a compact list for dozens of resources, individual Pause/Delete, elapsed runtime and one estimated amount assuming continuously running since start; existing live bulk controls are insufficient.
+- [ ] Put a single Admin parent in portal navigation with Sprites, Projects, Teams and People & roles directly beneath it; remove duplicated Overview/Admin overview entries and the prepended separate navigation.
+- [ ] Review, integrate and deploy these corrections with browser/provider-contract tests; no live participant deletion is authorized by implementation/testing.
+
 ## Event Sprite lifecycle
 
 - [x] Authorized event allocation inventory with provider status, timestamp provenance, explicit unknown usage and labeled CPU-only cost bounds
