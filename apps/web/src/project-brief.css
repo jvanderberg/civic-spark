@@ -1,0 +1,109 @@
+.project-brief {
+  min-width: 0;
+  margin-block: 12px;
+  color: var(--app-text);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.project-brief > summary {
+  min-height: 44px;
+  padding-block: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.project-brief-scroll {
+  max-height: min(24rem, 50dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 4px 10px 4px 4px;
+  scrollbar-gutter: stable;
+}
+.project-brief-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-brief-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1em 0 0.5em;
+  color: inherit;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.project-brief-markdown h1 {
+  font-size: 1.4em;
+}
+.project-brief-markdown h2 {
+  font-size: 1.25em;
+}
+.project-brief-markdown :is(h3, h4, h5, h6) {
+  font-size: 1.1em;
+}
+.project-brief-markdown > :first-child {
+  margin-top: 0;
+}
+.project-brief-markdown :is(p, ul, ol, blockquote, pre, .project-brief-table) {
+  margin-block: 0.75em;
+}
+.project-brief-markdown ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.project-brief-markdown ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.project-brief-markdown a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.project-brief-markdown blockquote {
+  border-left: 3px solid var(--app-border);
+  padding-left: 1em;
+}
+.project-brief-markdown code {
+  background: var(--app-muted-surface);
+  border-radius: 3px;
+  padding: 0.1em 0.25em;
+  font-size: 0.9em;
+}
+.project-brief-markdown pre,
+.project-brief-table {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+}
+.project-brief-markdown pre {
+  background: var(--app-muted-surface);
+  padding: 12px;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.project-brief-markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+.project-brief-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: inherit;
+}
+.project-brief-markdown :is(th, td) {
+  min-width: 8rem;
+  border: 1px solid var(--app-border);
+  padding: 8px;
+  text-align: left;
+}
+.project-brief-markdown th {
+  background: var(--app-muted-surface);
+}
+.project-brief-markdown input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+  margin-right: 0.5em;
+}
+.project-brief :focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}

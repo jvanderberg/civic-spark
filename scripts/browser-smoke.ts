@@ -9,6 +9,11 @@ import type { LoginEmail } from "../apps/server/src/email.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
+import {
+  projectBriefFixture,
+  verifyProjectBrief,
+  watchBriefRequests,
+} from "./browser-project-brief.ts";
 
 const root = mkdtempSync(join(tmpdir(), "civic-spark-browser-"));
 const artifacts = resolve("artifacts");
@@ -37,6 +42,7 @@ const participant = await browser.newContext({ viewport: { width: 1440, height: 
 const adminPage = await organizer.newPage();
 const page = await participant.newPage();
 const errors: string[] = [];
+const briefRequests = [watchBriefRequests(adminPage), watchBriefRequests(page)];
 for (const p of [adminPage, page]) {
   p.setDefaultTimeout(10000);
   p.on("pageerror", (e) => errors.push(e.message));
@@ -76,8 +82,7 @@ try {
   await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
   const projectDialog = adminPage.getByRole("dialog", { name: "Create project", exact: true });
   await projectDialog.getByLabel("Project name", { exact: true }).fill("Community connections");
-  const brief =
-    "# Community connections\n\n[Dataset](https://example.test/data.csv?year=2026&area=%20#source)\n\nExplore access to shared community spaces.\n";
+  const brief = projectBriefFixture;
   await projectDialog.getByLabel("Project brief (Markdown)").fill(brief);
   // Keyboard submission keeps the same accessible form path as touch.
   await projectDialog.getByRole("button", { name: "Create project", exact: true }).focus();
@@ -87,7 +92,11 @@ try {
     .filter({ hasText: "Created Community connections" })
     .waitFor();
   await adminPage.getByRole("button", { name: "Explore projects", exact: true }).click();
-  await adminPage.getByRole("button", { name: "Create a team", exact: true }).click();
+  const catalogCard = adminPage.locator(".project-card").filter({
+    has: adminPage.getByRole("heading", { name: "Community connections", exact: true }),
+  });
+  await verifyProjectBrief(adminPage, catalogCard, "Start a team", artifacts, "catalog");
+  await catalogCard.getByRole("button", { name: "Start a team", exact: true }).click();
   await adminPage.getByLabel("Team name").fill("Data neighbors");
   await adminPage
     .getByLabel("Project", { exact: true })
@@ -98,6 +107,7 @@ try {
   await page.getByRole("heading", { name: "Teams you can join" }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Admin overview", exact: true }).count(), 0);
   await page.screenshot({ path: join(artifacts, "participant-discovery.png"), fullPage: true });
+  await verifyProjectBrief(page, page.locator(".team-card"), "Join team", artifacts, "team");
   await page.getByRole("button", { name: "Join team", exact: true }).click();
   await page.getByRole("button", { name: "Open my workspace", exact: true }).waitFor();
   await page.getByRole("button", { name: "Create a team", exact: true }).click();
@@ -105,12 +115,18 @@ try {
   await page.getByLabel("Project", { exact: true }).selectOption("custom");
   await page.getByLabel("Project title").fill("A library within reach");
   await page
-    .getByLabel("Project brief")
+    .getByRole("textbox", { name: "Project brief", exact: true })
     .fill(
-      "Map library access by public transit and explore which neighborhoods need better connections.",
+      "Map **library access** by public transit and explore which neighborhoods need better connections.",
     );
   await page.getByRole("button", { name: "Create and join team" }).click();
   await page.getByRole("heading", { name: "Library connections", exact: true }).waitFor();
+  const shortBrief = page
+    .locator(".team-card")
+    .filter({ has: page.getByRole("heading", { name: "Library connections", exact: true }) })
+    .locator(".project-brief");
+  assert.equal(await shortBrief.locator("strong").innerText(), "library access");
+  assert.equal(await shortBrief.locator("summary").count(), 0);
   assert.equal(
     await page.getByRole("button", { name: "Open my workspace", exact: true }).count(),
     2,
@@ -372,6 +388,7 @@ try {
   assert.equal(await projectDialog.getByLabel("Project name", { exact: true }).inputValue(), "");
   assert.equal(await projectDialog.getByLabel("Project brief (Markdown)").inputValue(), "");
   await projectDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.deepEqual(briefRequests, [[], []]);
   assert.deepEqual(errors, []);
   console.log(
     "PASS: separate authenticated admin/participant browsers; event ownership, admin Markdown projects, brief inheritance, event-scoped draft isolation, discovery, custom project, two teams, private files, sharing/ZIP, admin promotion, confirmed event removal/team deletion, shared-only team copy, per-team commits/files/diffs and history-preserving restore, light/dark/mobile, logout, clean console. Email-link signup uses the real auth endpoints and a test-only mailbox; external email delivery requires provider credentials.",

@@ -26,6 +26,7 @@ import { AdminProjects } from "./AdminProjects.tsx";
 import { AdminTeams } from "./AdminTeams.tsx";
 import { api } from "./api.ts";
 import { Badge, Empty, Field, initials, Modal } from "./components.tsx";
+import { ProjectBrief } from "./ProjectBrief.tsx";
 import { Workspace } from "./Workspace.tsx";
 
 type Tab = "discover" | "teams" | "admin" | "schedule";
@@ -75,11 +76,21 @@ export function App() {
     const reopened = data.myWorkspaces.find((w) => w.id === requestedWorkspace);
     setEventId(
       (id) =>
+        current.siteEvent?.id ??
         reopened?.eventId ??
         (data.events.some((e) => e.id === id) ? id : (data.events[0]?.id ?? "")),
     );
-    setWorkspaceId((id) => (data.myWorkspaces.some((w) => w.id === id) ? id : null));
+    setWorkspaceId((id) =>
+      data.myWorkspaces.some(
+        (w) => w.id === id && (!current.siteEvent || w.eventId === current.siteEvent.id),
+      )
+        ? id
+        : null,
+    );
   }, []);
+  useEffect(() => {
+    document.title = session?.siteEvent?.name ?? "Civic Spark";
+  }, [session?.siteEvent?.name]);
   useEffect(() => {
     const url = new URL(window.location.href);
     url.hash = workspaceId ? new URLSearchParams({ workspace: workspaceId }).toString() : "";
@@ -132,7 +143,9 @@ export function App() {
   const members = state?.members.filter((m) => m.eventId === eventId) ?? [];
   const admin = event?.role === "admin";
   const activeTab = tab === "admin" && !admin ? "discover" : tab;
-  const workspace = state?.myWorkspaces.find((w) => w.id === workspaceId);
+  const workspace = state?.myWorkspaces.find(
+    (w) => w.id === workspaceId && (!session?.siteEvent || w.eventId === session.siteEvent.id),
+  );
   const canJoin =
     event?.status === "registration" ||
     event?.status === "live" ||
@@ -197,7 +210,7 @@ export function App() {
         </div>
         <h3>{team.name}</h3>
         <p className="project-name">{team.projectName}</p>
-        <p className="team-brief">{team.projectBrief}</p>
+        <ProjectBrief markdown={team.projectBrief} />
         <div className="member-names">
           <Users size={15} />
           <span>{team.memberNames.join(", ") || "Be the first to join"}</span>
@@ -279,15 +292,22 @@ export function App() {
         <section className="login-card">
           <span className="eyebrow">MAKE SOMETHING TOGETHER</span>
           <h1>
-            Your ideas.
-            <br />
-            Your teams.
-            <br />
-            Your workspace.
+            {session.siteEvent ? (
+              (session.siteEvent.name ?? "Your event")
+            ) : (
+              <>
+                Your ideas.
+                <br />
+                Your teams.
+                <br />
+                Your workspace.
+              </>
+            )}
           </h1>
           <p>
-            Join a community event, find a project, and build together. Everything you need is in
-            your browser.
+            {session.siteEvent
+              ? "Find a project, join a team, and build together in your browser."
+              : "Join a community event, find a project, and build together. Everything you need is in your browser."}
           </p>
           {sentTo ? (
             <div className="email-sent" role="status">
@@ -375,36 +395,39 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="/">
+        <a className={session.siteEvent ? "brand site-brand" : "brand"} href="/">
           <span className="brand-mark">
             <Leaf size={21} />
           </span>
-          Civic Spark
+          {session.siteEvent ? (session.siteEvent.name ?? "Your event") : "Civic Spark"}
         </a>
-        <div className="sidebar-group">
-          <p className="eyebrow">YOUR EVENT</p>
-          <div className="event-picker">
-            <select
-              aria-label="Select event"
-              value={eventId}
-              onChange={(e) => {
-                setEventId(e.target.value);
-                setTab("discover");
-              }}
-            >
-              {!state?.events.length && <option value="">Choose or create an event</option>}
-              {state?.events.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={14} />
+        {session.siteEvent && <p className="site-platform">Powered by Civic Spark</p>}
+        {!session.siteEvent && (
+          <div className="sidebar-group">
+            <p className="eyebrow">YOUR EVENT</p>
+            <div className="event-picker">
+              <select
+                aria-label="Select event"
+                value={eventId}
+                onChange={(e) => {
+                  setEventId(e.target.value);
+                  setTab("discover");
+                }}
+              >
+                {!state?.events.length && <option value="">Choose or create an event</option>}
+                {state?.events.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} />
+            </div>
+            <button type="button" className="new-event-link" onClick={() => setModal("event")}>
+              <Plus size={14} /> Create an event
+            </button>
           </div>
-          <button type="button" className="new-event-link" onClick={() => setModal("event")}>
-            <Plus size={14} /> Create an event
-          </button>
-        </div>
+        )}
         <nav className="main-nav" aria-label="Event navigation">
           <button
             type="button"
@@ -481,18 +504,24 @@ export function App() {
             </div>
           )}
           {!state ? (
-            <Empty title="Loading your events…">Retrieving your teams and workspaces.</Empty>
+            <Empty title="Loading your event…">Retrieving your teams and workspaces.</Empty>
           ) : !event ? (
-            <section className="welcome">
-              <span className="welcome-icon">
-                <Leaf size={34} />
-              </span>
-              <h1>Welcome, {session.user.name.split(" ")[0]}.</h1>
-              <p>There are no open events yet. Create one to bring your community together.</p>
-              <button type="button" className="button primary" onClick={() => setModal("event")}>
-                <Plus size={17} /> Create your first event
-              </button>
-            </section>
+            session.siteEvent ? (
+              <Empty title="This event is not open yet">
+                Please check back with your event organizer.
+              </Empty>
+            ) : (
+              <section className="welcome">
+                <span className="welcome-icon">
+                  <Leaf size={34} />
+                </span>
+                <h1>Welcome, {session.user.name.split(" ")[0]}.</h1>
+                <p>There are no open events yet. Create one to bring your community together.</p>
+                <button type="button" className="button primary" onClick={() => setModal("event")}>
+                  <Plus size={17} /> Create your first event
+                </button>
+              </section>
+            )
           ) : (
             <>
               <section className="page-heading">
@@ -583,7 +612,7 @@ export function App() {
                             PROJECT {String(i + 1).padStart(2, "0")}
                           </span>
                           <h2>{p.name}</h2>
-                          <p>{p.description}</p>
+                          <ProjectBrief markdown={p.description} />
                           <div className="button-row">
                             {p.tags.map((tag) => (
                               <Badge key={tag}>{tag}</Badge>

@@ -1,4 +1,21 @@
 /* Responsive portal and workspace adaptations; T3 chat structure stays upstream-derived. */
+.brand.site-brand {
+  align-items: flex-start;
+  font-size: 20px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.site-brand .brand-mark {
+  flex-shrink: 0;
+}
+.site-platform {
+  margin-top: 8px;
+  color: var(--app-muted);
+  font-size: 11px;
+}
+.login-card h1 {
+  overflow-wrap: anywhere;
+}
 .workspace-screen {
   height: min(100dvh, var(--workspace-height, 100dvh));
   padding-top: env(safe-area-inset-top);

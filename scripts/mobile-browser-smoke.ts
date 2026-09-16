@@ -8,6 +8,12 @@ import { createApp } from "../apps/server/src/app.ts";
 import type { AgentEvent, AgentInput } from "../packages/agents/src/protocol.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
+import {
+  projectBriefFixture,
+  verifyProjectBrief,
+  watchBriefRequests,
+} from "./browser-project-brief.ts";
+import { verifySiteEventPortal } from "./browser-site-event.ts";
 
 // Disposable local APIs and deterministic Sprite transports; never runs participant
 // code or contacts a paid agent. Touch emulation does not claim physical-device QA.
@@ -34,6 +40,7 @@ const context = await browser.newContext({
 });
 const page = await context.newPage();
 page.setDefaultTimeout(10000);
+const briefRequests = watchBriefRequests(page);
 const errors: string[] = [];
 page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => {
@@ -167,9 +174,7 @@ try {
   await page.getByRole("button", { name: "Create project", exact: true }).tap();
   const projectDialog = page.getByRole("dialog", { name: "Create project", exact: true });
   await projectDialog.getByLabel("Project name", { exact: true }).fill("Neighborhood data");
-  const projectBrief =
-    "# Neighborhood data\n\n[Data](https://example.test/data.csv?a=1&b=%20#year)\n\n" +
-    "- Explore local connections.\n".repeat(25);
+  const projectBrief = projectBriefFixture;
   await projectDialog.getByLabel("Project brief (Markdown)").fill(projectBrief);
   for (const theme of ["light", "dark"] as const) {
     for (const [width, height] of [
@@ -206,17 +211,28 @@ try {
   );
   await page.getByRole("button", { name: "Explore projects", exact: true }).tap();
   await capture("360-discovery");
-  await page.getByRole("button", { name: "Create a team", exact: true }).tap();
+  const catalogCard = page
+    .locator(".project-card")
+    .filter({ has: page.getByRole("heading", { name: "Neighborhood data", exact: true }) });
+  await verifyProjectBrief(page, catalogCard, "Start a team", artifacts, "catalog");
+  await catalogCard.getByRole("button", { name: "Start a team", exact: true }).tap();
   await page.getByLabel("Team name").fill("Neighborhood access and community connections");
-  await page.getByLabel("Project", { exact: true }).selectOption("custom");
-  await page.getByLabel("Project title").fill("Accessible community spaces");
-  await page
-    .getByLabel("Project brief")
-    .fill("Make community resources easy to find from a phone.");
+  assert.equal(
+    await page.getByLabel("Project", { exact: true }).inputValue(),
+    projectState.events[0]?.projects.find((p) => p.name === "Neighborhood data")?.id,
+  );
   await inViewport(page.getByRole("button", { name: "Create and join team" }));
   await capture("360-create-team");
   await page.getByRole("button", { name: "Create and join team" }).tap();
   await capture("360-my-teams");
+  await verifyProjectBrief(
+    page,
+    page.locator(".team-card"),
+    "Open my workspace",
+    artifacts,
+    "team",
+  );
+  assert.deepEqual(briefRequests, []);
   await page.getByRole("button", { name: "Open my workspace" }).tap();
   await page.getByRole("button", { name: "Show file explorer" }).tap();
   await capture("360-file-drawer", true);
@@ -278,7 +294,7 @@ try {
       .tap();
     await repository
       .getByRole("region", { name: "File preview" })
-      .getByText("# Accessible community spaces", { exact: false })
+      .getByText("# Neighborhood data", { exact: false })
       .waitFor();
     await inViewport(repository.getByRole("region", { name: "File preview" }));
     await capture(`${width}-${height}-repository-${theme}`);
@@ -400,3 +416,5 @@ try {
   await app.close();
   rmSync(root, { recursive: true, force: true });
 }
+
+await verifySiteEventPortal();

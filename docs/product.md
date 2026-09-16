@@ -49,6 +49,8 @@ Repository reads require team membership or event-admin access. Copy, deletion, 
 
 ## Starting an event
 
+An installation can pin its portal to one existing event with `CIVIC_SPARK_SITE_EVENT_ID` (Fly setup: `siteEventId`). Sign-in, navigation and document title use that event's name; the portal opens its projects directly without cross-event selection or event-creation controls. Admin project/team management remains available. Invalid configuration fails explicitly, and inaccessible draft/closed events do not expose their names to visitors. The underlying multi-event model remains reusable when no event is configured. See [installation configuration](fly-deployment.md).
+
 1. Configure the installation’s email sender and sign-in origin and workspace provider.
 2. Sign in and create an event from a blank or DIOD template. The creator becomes its first admin.
 3. Add another admin by the verified email of an account that has signed in, or promote an event member. At least one admin must remain.
@@ -59,6 +61,8 @@ Repository reads require team membership or event-admin access. Copy, deletion, 
 ### Project briefs
 
 Event admins can create listed projects without joining a team. Creation requires that event's admin role and an event that has not closed. The name is 2–100 characters; the Markdown brief is 20–10,000 characters (nonblank after trimming for the minimum). The stored Markdown preserves whitespace and URLs. Existing participant custom-project creation remains available through the team flow.
+
+Catalog and team cards render Markdown headings, lists, emphasis, links, code, quotes and GFM tables. Long briefs open in a keyboard-accessible, scrollable disclosure so team actions remain reachable; wide code and tables scroll within the brief. Raw HTML is skipped, unsafe link protocols are filtered, and images display their alternative text without fetching remote content. Rendering does not change stored Markdown or `PROJECT.md`.
 
 `PROJECT.md` is the canonical workspace brief, using the existing event project `description` as its initial source. A requested project “readme” is this brief, not the app's `README.md` or `readme.md`. Team creation commits a title heading followed by the unchanged brief to `PROJECT.md`; it leaves the starter app README intact. Each new team gets the selected project from the same event. Joining a team clones its shared repository, and Copy team copies the shared brief/history rather than anyone's private edits.
 

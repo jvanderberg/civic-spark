@@ -532,6 +532,7 @@ h2 {
   gap: 15px;
 }
 .team-card {
+  min-width: 0;
   background: white;
   border: 1px solid #e0e5da;
   border-radius: 9px;
@@ -556,7 +557,7 @@ h2 {
   font-size: 12px;
   font-weight: 550;
 }
-.team-card h3 {
+.team-card > h3 {
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 7px;
@@ -862,15 +863,9 @@ h2 {
   color: #96a284;
   letter-spacing: 1px;
 }
-.project-card h2 {
+.project-card > h2 {
   margin: 25px 0 14px;
   line-height: 1.5;
-}
-.project-card > p {
-  color: #8b9680;
-  font-size: 12px;
-  line-height: 1.8;
-  min-height: 80px;
 }
 .project-card footer {
   margin-top: 27px;
@@ -1530,16 +1525,6 @@ h2 {
   color: #6b7c60;
   font-size: 13px;
   line-height: 1.6;
-}
-.team-brief {
-  font-size: 12px;
-  color: #78866b;
-  line-height: 1.65;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin: 0 0 20px;
 }
 .member-names {
   display: flex;

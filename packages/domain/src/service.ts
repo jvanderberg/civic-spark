@@ -111,12 +111,25 @@ export class EventService {
       return fail("This event is at capacity", 409);
     return ok(event);
   }
-  portal(actor: Identity, sprites: boolean): PortalState {
+  // Public installation context exposes only a discoverable title, never event data.
+  siteEvent(eventId: string, actor: Identity | null) {
+    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    if (!event || !this.state.eventMembers.some((m) => m.eventId === eventId))
+      return fail("The configured site event was not found. Check CIVIC_SPARK_SITE_EVENT_ID.", 503);
+    const publicEvent = event.status === "registration" || event.status === "live";
+    return ok({
+      id: event.id,
+      name: publicEvent || (actor && this.canDiscover(actor, event)) ? event.name : null,
+    });
+  }
+  portal(actor: Identity, sprites: boolean, siteEventId?: string): PortalState {
     this.remember(actor);
     const data = this.engine.snapshot();
     data.teams = data.teams.filter((t) => !t.deletedAt);
     const visibleTeamIds = new Set(data.teams.map((t) => t.id));
-    const events = data.events.filter((e) => this.canDiscover(actor, e));
+    const events = data.events.filter(
+      (e) => (!siteEventId || e.id === siteEventId) && this.canDiscover(actor, e),
+    );
     const eventIds = new Set(events.map((e) => e.id));
     const active = this.state.memberships.filter(
       (m) => m.active && eventIds.has(m.eventId) && visibleTeamIds.has(m.teamId),
@@ -178,9 +191,13 @@ export class EventService {
       }),
       contributions: data.contributions.filter(
         (c) =>
-          visibleTeamIds.has(c.teamId) && (teamIds.has(c.teamId) || this.isAdmin(actor, c.eventId)),
+          eventIds.has(c.eventId) &&
+          visibleTeamIds.has(c.teamId) &&
+          (teamIds.has(c.teamId) || this.isAdmin(actor, c.eventId)),
       ),
-      activity: data.activity.filter((a) => this.isAdmin(actor, a.eventId)),
+      activity: data.activity.filter(
+        (a) => eventIds.has(a.eventId) && this.isAdmin(actor, a.eventId),
+      ),
       templates,
       capabilities: { sprites },
     };

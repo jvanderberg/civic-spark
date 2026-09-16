@@ -56,6 +56,7 @@ export type SessionView = {
   user: Identity | null;
   emailSignIn: boolean;
   authMode: "email" | "prototype" | "demo";
+  siteEvent: { id: string; name: string | null } | null;
 };
 export type PortalState = {
   user: Identity;

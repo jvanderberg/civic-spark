@@ -16,7 +16,9 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Creator becomes event admin; promote members or add known accounts by verified email; retain last admin
 - [x] Server-enforced event roles and owner-only workspace access
 - [x] Signed-in discovery, existing teams, new teams, custom project briefs
+- [x] Optional runtime-pinned single-event portal, event-first branding, scoped discovery/workspace navigation and validated Fly setup setting; multi-event domain retained
 - [x] Event-admin project creation with validated Markdown briefs; existing description → PROJECT.md seeding, intact links, preserved app README and team edits
+- [x] Safe Markdown rendering in catalog/team cards with bounded long-brief disclosure, internal code/table scrolling and light/dark phone/desktop browser regressions
 - [x] Multiple team memberships per account; capacity counts people once
 - [x] Admin membership removal with immediate API revocation and preserved files
 - [x] Confirmed event-scoped person removal and team deletion with retained work; last-admin protection

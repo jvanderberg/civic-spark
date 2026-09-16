@@ -50,6 +50,7 @@ export async function createApp(
   authMode = z
     .enum(["email", "prototype", "demo"])
     .parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
+  siteEventId = z.uuid().optional().parse(process.env.CIVIC_SPARK_SITE_EVENT_ID),
 ) {
   const deployment = validateDeployment(root, baseURL, authMode);
   const prototype = authMode === "prototype";
@@ -61,11 +62,18 @@ export async function createApp(
       throw new Error("Prototype sign-in requires a localhost browser origin");
     root = join(root, "prototype");
   }
+  const service = new EventService(root);
+  if (siteEventId) {
+    const site = service.siteEvent(siteEventId, null);
+    if (!site.ok) {
+      service.close();
+      throw new Error(site.error);
+    }
+  }
   const app = Fastify({ logger: false, bodyLimit: 1500000 });
   await app.register(websocket, { options: { maxPayload: 65536 } });
   const terminals = new TerminalSessions();
   const agents = new AgentSessions();
-  const service = new EventService(root);
   const sharing = new Set<string>();
   const integrations = new WorkspaceIntegrations(service, root, sharing, baseURL);
   const provisioning = new WorkspaceProvisioning(service, root);
@@ -240,11 +248,16 @@ export async function createApp(
       return reply.code(503).send({ ok: false });
     }
   });
-  app.get("/api/session", async (r) => ({
-    user: r.actor,
-    emailSignIn: authentication.emailSignIn,
-    authMode,
-  }));
+  app.get("/api/session", async (r, reply) => {
+    const site = siteEventId ? service.siteEvent(siteEventId, r.actor) : null;
+    if (site && !site.ok) return send(reply, site);
+    return {
+      user: r.actor,
+      emailSignIn: authentication.emailSignIn,
+      authMode,
+      siteEvent: site?.value ?? null,
+    };
+  });
   // Authentication hook guarantees actor for all routes below; no user IDs from
   // request bodies, query parameters, or custom headers establish identity.
   const actor = (value: Identity | null): Identity => {
@@ -252,7 +265,7 @@ export async function createApp(
     return value;
   };
   registerAdminRoutes(app, service);
-  app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled));
+  app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled, siteEventId));
   app.post("/api/events", async (r, reply) =>
     send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body))),
   );

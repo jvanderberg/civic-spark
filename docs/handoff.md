@@ -2,6 +2,14 @@
 
 Checkpoint: September 16, 2026, America/Chicago. Rename, admin project briefs and the Fly deployment package are integrated. Hosted demo is live at https://civic-spark.fly.dev; see the live deployment record below.
 
+## Local Markdown and single-event update
+
+The `civic-spark-markdown-briefs` branch from `9719554` renders safe GFM in catalog/team cards, with scrollable long-brief disclosures, inert images and unchanged raw Markdown/`PROJECT.md`. A long-code regression exposed and fixed the team card's missing minimum-width constraint.
+
+Optional `CIVIC_SPARK_SITE_EVENT_ID` (Fly setup `siteEventId`) pins the portal to an existing event in its current auth-mode store. `/api/session` supplies the permitted event title; the portal hides cross-event selection/creation and excludes unrelated workspaces, contributions and activity. Missing/invalid configuration fails rather than selecting another event. Root must configure the intended event and deploy; this branch does not push, deploy or modify live data.
+
+Validation: `npm run check` passed 143 tests / 35 files, lint, both typechecks and build; `npm run test:mobile` (including the new site-context matrix) and `npm run test:browser` passed. Markdown fixtures cover GFM, unsafe HTML/URLs, no image fetching, touch/keyboard disclosure and internal code/table scrolling. The site matrix uses two underlying events, checks branding/admin controls and rejects an unrelated workspace URL while preserving valid workspace refresh. Local replay of all 15 imported briefs verified the 9,985-character transit brief in catalog/team views and unchanged canonical content, with no external requests. Screenshots at 360/390/desktop/short sizes in both themes were inspected; consoles were clean. Evidence is ignored under `artifacts/mobile`, `artifacts/site-event`, `artifacts/briefs` and `artifacts/`. No paid inference or live Sprite provisioning. Physical mobile keyboards/pickers remain unverified.
+
 ## Resume here
 
 Current worktree: `/Users/joshv/.paseo/worktrees/2eoh2bv5/nasty-octopus`. All three Paseo implementation branches have been combined here. Dependencies and Playwright Chromium are installed; no `.env` or participant data was copied. The earlier machine used `~/git/civic-spark`, portal <http://127.0.0.1:4310> and API <http://127.0.0.1:4311/api/health>; its processes and compatibility symlink were not inspected or changed. Do not start the renamed server against existing participant data before the migration review below.

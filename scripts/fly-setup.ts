@@ -23,6 +23,7 @@ export const setupSchema = z
     }, "Use an exact public HTTPS origin"),
     spriteOrg: slug,
     authMode: z.enum(["email", "demo"]).default("email"),
+    siteEventId: z.uuid().optional(),
     emailProvider: z.enum(["smtp", "resend"]).optional(),
     emailFrom: z
       .string()
@@ -66,6 +67,7 @@ export function flyConfig(input: Setup) {
     CIVIC_SPARK_MAX_SPRITES: String(input.maxSprites),
     CIVIC_SPARK_MAX_PROVISIONING: String(input.maxProvisioning),
   };
+  if (input.siteEventId) env.CIVIC_SPARK_SITE_EVENT_ID = input.siteEventId;
   if (input.authMode === "email")
     Object.assign(env, {
       CIVIC_SPARK_EMAIL_PROVIDER: input.emailProvider,
