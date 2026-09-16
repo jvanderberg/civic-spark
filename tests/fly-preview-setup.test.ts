@@ -256,3 +256,12 @@ it.each([
   expect(() => provisionPreviewPool(input, dir, secret, mock.run)).toThrow("resources");
   expect(mock.calls.every((c) => c.args[1] === "list")).toBe(true);
 });
+
+it("rejects managed preview pool and wildcard template together before setup actions", () => {
+  expect(() =>
+    setupSchema.parse({
+      ...input,
+      previewOriginTemplate: "https://{workspace}.preview.example.test",
+    }),
+  ).toThrow("either");
+});

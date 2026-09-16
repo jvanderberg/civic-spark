@@ -53,6 +53,12 @@ export const setupSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.previewIngress && value.previewOriginTemplate)
+      ctx.addIssue({
+        code: "custom",
+        path: ["previewIngress"],
+        message: "Choose either the managed preview ingress pool or a preview origin template",
+      });
     if (value.previewOriginTemplate) {
       try {
         validatePreviewOriginTemplate(value.previewOriginTemplate, value.origin);
