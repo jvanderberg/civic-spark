@@ -15,6 +15,7 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Configurable SMTP and Resend adapters; single-use, expiring, hashed login tokens
 - [x] Creator becomes event admin; promote members or add known accounts by verified email; retain last admin
 - [x] Server-enforced event roles and owner-only workspace access
+- [x] Main portal Menu for phone/short viewports, retained desktop sidebar, and actionable Event admin entry; existing event roles unchanged
 - [x] Signed-in discovery, existing teams, new teams, custom project briefs
 - [x] Optional runtime-pinned single-event portal, event-first branding, scoped discovery/workspace navigation and validated Fly setup setting; multi-event domain retained
 - [x] Event-admin project creation with validated Markdown briefs; existing description → PROJECT.md seeding, intact links, preserved app README and team edits

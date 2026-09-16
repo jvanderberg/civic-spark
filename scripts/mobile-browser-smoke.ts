@@ -8,6 +8,7 @@ import { createApp } from "../apps/server/src/app.ts";
 import type { AgentEvent, AgentInput } from "../packages/agents/src/protocol.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
+import { openPortalMenu } from "./browser-portal-menu.ts";
 import {
   projectBriefFixture,
   verifyProjectBrief,
@@ -210,6 +211,7 @@ try {
     projectState.events[0]?.projects.find((p) => p.name === "Neighborhood data")?.description,
     projectBrief,
   );
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "Explore projects", exact: true }).tap();
   await capture("360-discovery");
   const catalogCard = page
@@ -273,6 +275,7 @@ try {
   await capture("360-terminal-fallback", true);
   await page.getByRole("button", { name: "Workspace controls" }).tap();
   await page.getByRole("button", { name: "Back to teams" }).tap();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "Admin overview", exact: true }).tap();
   await page.getByRole("button", { name: "Repository", exact: true }).tap();
   const repository = page.getByRole("dialog");
@@ -327,6 +330,7 @@ try {
   await copied.waitFor({ state: "detached" });
   remote = true;
   await page.reload();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: /My teams/ }).tap();
   await page.getByRole("button", { name: "Open my workspace" }).tap();
   await page.getByRole("button", { name: "Agent", exact: true }).tap();

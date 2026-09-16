@@ -7,6 +7,7 @@ import { chromium, type WebSocketRoute } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { AgentEvent, AgentInput } from "../packages/agents/src/protocol.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
+import { openPortalMenu } from "./browser-portal-menu.ts";
 
 // Deterministic transport fixture: exercises the shipped React UI and real local
 // session/event/file APIs. No Sprite, provider request, or real API key is used.
@@ -151,6 +152,7 @@ try {
   await page.getByLabel("Location").fill("Oak Park");
   await page.getByRole("button", { name: "Create event", exact: true }).click();
   await page.getByRole("button", { name: "Open registration" }).click();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "Explore projects", exact: true }).click();
   await page.getByRole("button", { name: "Create a team", exact: true }).click();
   await page.getByLabel("Team name").fill("Oak Park data explorers");
@@ -693,6 +695,7 @@ try {
   if (await page.getByRole("button", { name: "Workspace controls" }).isVisible())
     await page.getByRole("button", { name: "Workspace controls" }).click();
   await page.getByRole("button", { name: "Back to teams" }).click();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "My teams", exact: false }).click();
   await page.getByRole("button", { name: "Open my workspace" }).click();
   await waitFor(() => connections === beforeReload + 2, "automatic project reopen");

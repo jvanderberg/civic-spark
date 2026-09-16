@@ -2,7 +2,15 @@ import { Menu, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 // Contents stay mounted. Opening a menu must not recreate a workspace or socket.
-export function MobileMenu({ label, children }: { label: string; children: ReactNode }) {
+export function MobileMenu({
+  label,
+  children,
+  closeOnNavigate = false,
+}: {
+  label: string;
+  children: ReactNode;
+  closeOnNavigate?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -38,7 +46,20 @@ export function MobileMenu({ label, children }: { label: string; children: React
       >
         {open ? <X size={18} /> : <Menu size={18} />} Menu
       </button>
-      <div className="mobile-menu-content" id={id}>
+      <div
+        className="mobile-menu-content"
+        id={id}
+        onClickCapture={(event) => {
+          if (
+            closeOnNavigate &&
+            event.target instanceof Element &&
+            event.target.closest("nav button")
+          ) {
+            setOpen(false);
+            if (button.current?.offsetParent) button.current.focus();
+          }
+        }}
+      >
         {children}
       </div>
     </div>

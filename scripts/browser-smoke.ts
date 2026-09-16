@@ -9,6 +9,7 @@ import type { LoginEmail } from "../apps/server/src/email.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
+import { openPortalMenu } from "./browser-portal-menu.ts";
 import {
   projectBriefFixture,
   verifyProjectBrief,
@@ -70,6 +71,7 @@ try {
     const message = outbox.find((entry) => entry.email === email);
     assert(message, "The test mailbox should receive the link");
     await target.goto(message.url);
+    await openPortalMenu(target);
     await target.getByRole("button", { name: "Sign out", exact: true }).waitFor();
   }
   await adminPage.getByRole("button", { name: "Create your first event" }).click();
@@ -91,6 +93,7 @@ try {
     .getByRole("status")
     .filter({ hasText: "Created Community connections" })
     .waitFor();
+  await openPortalMenu(adminPage);
   await adminPage.getByRole("button", { name: "Explore projects", exact: true }).click();
   const catalogCard = adminPage.locator(".project-card").filter({
     has: adminPage.getByRole("heading", { name: "Community connections", exact: true }),
@@ -175,9 +178,11 @@ try {
   await (await downloadPromise).saveAs(zip);
   assert.equal(readFileSync(zip).subarray(0, 2).toString(), "PK");
   await adminPage.reload();
+  await openPortalMenu(adminPage);
   await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
   await adminPage.getByRole("button", { name: "Make admin", exact: true }).click();
   await page.reload();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "Admin overview", exact: true }).waitFor();
   const coordinator = await testIdentity(authentication, "Jamie Coordinator");
   await app.inject({
@@ -343,6 +348,7 @@ try {
     .getByRole("button", { name: "Remove Alex Participant from Data neighbors", exact: true })
     .click();
   await page.reload();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "My teams", exact: false }).click();
   await page.getByRole("heading", { name: "Library connections", exact: true }).waitFor();
   assert.equal(
@@ -359,6 +365,7 @@ try {
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     "Mobile overflow",
   );
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByRole("button", { name: "Email me a sign-in link" }).waitFor();
   assert.equal((await participant.request.get(`${address}/api/state`)).status(), 401);
@@ -375,6 +382,7 @@ try {
   });
   assert(anotherEvent.ok());
   await adminPage.reload();
+  await openPortalMenu(adminPage);
   await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
   await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
   await projectDialog
@@ -382,7 +390,9 @@ try {
     .fill("Unsent event-specific draft");
   await projectDialog.getByLabel("Project brief (Markdown)").fill(brief);
   await projectDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await openPortalMenu(adminPage);
   await adminPage.getByLabel("Select event").selectOption((await anotherEvent.json()).id);
+  await openPortalMenu(adminPage);
   await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
   await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
   assert.equal(await projectDialog.getByLabel("Project name", { exact: true }).inputValue(), "");

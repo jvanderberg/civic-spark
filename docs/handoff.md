@@ -2,6 +2,14 @@
 
 Checkpoint: September 16, 2026, America/Chicago. Rename, admin project briefs and the Fly deployment package are integrated. Hosted demo is live at https://civic-spark.fly.dev; see the live deployment record below.
 
+## Portal navigation hotfix (local, not deployed)
+
+The main portal now has a visible Menu at phone and compact landscape sizes. Its mounted disclosure puts Projects, My teams, Schedule and authorized Admin navigation before the event picker/account controls. Desktop keeps its sidebar. The top-bar Event admin label is now a real 44px button opening Admin overview; it previously was a noninteractive badge. No identity or role behavior changed. Workspace Menu keeps its existing behavior.
+
+Validation: `npm run check` passed 175 tests in 40 files, lint, both typechecks and build. `npm run test:mobile` and `npm run test:browser` passed. The site-event browser matrix checks initial control bounds before clicking (avoiding Playwright auto-scroll masking clipped navigation), actual admin-panel entry through both controls, role-scoped visibility, touch and keyboard Escape/Enter/focus, and 360/390/desktop/short viewports in both themes. The additional 900x390 matrix exercises the separate compact-landscape media condition. Screenshots are in ignored `artifacts/site-event/`, reviewed in both themes; console checks are clean. Physical device keyboards remain unverified.
+
+Sprite lifecycle implementation remains separate work. This hotfix makes no provider calls, deployments, publication or live-role changes; root owns integration and deployment.
+
 ## Private hosted preview (deployed)
 
 The preview branch based on `50c76ab` provides an automatically assigned, durable pool of separate HTTPS preview origins, plus an optional owned-domain wildcard template. Pool bindings are written and synchronized atomically inside the auth-mode data directory and never recycled across workspaces. The stateless ingress relays authenticated HTTPS/WebSockets to the existing gateway; only the gateway holds Sprite credentials. Participant apps and their processes remain in their existing Sprites.

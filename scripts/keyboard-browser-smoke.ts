@@ -8,6 +8,7 @@ import { chromium, type Locator, webkit } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { AgentEvent, AgentInput } from "../packages/agents/src/protocol.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
+import { openPortalMenu } from "./browser-portal-menu.ts";
 
 export async function verifyKeyboardViewport(engine: "chromium" | "webkit" = "chromium") {
   const root = mkdtempSync(join(tmpdir(), "civic-spark-keyboard-"));
@@ -139,6 +140,7 @@ export async function verifyKeyboardViewport(engine: "chromium" | "webkit" = "ch
     await page.getByLabel("Date", { exact: true }).fill("2026-10-03");
     await page.getByLabel("Location").fill("Library");
     await page.getByRole("button", { name: "Create event", exact: true }).tap();
+    await openPortalMenu(page);
     await page.getByRole("button", { name: "Explore projects", exact: true }).tap();
     await page.getByRole("button", { name: "Create a team", exact: true }).tap();
     await page.getByLabel("Team name").fill("Neighborhood research and data team");

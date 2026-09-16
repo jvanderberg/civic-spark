@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { chromium, type WebSocketRoute, webkit } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
+import { openPortalMenu } from "./browser-portal-menu.ts";
 import { verifyTerminalInput } from "./browser-terminal-input.ts";
 
 const root = mkdtempSync(join(tmpdir(), "civic-spark-terminal-browser-"));
@@ -93,6 +94,7 @@ try {
   await page.getByLabel("Location").fill("Oak Park");
   await page.getByRole("button", { name: "Create event", exact: true }).click();
   await page.getByRole("button", { name: "Open registration" }).click();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "Explore projects", exact: true }).click();
   await page.getByRole("button", { name: "Create a team", exact: true }).click();
   await page.getByLabel("Team name").fill("Terminal team");

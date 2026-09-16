@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
+import { openPortalMenu } from "./browser-portal-menu.ts";
 
 const unwrap = <T>(result: Result<T>) => {
   if (!result.ok) throw new Error(result.error);
@@ -79,6 +80,7 @@ export async function verifySiteEventPortal() {
         [390, 844],
         [1440, 900],
         [360, 430],
+        [900, 390],
       ]) {
         assert(width && height);
         await page.setViewportSize({ width, height });
@@ -105,6 +107,10 @@ export async function verifySiteEventPortal() {
         assert.equal(await page.getByText(other.event.name, { exact: true }).count(), 0);
         assert.equal(await page.locator(".brand").innerText(), pinned.event.name);
         assert.equal(await page.getByRole("button", { name: "Admin overview" }).count(), 0);
+        assert.equal(
+          await page.getByRole("button", { name: "Event admin", exact: true }).count(),
+          0,
+        );
         await page.getByRole("button", { name: "Start a team", exact: true }).first().tap();
         await page.getByLabel("Team name").fill("Draft team");
         const create = page.getByRole("button", { name: "Create and join team" });
@@ -125,7 +131,52 @@ export async function verifySiteEventPortal() {
         assert.equal(await page.locator(".workspace-screen").count(), 0);
         await page.waitForURL(`${origin}/`);
         assert.equal(new URL(page.url()).hash, "");
-        await page.getByRole("button", { name: "Admin overview", exact: true }).tap();
+        // Assert initial bounds BEFORE Playwright can scroll a clipped control into view.
+        const adminEntry = page.getByRole("button", { name: "Event admin", exact: true });
+        const entryBox = await adminEntry.boundingBox();
+        assert(
+          entryBox &&
+            entryBox.x >= 0 &&
+            entryBox.y >= 0 &&
+            entryBox.x + entryBox.width <= width &&
+            entryBox.y + entryBox.height <= height &&
+            entryBox.height >= 44,
+        );
+        await adminEntry.tap();
+        await page.getByRole("heading", { name: "People & event roles", exact: true }).waitFor();
+        await openPortalMenu(page);
+        await page.getByRole("button", { name: "Explore projects", exact: true }).tap();
+        await page.getByRole("heading", { name: "Projects to explore", exact: true }).waitFor();
+        await openPortalMenu(page);
+        const portalToggle = page.getByRole("button", { name: "Portal navigation", exact: true });
+        const adminNav = page.getByRole("button", { name: "Admin overview", exact: true });
+        const navBox = await adminNav.boundingBox();
+        assert(
+          navBox &&
+            navBox.x >= 0 &&
+            navBox.x + navBox.width <= width &&
+            navBox.y >= 0 &&
+            navBox.y + navBox.height <= height,
+        );
+        if (await portalToggle.isVisible()) {
+          assert(navBox.height >= 44);
+          const panel = await page.locator(".sidebar .mobile-menu-content").boundingBox();
+          assert(
+            panel && navBox.y >= panel.y && navBox.y + navBox.height <= panel.y + panel.height,
+          );
+          await page.screenshot({
+            path: join(artifacts, `portal-menu-${width}-${height}-${theme}.png`),
+          });
+          await page.keyboard.press("Escape");
+          assert.equal(await portalToggle.getAttribute("aria-expanded"), "false");
+          assert(await portalToggle.evaluate((el) => document.activeElement === el));
+          await portalToggle.press("Enter");
+        }
+        await adminNav.tap();
+        await page.getByRole("heading", { name: "People & event roles", exact: true }).waitFor();
+        await page.screenshot({
+          path: join(artifacts, `admin-entry-${width}-${height}-${theme}.png`),
+        });
         await page.getByRole("button", { name: "Create project", exact: true }).tap();
         await page.getByLabel("Project name", { exact: true }).fill("New project draft");
         await page

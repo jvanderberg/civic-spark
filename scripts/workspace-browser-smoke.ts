@@ -8,6 +8,7 @@ import { createApp } from "../apps/server/src/app.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 import type { FileBlob } from "../packages/workspace/src/types.ts";
 import { editorInput, readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
+import { openPortalMenu } from "./browser-portal-menu.ts";
 
 const root = mkdtempSync(join(tmpdir(), "civic-spark-workspace-browser-"));
 const artifacts = resolve("artifacts");
@@ -82,6 +83,7 @@ try {
   await page.getByLabel("Location").fill("Local rehearsal");
   await page.getByRole("button", { name: "Create event", exact: true }).click();
   await page.getByRole("button", { name: "Open registration" }).click();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "Explore projects", exact: true }).click();
   await page.getByRole("button", { name: "Create a team", exact: true }).click();
   await page.getByLabel("Team name").fill("Local explorers");
@@ -405,9 +407,11 @@ try {
   assert.equal(await readEditor(page), "My unsaved browser work\n");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Back to teams" }).click();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByLabel("Email address").fill("organizer@example.test");
   await page.getByRole("button", { name: "Enter prototype" }).click();
+  await openPortalMenu(page);
   await page.getByRole("button", { name: "My teams", exact: false }).click();
   await page.getByRole("heading", { name: "Local explorers", exact: true }).waitFor();
   assert.deepEqual(errors, []);

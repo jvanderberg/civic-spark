@@ -26,6 +26,7 @@ import { AdminProjects } from "./AdminProjects.tsx";
 import { AdminTeams } from "./AdminTeams.tsx";
 import { api } from "./api.ts";
 import { Badge, Empty, Field, initials, Modal } from "./components.tsx";
+import { MobileMenu } from "./MobileMenu.tsx";
 import { ProjectBrief } from "./ProjectBrief.tsx";
 import { Workspace } from "./Workspace.tsx";
 
@@ -402,87 +403,89 @@ export function App() {
           {session.siteEvent ? (session.siteEvent.name ?? "Your event") : "Civic Spark"}
         </a>
         {session.siteEvent && <p className="site-platform">Powered by Civic Spark</p>}
-        {!session.siteEvent && (
-          <div className="sidebar-group">
-            <p className="eyebrow">YOUR EVENT</p>
-            <div className="event-picker">
-              <select
-                aria-label="Select event"
-                value={eventId}
-                onChange={(e) => {
-                  setEventId(e.target.value);
-                  setTab("discover");
-                }}
-              >
-                {!state?.events.length && <option value="">Choose or create an event</option>}
-                {state?.events.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} />
+        <MobileMenu label="Portal navigation" closeOnNavigate>
+          {!session.siteEvent && (
+            <div className="sidebar-group">
+              <p className="eyebrow">YOUR EVENT</p>
+              <div className="event-picker">
+                <select
+                  aria-label="Select event"
+                  value={eventId}
+                  onChange={(e) => {
+                    setEventId(e.target.value);
+                    setTab("discover");
+                  }}
+                >
+                  {!state?.events.length && <option value="">Choose or create an event</option>}
+                  {state?.events.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} />
+              </div>
+              <button type="button" className="new-event-link" onClick={() => setModal("event")}>
+                <Plus size={14} /> Create an event
+              </button>
             </div>
-            <button type="button" className="new-event-link" onClick={() => setModal("event")}>
-              <Plus size={14} /> Create an event
-            </button>
-          </div>
-        )}
-        <nav className="main-nav" aria-label="Event navigation">
-          <button
-            type="button"
-            className={activeTab === "discover" ? "active" : ""}
-            onClick={() => setTab("discover")}
-          >
-            <Compass size={19} /> Explore projects
-          </button>
-          <button
-            type="button"
-            className={activeTab === "teams" ? "active" : ""}
-            onClick={() => setTab("teams")}
-          >
-            <FolderOpen size={19} /> My teams <span className="nav-count">{myTeams.length}</span>
-          </button>
-          <button
-            type="button"
-            className={activeTab === "schedule" ? "active" : ""}
-            onClick={() => setTab("schedule")}
-          >
-            <CalendarDays size={19} /> Event schedule
-          </button>
-          {admin && (
+          )}
+          <nav className="main-nav" aria-label="Event navigation">
             <button
               type="button"
-              className={activeTab === "admin" ? "active" : ""}
-              onClick={() => setTab("admin")}
+              className={activeTab === "discover" ? "active" : ""}
+              onClick={() => setTab("discover")}
             >
-              <LayoutDashboard size={19} /> Admin overview
+              <Compass size={19} /> Explore projects
             </button>
-          )}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="identity-card">
-            <span className="avatar">{initials(session.user.name)}</span>
-            <div>
-              <strong>{session.user.name}</strong>
-              <span title={session.user.email}>{session.user.email}</span>
+            <button
+              type="button"
+              className={activeTab === "teams" ? "active" : ""}
+              onClick={() => setTab("teams")}
+            >
+              <FolderOpen size={19} /> My teams <span className="nav-count">{myTeams.length}</span>
+            </button>
+            <button
+              type="button"
+              className={activeTab === "schedule" ? "active" : ""}
+              onClick={() => setTab("schedule")}
+            >
+              <CalendarDays size={19} /> Event schedule
+            </button>
+            {admin && (
+              <button
+                type="button"
+                className={activeTab === "admin" ? "active" : ""}
+                onClick={() => setTab("admin")}
+              >
+                <LayoutDashboard size={19} /> Admin overview
+              </button>
+            )}
+          </nav>
+          <div className="sidebar-bottom">
+            <div className="identity-card">
+              <span className="avatar">{initials(session.user.name)}</span>
+              <div>
+                <strong>{session.user.name}</strong>
+                <span title={session.user.email}>{session.user.email}</span>
+              </div>
             </div>
+            <button
+              type="button"
+              className="new-event-link"
+              onClick={() =>
+                void run(async () => {
+                  await api("/auth/sign-out", "POST", {});
+                  setSentTo("");
+                  setState(null);
+                  setWorkspaceId(null);
+                })
+              }
+            >
+              <LogOut size={15} /> Sign out
+            </button>
           </div>
-          <button
-            type="button"
-            className="new-event-link"
-            onClick={() =>
-              void run(async () => {
-                await api("/auth/sign-out", "POST", {});
-                setSentTo("");
-                setState(null);
-                setWorkspaceId(null);
-              })
-            }
-          >
-            <LogOut size={15} /> Sign out
-          </button>
-        </div>
+        </MobileMenu>
       </aside>
       <div className="main-shell">
         <header className="topbar">
@@ -495,7 +498,18 @@ export function App() {
                   ? "Event administration"
                   : "Your event space"}
           </span>
-          <Badge tone={admin ? "green" : "neutral"}>{admin ? "Event admin" : "Participant"}</Badge>
+          {admin ? (
+            <button
+              type="button"
+              className="button small admin-entry"
+              aria-pressed={activeTab === "admin"}
+              onClick={() => setTab("admin")}
+            >
+              <ShieldCheck size={16} /> Event admin
+            </button>
+          ) : (
+            <Badge>Participant</Badge>
+          )}
         </header>
         <main>
           {error && (
