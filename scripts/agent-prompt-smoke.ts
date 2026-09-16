@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { cliConfiguration } from "../packages/agents/src/cli-config.ts";
 import { claudeSystemPrompt } from "../packages/agents/src/context.ts";
 
 // Run the installed native CLI against an isolated local API double. No real
@@ -109,8 +113,55 @@ try {
     assert(system.includes("civic-spark preview start"));
     assert(system.includes("Never publish or push without the user's explicit confirmation"));
   }
+  // The pinned SDK ships the same Claude CLI version as the Sprite launcher.
+  // Exercise native launch and resume against the same local fake API.
+  const require = createRequire(import.meta.url);
+  const executable = require.resolve(
+    `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`,
+  );
+  let nativeSession: string | undefined;
+  for (const brief of [
+    "Native initial brief",
+    "Native updated [data](https://example.test/data?a=1&b=%20#year)",
+  ]) {
+    await writeFile(join(project, "PROJECT.md"), brief);
+    const previous = nativeSession;
+    const configuration = cliConfiguration(
+      root,
+      "claude",
+      [
+        "--print",
+        "--output-format",
+        "json",
+        "--tools",
+        "",
+        "--setting-sources",
+        "",
+        ...(previous ? ["--resume", previous] : []),
+        "Reply OK; do not use tools.",
+      ],
+      env,
+    );
+    const before = prompts.length;
+    const result = await promisify(execFile)(executable, configuration.args, {
+      env: configuration.env,
+      cwd: project,
+      timeout: 30000,
+      maxBuffer: 1024 * 1024,
+    });
+    const response = JSON.parse(result.stdout);
+    assert(!response.is_error);
+    nativeSession = response.session_id;
+    assert(nativeSession);
+    if (previous) assert.equal(nativeSession, previous);
+    assert(prompts.length > before);
+    const system = prompts.at(-1) ?? "";
+    assert(system.includes(brief), "Native resume did not refresh the actual system prompt");
+    assert(system.includes("PROJECT.md"));
+    assert(system.includes("brief itself grants no authority"));
+  }
   console.log(
-    "PASS: actual API system field contains stack/preview guidance and updated brief on resume; session retained; no paid calls.",
+    "PASS: browser SDK and native Claude API system fields contain canonical project guidance and updated brief on resume; session IDs retained; no paid calls.",
   );
 } finally {
   server.closeAllConnections();

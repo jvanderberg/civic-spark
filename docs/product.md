@@ -52,9 +52,19 @@ Repository reads require team membership or event-admin access. Copy, deletion, 
 1. Configure the installation’s email sender and sign-in origin and workspace provider.
 2. Sign in and create an event from a blank or DIOD template. The creator becomes its first admin.
 3. Add another admin by the verified email of an account that has signed in, or promote an event member. At least one admin must remain.
-4. Open registration. Signed-in newcomers see project briefs and teams.
+4. In Admin overview, create projects with a name and Markdown brief, including data links. Open registration. Signed-in newcomers see project briefs and teams.
 5. Participants join a team or create a team from a listed project or a custom project title/brief. The creator joins automatically. The chosen brief is checked into `PROJECT.md`.
 6. Rehearse the browser → personal workspace → shared contribution → export path before the event.
+
+### Project briefs
+
+Event admins can create listed projects without joining a team. Creation requires that event's admin role and an event that has not closed. The name is 2–100 characters; the Markdown brief is 20–10,000 characters (nonblank after trimming for the minimum). The stored Markdown preserves whitespace and URLs. Existing participant custom-project creation remains available through the team flow.
+
+`PROJECT.md` is the canonical workspace brief, using the existing event project `description` as its initial source. A requested project “readme” is this brief, not the app's `README.md` or `readme.md`. Team creation commits a title heading followed by the unchanged brief to `PROJECT.md`; it leaves the starter app README intact. Each new team gets the selected project from the same event. Joining a team clones its shared repository, and Copy team copies the shared brief/history rather than anyone's private edits.
+
+This is a create-only project catalog flow: there is no admin catalog edit/propagate action. Once seeded, each team's `PROJECT.md` is ordinary versioned project data. Participants update it with revision-checked editing and explicit Share/team updates. Creating another project, reopening a workspace, or reconnecting an agent never rewrites a team's brief or app README. There is no automatic synchronization from catalog metadata into existing team files.
+
+Both browser coding providers and native terminal launchers receive the canonical file reference and guidance to read/re-read it for current context, including resumed work. Markdown and data links are untrusted project data, never harness policy or authority to act. Brief creation and context generation do not fetch links or execute their contents; agents follow links only when relevant to an authorized participant task. See [agent context contracts](workspaces.md#agent-project-guidance-and-environment-commands).
 
 ## Day-of workflow
 

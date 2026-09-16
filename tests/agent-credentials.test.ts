@@ -113,6 +113,8 @@ describe("native CLI credential sharing", () => {
       "--dangerously-skip-permissions",
       "--append-system-prompt-file",
       join(home, ".civic-spark-agent/workspace-context.md"),
+      "--system-prompt-snapshot",
+      "off",
       "--continue",
     ]);
     expect(JSON.stringify([opencode.args, claude.args])).not.toContain("fixture");

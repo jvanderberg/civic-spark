@@ -22,6 +22,7 @@ import type {
   TeamView,
 } from "../../../packages/domain/src/access-types.ts";
 import type { Contribution, Event } from "../../../packages/domain/src/types.ts";
+import { AdminProjects } from "./AdminProjects.tsx";
 import { AdminTeams } from "./AdminTeams.tsx";
 import { api } from "./api.ts";
 import { Badge, Empty, Field, initials, Modal } from "./components.tsx";
@@ -761,6 +762,7 @@ export function App() {
                       ))}
                     </div>
                   </section>
+                  <AdminProjects key={`projects-${eventId}`} event={event} refresh={refresh} />
                   <AdminTeams key={eventId} teams={teams} refresh={refresh} />
                 </>
               )}

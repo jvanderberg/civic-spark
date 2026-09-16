@@ -28,6 +28,8 @@ import {
   type Identity,
   identitySchema,
   type PortalState,
+  type ProjectInput,
+  projectInputSchema,
   type TeamInput,
   teamInputSchema,
   type Workspace,
@@ -243,6 +245,17 @@ export class EventService {
     const joined = this.joinTeam(actor, team.value.id);
     if (!joined.ok) return joined;
     return ok({ team: team.value, workspace: joined.value });
+  }
+  createProject(actor: Identity, eventId: string, input: ProjectInput) {
+    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const parsed = projectInputSchema.safeParse(input);
+    if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join(". "));
+    const event = this.engine.snapshot().events.find((event) => event.id === eventId);
+    if (!event) return fail("Event not found", 404);
+    if (event.status === "closed")
+      return fail("This event has ended. Projects are read-only.", 409);
+    const created = this.engine.addProject(eventId, parsed.data.name, parsed.data.brief);
+    return created.ok ? ok({ id: created.value }) : created;
   }
   joinTeam(actor: Identity, teamId: string): Result<Workspace> {
     const team = this.engine.snapshot().teams.find((t) => t.id === teamId && !t.deletedAt);

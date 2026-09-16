@@ -73,9 +73,25 @@ try {
   await adminPage.getByLabel("Location").fill("Oak Park Library");
   await adminPage.getByRole("button", { name: "Create event", exact: true }).click();
   await adminPage.getByRole("button", { name: "Open registration" }).click();
+  await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
+  const projectDialog = adminPage.getByRole("dialog", { name: "Create project", exact: true });
+  await projectDialog.getByLabel("Project name", { exact: true }).fill("Community connections");
+  const brief =
+    "# Community connections\n\n[Dataset](https://example.test/data.csv?year=2026&area=%20#source)\n\nExplore access to shared community spaces.\n";
+  await projectDialog.getByLabel("Project brief (Markdown)").fill(brief);
+  // Keyboard submission keeps the same accessible form path as touch.
+  await projectDialog.getByRole("button", { name: "Create project", exact: true }).focus();
+  await adminPage.keyboard.press("Enter");
+  await adminPage
+    .getByRole("status")
+    .filter({ hasText: "Created Community connections" })
+    .waitFor();
   await adminPage.getByRole("button", { name: "Explore projects", exact: true }).click();
   await adminPage.getByRole("button", { name: "Create a team", exact: true }).click();
   await adminPage.getByLabel("Team name").fill("Data neighbors");
+  await adminPage
+    .getByLabel("Project", { exact: true })
+    .selectOption({ label: "Community connections" });
   await adminPage.getByRole("button", { name: "Create and join team" }).click();
   await adminPage.getByRole("heading", { name: "Data neighbors", exact: true }).waitFor();
   await page.reload();
@@ -106,6 +122,10 @@ try {
   assert.equal(state.myWorkspaces.length, 2);
   const first = state.myWorkspaces[0];
   assert(first);
+  const inheritedBrief = await participant.request.get(
+    `${address}/api/workspaces/${first.id}/file?path=PROJECT.md`,
+  );
+  assert.equal((await inheritedBrief.json()).content, `# Community connections\n\n${brief}\n`);
   assert.equal(
     (await organizer.request.get(`${address}/api/workspaces/${first.id}/files`)).status(),
     404,
@@ -193,7 +213,7 @@ try {
     .click();
   await repository
     .getByRole("region", { name: "File preview", exact: true })
-    .getByText("# Where is business activity changing?", { exact: false })
+    .getByText("# Community connections", { exact: false })
     .waitFor();
   await repository.getByRole("button", { name: "Commit changes", exact: true }).click();
   await repository
@@ -326,9 +346,35 @@ try {
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByRole("button", { name: "Email me a sign-in link" }).waitFor();
   assert.equal((await participant.request.get(`${address}/api/state`)).status(), 401);
+  const anotherEvent = await organizer.request.post(`${address}/api/events`, {
+    data: {
+      name: "Another community event",
+      date: "2026-10-04",
+      timezone: "America/Chicago",
+      location: "Library",
+      capacity: 40,
+      budget: 20,
+      templateId: "blank",
+    },
+  });
+  assert(anotherEvent.ok());
+  await adminPage.reload();
+  await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
+  await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
+  await projectDialog
+    .getByLabel("Project name", { exact: true })
+    .fill("Unsent event-specific draft");
+  await projectDialog.getByLabel("Project brief (Markdown)").fill(brief);
+  await projectDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await adminPage.getByLabel("Select event").selectOption((await anotherEvent.json()).id);
+  await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
+  await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
+  assert.equal(await projectDialog.getByLabel("Project name", { exact: true }).inputValue(), "");
+  assert.equal(await projectDialog.getByLabel("Project brief (Markdown)").inputValue(), "");
+  await projectDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: separate authenticated admin/participant browsers; event ownership, discovery, custom project, two teams, private files, sharing/ZIP, admin promotion, confirmed event removal/team deletion, shared-only team copy, per-team commits/files/diffs and history-preserving restore, light/dark/mobile, logout, clean console. Email-link signup uses the real auth endpoints and a test-only mailbox; external email delivery requires provider credentials.",
+    "PASS: separate authenticated admin/participant browsers; event ownership, admin Markdown projects, brief inheritance, event-scoped draft isolation, discovery, custom project, two teams, private files, sharing/ZIP, admin promotion, confirmed event removal/team deletion, shared-only team copy, per-team commits/files/diffs and history-preserving restore, light/dark/mobile, logout, clean console. Email-link signup uses the real auth endpoints and a test-only mailbox; external email delivery requires provider credentials.",
   );
 } catch (error) {
   console.error({

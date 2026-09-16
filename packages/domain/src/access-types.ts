@@ -62,6 +62,16 @@ export type PortalState = {
   activity: { id: string; eventId: string; message: string; createdAt: string }[];
   capabilities: { sprites: boolean };
 };
+// Preserve Markdown whitespace and URLs exactly; trim only for validation.
+export const projectInputSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  brief: z
+    .string()
+    .max(10000, "Keep the project brief under 10,001 characters")
+    .refine((value) => value.trim().length >= 20, "Write a project brief of at least 20 characters")
+    .refine((value) => !value.includes("\0"), "Project briefs cannot contain null characters"),
+});
+export type ProjectInput = z.infer<typeof projectInputSchema>;
 export const teamInputSchema = z
   .object({
     eventId: z.string(),
