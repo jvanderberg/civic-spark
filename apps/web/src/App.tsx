@@ -263,7 +263,7 @@ export function App() {
   if (!session)
     return (
       <div className="login-shell">
-        <Empty title={error ? "Could not connect" : "Opening VibeHack…"}>
+        <Empty title={error ? "Could not connect" : "Opening your workspace…"}>
           {error || "Checking your session."}
         </Empty>
       </div>
@@ -272,7 +272,7 @@ export function App() {
     return (
       <div className="login-shell">
         <div className="login-brand">
-          <Leaf size={25} /> vibehack<span>.</span>
+          <Leaf size={25} /> Civic Spark
         </div>
         <section className="login-card">
           <span className="eyebrow">MAKE SOMETHING TOGETHER</span>
@@ -370,7 +370,7 @@ export function App() {
           <span className="brand-mark">
             <Leaf size={21} />
           </span>
-          vibehack<span className="brand-dot">.</span>
+          Civic Spark
         </a>
         <div className="sidebar-group">
           <p className="eyebrow">YOUR EVENT</p>
@@ -937,8 +937,8 @@ export function App() {
             }}
           >
             <p className="form-intro">
-              Enter the verified email they use to sign in to VibeHack. They don’t need to join a
-              team first.
+              Enter the verified email they use to sign in here. They don’t need to join a team
+              first.
             </p>
             <Field label="Admin email">
               <input name="email" type="email" required />

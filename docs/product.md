@@ -1,5 +1,9 @@
 # Accounts, events, teams, and workspaces
 
+## Naming and branding
+
+The repository is `civic-spark` and the provisional platform name is Civic Spark. Participant-facing branding should primarily use the event name, with modest platform identification. Existing `vibehack` runtime/configuration identifiers remain compatible.
+
 ## Product model
 
 A **user** normally has a verified email and stable internal identity. The explicit local prototype mode uses the entered email as its identity without verification, with separate data and session cookies. An **event membership** grants member or admin permissions within one event. A **team membership** connects a user to a team; users can have several. A **workspace** belongs to one user/team membership and has its own Sprite and checkout.

@@ -1,8 +1,12 @@
-# VibeHack
+# Civic Spark
 
-A browser platform for community hackathons. Sign in, create or find an event, join teams, and work in your own checkout of each team’s project.
+A browser platform for civic hackathons. The event name leads the participant experience; Civic Spark is the platform name. Sign in, create or find an event, join teams, and work in your own checkout of each team’s project.
 
 For the current checkpoint and next-session priorities, start with [the handoff](docs/handoff.md).
+
+Source: [jvanderberg/civic-spark](https://github.com/jvanderberg/civic-spark).
+
+Existing `VIBEHACK_*` settings, the `vibehack` runtime command, and saved workspace identifiers remain compatible.
 
 ## Start locally
 

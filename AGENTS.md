@@ -1,4 +1,6 @@
-# VibeHack contributor guide
+# Civic Spark contributor guide
+
+Use Civic Spark as the provisional platform name; keep branding modest and emphasize the event name in participant views. Preserve existing runtime/configuration identifiers unless a migration is explicitly needed.
 
 Provider portability is required. Do not assume Fly private networking; keep Git URLs configurable and use standard authenticated protocols. Read `docs/portability.md` before adding deployment or runtime dependencies.
 

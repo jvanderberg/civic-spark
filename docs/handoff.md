@@ -4,9 +4,9 @@ Checkpoint: September 15, 2026, America/Chicago. Local prototype; deployment rem
 
 ## Resume here
 
-Repository: `~/git/vibehack`. Portal: <http://127.0.0.1:4310>; API: <http://127.0.0.1:4311/api/health>. Development servers were left running. If stopped, run `npm run dev`; do not start a second server against the same data directory.
+Repository: `~/git/civic-spark` (`~/git/vibehack` remains a compatibility symlink for existing processes). Portal: <http://127.0.0.1:4310>; API: <http://127.0.0.1:4311/api/health>. Development servers were left running. If stopped, run `npm run dev`; do not start a second server against the same data directory.
 
-Read [AGENTS.md](../AGENTS.md), [the implementation plan](../IMPLEMENTATION_PLAN.md), and [workspace contracts](workspaces.md). Wikimemory page: `vibehack`. The repository is checkpointed locally; there is no configured Git remote or deployed Fly app.
+Read [AGENTS.md](../AGENTS.md), [the implementation plan](../IMPLEMENTATION_PLAN.md), and [workspace contracts](workspaces.md). Wikimemory page: `vibehack`. Public source repository: [jvanderberg/civic-spark](https://github.com/jvanderberg/civic-spark). The platform is provisionally named Civic Spark; event names should remain the primary branding. Existing runtime/config identifiers are unchanged. No deployed Fly app.
 
 ## Current behavior
 
