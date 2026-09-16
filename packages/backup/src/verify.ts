@@ -181,8 +181,7 @@ export function verifyTree(root: string, mode: "email" | "demo" | "prototype") {
     const path = join(root, entry.path.slice(5));
     if (
       entry.kind === "file" &&
-      entry.path.endsWith(".sqlite") &&
-      !entry.path.endsWith("/control-plane-writer.sqlite")
+      /^data\/(?:demo\/|prototype\/)?(?:auth|access|state)\.sqlite$/.test(entry.path)
     )
       sqliteCheck(path);
     if (entry.kind === "file" && entry.path.endsWith("/.git"))
@@ -208,16 +207,20 @@ export function verifyTree(root: string, mode: "email" | "demo" | "prototype") {
   return { ...stateInventory(root, mode), repositories };
 }
 export function invalidateAuthentication(root: string) {
-  for (const entry of inventory(root, "data")) {
-    if (entry.kind !== "file" || !entry.path.endsWith("/auth.sqlite")) continue;
-    const path = join(root, entry.path.slice(5));
+  // Only these three locations are application auth stores. A project may contain
+  // its own auth.sqlite with unrelated sessions; never interpret or mutate it.
+  for (const path of [
+    join(root, "auth.sqlite"),
+    join(root, "demo/auth.sqlite"),
+    join(root, "prototype/auth.sqlite"),
+  ]) {
+    if (!existsSync(path)) continue;
     if (!lstatSync(path).isFile()) throw new Error("Invalid auth store");
     const db = database(path, true);
     try {
       if (db.prepare("SELECT name FROM sqlite_master WHERE type='trigger'").all().length)
         throw new Error("Unexpected auth triggers require operator review");
       db.transaction(() => {
-        // Preserve users, accounts and signing/encryption material, revoke bearer sessions and login links.
         db.exec('DELETE FROM "session"; DELETE FROM "verification";');
       })();
       db.pragma("wal_checkpoint(TRUNCATE)");

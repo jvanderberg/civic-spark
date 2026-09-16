@@ -185,20 +185,26 @@ export async function createBackup(input: CreateOptions) {
   }
 }
 
+function manifestDigest(archive: string) {
+  const path = join(archive, "manifest.enc");
+  const info = lstatSync(path);
+  if (!info.isFile() || info.size > 256 * 1024 * 1024)
+    throw new Error("Manifest is not a bounded regular file");
+  return digest(readFileSync(path));
+}
+
 async function unpack(options: RestoreOptions, stage: string) {
-  const archive = realpathSync(options.archive);
+  const archive = resolve(options.archive);
+  // Check the requested path BEFORE canonicalization so links cannot impersonate copies.
   privateDirectory(archive);
   if (!existsSync(join(archive, "FINALIZED"))) throw new Error("Backup is partial, not finalized");
   for (const name of readdirSync(archive))
     if (!lstatSync(join(archive, name)).isFile())
       throw new Error("Archive contains a link or special entry");
-  if (
-    readFileSync(join(archive, "FINALIZED"), "utf8") !==
-    digest(readFileSync(join(archive, "manifest.enc")))
-  )
+  if (lstatSync(join(archive, "FINALIZED")).size !== 64)
+    throw new Error("Invalid finalized marker size");
+  if (readFileSync(join(archive, "FINALIZED"), "utf8") !== manifestDigest(archive))
     throw new Error("Backup manifest checksum mismatch");
-  if (lstatSync(join(archive, "manifest.enc")).size > 256 * 1024 * 1024)
-    throw new Error("Manifest exceeds recovery limit");
   const key = readKey(options.keyFile);
   try {
     const plain = join(stage, "manifest.json");
@@ -321,8 +327,8 @@ export const retentionSchema = z
 /** Explicit local retention only; every deletion requires a validated matching replica. */
 export async function pruneBackups(input: z.infer<typeof retentionSchema>) {
   const options = retentionSchema.parse(input);
-  const directory = realpathSync(options.directory);
-  const replicas = realpathSync(options.replicaDirectory);
+  const directory = resolve(options.directory);
+  const replicas = resolve(options.replicaDirectory);
   privateDirectory(directory);
   privateDirectory(replicas);
   if (contained(directory, replicas) || contained(replicas, directory))
@@ -330,11 +336,14 @@ export async function pruneBackups(input: z.infer<typeof retentionSchema>) {
   const candidates = retentionCandidates(directory, options.keep);
   for (const archive of candidates) {
     const replica = join(replicas, archive.slice(directory.length + 1));
-    if (
-      !readFileSync(join(archive, "manifest.enc")).equals(
-        readFileSync(join(replica, "manifest.enc")),
-      )
-    )
+    privateDirectory(replica);
+    if (!contained(replicas, realpathSync(replica)))
+      throw new Error("Replica escaped its directory");
+    const originalInfo = lstatSync(archive);
+    const replicaInfo = lstatSync(replica);
+    if (originalInfo.dev === replicaInfo.dev && originalInfo.ino === replicaInfo.ino)
+      throw new Error("Replica aliases the original archive");
+    if (manifestDigest(archive) !== manifestDigest(replica))
       throw new Error("Retention replica does not match the original backup");
     await restoreBackup(
       {

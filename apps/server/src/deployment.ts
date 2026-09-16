@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingHttpHeaders } from "node:http";
 import { BlockList, isIP } from "node:net";
 import { isAbsolute, join } from "node:path";
@@ -94,7 +94,14 @@ export function clientAddress(
 // A separate SQLite lock is released by the OS after SIGKILL. Never use a stale PID file.
 export function acquireWriter(root: string) {
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(join(root, "control-plane-writer.sqlite"));
+  const path = join(root, "control-plane-writer.sqlite");
+  try {
+    if (!lstatSync(path).isFile())
+      throw new Error("Writer lock must be a regular file, not a link");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const db = new DatabaseSync(path);
   try {
     db.exec("PRAGMA busy_timeout=0; BEGIN EXCLUSIVE");
   } catch {

@@ -678,3 +678,80 @@ it("backs up and resumes an empty installation without cloud credentials or call
   ).resolves.toMatchObject({ resumed: true, missingSprites: 0 });
   expect(request).not.toHaveBeenCalled();
 });
+
+it("refuses archive/replica symlinks before validation and preserves the sole original", async () => {
+  const { pruneBackups } = await import("../packages/backup/src/backup.ts");
+  const f = await fixture();
+  await createBackup(f.options);
+  const local = join(f.base, "retention");
+  const replicas = join(f.base, "replicas");
+  mkdirSync(local, { mode: 0o700 });
+  mkdirSync(replicas, { mode: 0o700 });
+  const first = "backup-2026-09-15T000000Z-aaaaaaaa";
+  const second = "backup-2026-09-16T000000Z-bbbbbbbb";
+  for (const name of [first, second]) {
+    cpSync(f.options.destination, join(local, name), { recursive: true });
+    chmodSync(join(local, name), 0o700);
+    symlinkSync(join(local, name), join(replicas, name));
+  }
+  await expect(restoreBackup({ ...f.restore, archive: join(replicas, first) })).rejects.toThrow(
+    "private directory",
+  );
+  await expect(
+    pruneBackups({
+      directory: local,
+      replicaDirectory: replicas,
+      keep: 1,
+      keyFile: f.options.keyFile,
+      installation: f.options.installation,
+    }),
+  ).rejects.toThrow("private directory");
+  expect(existsSync(join(local, first, "FINALIZED"))).toBe(true);
+  expect(existsSync(join(local, second, "FINALIZED"))).toBe(true);
+  const alias = join(f.base, "ancestor-alias");
+  symlinkSync(local, alias);
+  await expect(restoreBackup({ ...f.restore, archive: join(alias, first) })).rejects.toThrow(
+    "private directory",
+  );
+}, 30000);
+
+it("never interprets or revokes sessions in participant databases named auth.sqlite", async () => {
+  const f = await fixture();
+  const projectDb = join(f.active, "workspaces", f.workspace.id, "auth.sqlite");
+  const db = new Database(projectDb);
+  db.exec(
+    "CREATE TABLE project_data(value TEXT); INSERT INTO project_data VALUES('keep project data')",
+  );
+  db.close();
+  const integration = join(f.active, "integration/other-project");
+  mkdirSync(integration, { recursive: true });
+  const matchingDb = join(integration, "auth.sqlite");
+  const matched = new Database(matchingDb);
+  matched.exec(
+    "CREATE TABLE session(value TEXT); CREATE TABLE verification(value TEXT); INSERT INTO session VALUES('participant session'); INSERT INTO verification VALUES('participant verification')",
+  );
+  matched.close();
+  writeFileSync(
+    join(integration, "not-a-database.sqlite"),
+    "An opaque participant file with a database suffix",
+  );
+  await createBackup(f.options);
+  await restoreBackup(f.restore);
+  for (const path of [projectDb, matchingDb, join(integration, "not-a-database.sqlite")])
+    expect(readFileSync(join(f.restore.target, "data", path.slice(f.root.length + 1)))).toEqual(
+      readFileSync(path),
+    );
+  expect(sql(join(f.restore.target, "data/demo/auth.sqlite"), 'SELECT * FROM "session"')).toEqual(
+    [],
+  );
+});
+
+it("rejects a dangling writer-lock symlink before creating or opening its external target", async () => {
+  const f = await fixture();
+  const external = join(f.base, "never-created.sqlite");
+  symlinkSync(external, join(f.root, "control-plane-writer.sqlite"));
+  expect(() => acquireWriter(f.root)).toThrow("regular file");
+  await expect(createBackup(f.options)).rejects.toThrow("regular file");
+  expect(existsSync(external)).toBe(false);
+  expect(existsSync(`${external}-journal`)).toBe(false);
+});
