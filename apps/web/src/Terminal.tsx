@@ -23,6 +23,10 @@ export function Terminal({
   activity.current = { visible };
   const controls = useRef({ open: () => {}, retry: () => {}, disconnect: () => {} });
   const terminalRef = useRef<Xterm | null>(null);
+  const touch = useRef<{ x: number; y: number; started: number } | null>(null);
+  const focusInput = () => {
+    if (connected) terminalRef.current?.focus();
+  };
   const theme = useSystemTheme();
   const palette = useMemo(
     () =>
@@ -67,7 +71,34 @@ export function Terminal({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current);
+    // Keep xterm's native input/IME path. Mobile keyboards need an editable
+    // textarea focused synchronously from a gesture, not after tool preparation.
+    terminal.textarea?.setAttribute("inputmode", "text");
+    const beforeInput = (event: InputEvent) => {
+      // Some virtual keyboards supply edit intentions without keydown. Xterm
+      // handles text and composition itself, but only recognizes insertText in
+      // its input listener. Cancel these edits so its keyCode=229 fallback cannot
+      // also send the textarea mutation. Hardware keys are canceled by xterm
+      // before beforeinput; composing text must remain entirely under its care.
+      if (!event.cancelable || event.isComposing || socket?.readyState !== WebSocket.OPEN) return;
+      const data =
+        event.inputType === "deleteContentBackward"
+          ? "\x7f"
+          : ["insertLineBreak", "insertParagraph"].includes(event.inputType)
+            ? "\r"
+            : null;
+      if (data) {
+        event.preventDefault();
+        terminal.input(data, true);
+      }
+    };
+    terminal.textarea?.addEventListener("beforeinput", beforeInput);
     terminalRef.current = terminal;
+    const focusDesktopInput = () => {
+      // Automatic focus cannot summon a phone keyboard and may steal focus on
+      // reconnect. Touch users focus directly with a tap or the keyboard action.
+      if (!window.matchMedia("(pointer: coarse)").matches) terminal.focus();
+    };
     setConnected(false);
     setBusy(false);
     setStatus("Disconnected");
@@ -156,7 +187,7 @@ export function Terminal({
           // The server replays its shell buffer when reattaching.
           terminal.reset();
           resize();
-          if (activity.current.visible) terminal.focus();
+          if (activity.current.visible) focusDesktopInput();
         };
         connection.onmessage = (event) => {
           if (socket !== connection || disposed) return;
@@ -190,7 +221,7 @@ export function Terminal({
       open: () => {
         manuallyDisconnected = false;
         resize();
-        if (socket?.readyState === WebSocket.OPEN) terminal.focus();
+        if (socket?.readyState === WebSocket.OPEN) focusDesktopInput();
         else void connect();
       },
       retry: () => {
@@ -234,6 +265,7 @@ export function Terminal({
         socket.close();
       }
       input.dispose();
+      terminal.textarea?.removeEventListener("beforeinput", beforeInput);
       observer.disconnect();
       terminal.dispose();
       terminalRef.current = null;
@@ -252,24 +284,74 @@ export function Terminal({
             when you close this view.
           </p>
         </div>
-        <button
-          type="button"
-          className="button primary"
-          disabled={!available || busy}
-          onClick={() => {
-            if (connected) controls.current.disconnect();
-            else controls.current.retry();
-          }}
-        >
-          {connected ? "Disconnect" : busy ? "Connecting…" : "Reconnect terminal"}
-        </button>
+        <div className="button-row terminal-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={!connected}
+            onClick={() => {
+              // A dismissed phone keyboard can leave the textarea active.
+              // Refocus during this same gesture to request the keyboard again.
+              terminalRef.current?.blur();
+              focusInput();
+            }}
+          >
+            Type in terminal
+          </button>
+          <button
+            type="button"
+            className="button primary"
+            disabled={!available || busy}
+            onClick={() => {
+              if (connected) controls.current.disconnect();
+              else controls.current.retry();
+            }}
+          >
+            {connected ? "Disconnect" : busy ? "Connecting…" : "Reconnect terminal"}
+          </button>
+        </div>
       </div>
       {!available ? (
         <p role="status">A running Sprite and an open event are required for terminal access.</p>
       ) : (
         <p role="status">{status}</p>
       )}
-      <div ref={host} className="sprite-terminal" />
+      <div
+        ref={host}
+        className="sprite-terminal"
+        onTouchStart={(event) => {
+          const first = event.touches[0];
+          touch.current =
+            event.touches.length === 1 && first
+              ? { x: first.clientX, y: first.clientY, started: Date.now() }
+              : null;
+        }}
+        onTouchMove={(event) => {
+          const first = event.touches[0];
+          if (
+            !first ||
+            (touch.current &&
+              Math.hypot(first.clientX - touch.current.x, first.clientY - touch.current.y) > 10)
+          )
+            touch.current = null;
+        }}
+        onTouchCancel={() => {
+          touch.current = null;
+        }}
+        onTouchEnd={(event) => {
+          const tap = touch.current;
+          touch.current = null;
+          // Leave scrolling, long-press selection, links and pinch zoom to xterm/browser.
+          if (
+            tap &&
+            !event.touches.length &&
+            Date.now() - tap.started < 400 &&
+            !terminalRef.current?.hasSelection() &&
+            !(event.target instanceof Element && event.target.closest("a"))
+          )
+            focusInput();
+        }}
+      />
     </section>
   );
 }
