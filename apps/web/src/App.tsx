@@ -38,7 +38,7 @@ const adminSections: { id: AdminSection; label: string }[] = [
   { id: "teams", label: "Teams" },
   { id: "people", label: "People & roles" },
 ];
-type Tab = "discover" | "teams" | "admin" | "schedule";
+type Tab = "discover" | "all-teams" | "teams" | "admin" | "schedule";
 const nextStatus = {
   draft: "registration",
   registration: "live",
@@ -226,6 +226,36 @@ export function App() {
       setTab("teams");
     });
   }
+  function teamActions(team: TeamView) {
+    return (
+      <>
+        {team.joined ? (
+          <button type="button" className="button primary" onClick={() => openTeam(team)}>
+            <FolderOpen size={16} /> Open my workspace
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button"
+            disabled={busy || !canJoin}
+            onClick={() =>
+              void run(async () => {
+                await api(`/teams/${team.id}/join`, "POST");
+                setTab("teams");
+              })
+            }
+          >
+            Join team <ArrowRight size={15} />
+          </button>
+        )}
+        {team.joined && (
+          <a className="text-link" href={`/api/teams/${team.id}/export`}>
+            Team ZIP
+          </a>
+        )}
+      </>
+    );
+  }
   function teamCard(team: TeamView) {
     return (
       <article className="team-card" key={team.id}>
@@ -244,32 +274,7 @@ export function App() {
           <Users size={15} />
           <span>{team.memberNames.join(", ") || "Be the first to join"}</span>
         </div>
-        <footer>
-          {team.joined ? (
-            <button type="button" className="button primary" onClick={() => openTeam(team)}>
-              <FolderOpen size={16} /> Open my workspace
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="button"
-              disabled={busy || !canJoin}
-              onClick={() =>
-                void run(async () => {
-                  await api(`/teams/${team.id}/join`, "POST");
-                  setTab("teams");
-                })
-              }
-            >
-              Join team <ArrowRight size={15} />
-            </button>
-          )}
-          {team.joined && (
-            <a className="text-link" href={`/api/teams/${team.id}/export`}>
-              Team ZIP
-            </a>
-          )}
-        </footer>
+        <footer>{teamActions(team)}</footer>
       </article>
     );
   }
@@ -473,6 +478,14 @@ export function App() {
               onClick={() => setTab("discover")}
             >
               <Compass size={19} /> Explore projects
+            </button>
+            <button
+              type="button"
+              className={activeTab === "all-teams" ? "active" : ""}
+              aria-current={activeTab === "all-teams" ? "page" : undefined}
+              onClick={() => setTab("all-teams")}
+            >
+              <Users size={19} /> Teams
             </button>
             <button
               type="button"
@@ -687,8 +700,8 @@ export function App() {
                     <div>
                       <h2>Find your people. Pick a project.</h2>
                       <p>
-                        Join a team already exploring an idea, or start one of your own. You can
-                        belong to more than one team.
+                        Choose an idea to start a team, or browse Teams to find people already
+                        working on a project.
                       </p>
                     </div>
                   </section>
@@ -729,24 +742,44 @@ export function App() {
                       ))}
                     </div>
                   </section>
-                  <section className="section">
-                    <div className="section-heading">
-                      <div>
-                        <h2>Teams you can join</h2>
-                        <p>
-                          Every team has a shared project and personal workspaces for its members.
-                        </p>
-                      </div>
-                    </div>
-                    {teams.length ? (
-                      <div className="team-grid">{teams.map(teamCard)}</div>
-                    ) : (
-                      <Empty title="Start the first team">
-                        Choose a project above, or create a team with your own project brief.
-                      </Empty>
-                    )}
-                  </section>
                 </>
+              )}
+              {activeTab === "all-teams" && (
+                <section className="section" aria-labelledby="event-teams-heading">
+                  <div className="section-heading">
+                    <div>
+                      <h2 id="event-teams-heading">Teams</h2>
+                      <p>Find a team working on a project, or open your own workspace.</p>
+                    </div>
+                  </div>
+                  {teams.length ? (
+                    // biome-ignore lint/a11y/noNoninteractiveTabindex: Scrollable list supports keyboard scrolling.
+                    <section className="team-list" aria-label="Event teams" tabIndex={0}>
+                      <ul>
+                        {teams.map((team) => (
+                          <li className="team-list-row" key={team.id}>
+                            <div className="team-list-project">
+                              <h3>{team.name}</h3>
+                              <p>{team.projectName}</p>
+                            </div>
+                            <div className="team-list-members">
+                              <span>
+                                {team.memberCount} {team.memberCount === 1 ? "member" : "members"}
+                                {team.joined && " · Your team"}
+                              </span>
+                              <p>{team.memberNames.join(", ") || "Be the first to join"}</p>
+                            </div>
+                            <div className="team-list-actions">{teamActions(team)}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : (
+                    <Empty title="Start the first team">
+                      Choose a project in Explore projects, or create a team with your own brief.
+                    </Empty>
+                  )}
+                </section>
               )}
               {activeTab === "teams" && (
                 <>
@@ -765,7 +798,8 @@ export function App() {
                       <div className="team-grid">{myTeams.map(teamCard)}</div>
                     ) : (
                       <Empty title="You haven’t joined a team yet">
-                        Explore the projects to join an existing team or start your own.
+                        Browse Teams to join an existing team, or explore projects to start your
+                        own.
                       </Empty>
                     )}
                   </section>

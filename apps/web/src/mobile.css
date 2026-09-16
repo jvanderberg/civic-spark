@@ -441,6 +441,7 @@ body:has(.workspace-screen) {
   }
   .sidebar .main-nav button {
     min-height: 44px;
+    padding: 10px 12px;
     font-size: 16px;
     white-space: normal;
     text-align: left;

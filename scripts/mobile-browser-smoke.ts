@@ -18,6 +18,7 @@ import {
 import { verifySiteEventPortal } from "./browser-site-event.ts";
 import { verifyKeyboardViewport } from "./keyboard-browser-smoke.ts";
 import { verifyLifecyclePortal } from "./lifecycle-browser-smoke.ts";
+import { verifyTeamsPortal } from "./teams-browser-smoke.ts";
 
 // Disposable local APIs and deterministic Sprite transports; never runs participant
 // code or contacts a paid agent. Touch emulation does not claim physical-device QA.
@@ -227,7 +228,19 @@ try {
     await page.getByLabel("Project", { exact: true }).inputValue(),
     projectState.events[0]?.projects.find((p) => p.name === "Neighborhood data")?.id,
   );
-  await inViewport(page.getByRole("button", { name: "Create and join team" }));
+  for (const [width, height] of [
+    [390, 844],
+    [900, 390],
+    [360, 780],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.getByLabel("Team name").focus();
+    assert.equal(
+      await page.getByLabel("Team name").inputValue(),
+      "Neighborhood access and community connections",
+    );
+    await inViewport(page.getByRole("button", { name: "Create and join team" }));
+  }
   await capture("360-create-team");
   await page.getByRole("button", { name: "Create and join team" }).tap();
   await capture("360-my-teams");
@@ -435,3 +448,5 @@ await verifyKeyboardViewport();
 await verifyLifecyclePortal();
 
 await verifyAdminProjects();
+
+await verifyTeamsPortal();

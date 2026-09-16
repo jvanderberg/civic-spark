@@ -154,7 +154,7 @@ export async function verifyAdminProjects() {
           );
         assert.deepEqual(
           (await portal.locator("button").allTextContents()).map((text) => text.trim()),
-          ["Explore projects", "My teams 0", "Event schedule", "Admin", ...childNames],
+          ["Explore projects", "Teams", "My teams 0", "Event schedule", "Admin", ...childNames],
         );
         assert.equal(await page.getByRole("button", { name: "Overview", exact: true }).count(), 0);
         assert.equal(
@@ -254,6 +254,11 @@ export async function verifyAdminProjects() {
         await page.screenshot({ path: join(artifacts, `${theme}-${width}-${height}-edit.png`) });
         await dialog.getByRole("button", { name: "Close", exact: true }).click();
         await openAdminSection(page, "Teams");
+        await openPortalMenu(page);
+        await page
+          .locator(".main-nav:not(.admin-nav) > button")
+          .filter({ hasText: /^\s*Teams\s*$/ })
+          .click();
         await openPortalMenu(page);
         await page.getByRole("button", { name: "Explore projects", exact: true }).click();
         await openAdminSection(page, "Projects");

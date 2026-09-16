@@ -108,12 +108,25 @@ try {
   await adminPage.getByRole("button", { name: "Create and join team" }).click();
   await adminPage.getByRole("heading", { name: "Data neighbors", exact: true }).waitFor();
   await page.reload();
-  await page.getByRole("heading", { name: "Teams you can join" }).waitFor();
+  assert.equal(await page.locator(".team-list, .team-card").count(), 0);
+  await openPortalMenu(page);
+  await page
+    .locator(".main-nav:not(.admin-nav) > button")
+    .filter({ hasText: /^\s*Teams\s*$/ })
+    .click();
+  await page.getByRole("region", { name: "Event teams", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Admin", exact: true }).count(), 0);
   await page.screenshot({ path: join(artifacts, "participant-discovery.png"), fullPage: true });
-  await verifyProjectBrief(page, page.locator(".team-card"), "Join team", artifacts, "team");
+
   await page.getByRole("button", { name: "Join team", exact: true }).click();
   await page.getByRole("button", { name: "Open my workspace", exact: true }).waitFor();
+  await verifyProjectBrief(
+    page,
+    page.locator(".team-card"),
+    "Open my workspace",
+    artifacts,
+    "team",
+  );
   await page.getByRole("button", { name: "Create a team", exact: true }).click();
   await page.getByLabel("Team name").fill("Library connections");
   await page.getByLabel("Project", { exact: true }).selectOption("custom");

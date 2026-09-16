@@ -106,6 +106,21 @@ export async function verifySiteEventPortal() {
         );
         assert.equal(await page.getByText(other.event.name, { exact: true }).count(), 0);
         assert.equal(await page.locator(".brand").innerText(), pinned.event.name);
+        assert.equal(await page.locator(".team-list, .team-card").count(), 0);
+        await openPortalMenu(page);
+        await page
+          .locator(".main-nav:not(.admin-nav) > button")
+          .filter({ hasText: /^\s*Teams\s*$/ })
+          .tap();
+        await page.getByRole("region", { name: "Event teams", exact: true }).waitFor();
+        assert.equal(await page.locator(".team-list-row").count(), 1);
+        await page
+          .getByRole("heading", { name: `${pinned.event.name} team`, exact: true })
+          .waitFor();
+        assert.equal(await page.getByText(`${other.event.name} team`, { exact: true }).count(), 0);
+        await page.screenshot({ path: join(artifacts, `teams-${width}-${height}-${theme}.png`) });
+        await openPortalMenu(page);
+        await page.getByRole("button", { name: "Explore projects", exact: true }).tap();
         assert.equal(await page.getByRole("button", { name: "Admin" }).count(), 0);
         assert.equal(
           await page.getByRole("button", { name: "Event admin", exact: true }).count(),

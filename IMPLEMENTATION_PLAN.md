@@ -4,9 +4,10 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 
 ## Current participant workflow requests
 
-- [ ] Add a main-menu Teams destination for existing event teams, moving discovery out of the bottom of Projects; retain My teams and separate Admin Teams.
+- [x] Add a main-menu Teams destination for existing event teams, moving discovery out of the bottom of Projects; retain My teams and separate Admin Teams.
 - [ ] Make fresh team checkout Launch prepare project dependencies and run the shared demo without a coding agent/model/key; visible preparation and retry, all execution inside owner Sprite, lifecycle gates preserved.
-- [ ] Review, integrate, push and deploy both tested changes; no live participant code/resource mutation during development.
+- [ ] Add screenshot paste/file-picker attachments to the agent composer with actual multimodal provider delivery, validated bounded private history and mobile checks.
+- [ ] Deploy Teams and complete/integrate/deploy preview preparation and image-paste work; no live participant code/resource mutation during development.
 
 ## Admin feedback integration — September 16, 2026
 
@@ -45,6 +46,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 - [x] Server-enforced event roles and owner-only workspace access
 - [x] Main portal Menu for phone/short viewports, retained desktop sidebar, and actionable Event admin entry; existing event roles unchanged
 - [x] Signed-in discovery, existing teams, new teams, custom project briefs
+- [x] Separate participant Teams destination with compact event-scoped project/member rows and existing join/open actions; Explore projects contains only projects, while My teams and Admin → Teams retain their scopes
 - [x] Optional runtime-pinned single-event portal, event-first branding, scoped discovery/workspace navigation and validated Fly setup setting; multi-event domain retained
 - [x] Admin console sections for Sprites, Projects, Teams and People/roles; team membership removal and shared repository downloads remain accessible
 - [x] Revision-checked event-admin catalog editing by stable project ID, exact Markdown persistence, stale-draft recovery and no writes to existing team files/history
