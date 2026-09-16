@@ -6,7 +6,7 @@ For the current checkpoint and next-session priorities, start with [the handoff]
 
 Source: [jvanderberg/civic-spark](https://github.com/jvanderberg/civic-spark).
 
-Existing `VIBEHACK_*` settings, the `vibehack` runtime command, and saved workspace identifiers remain compatible.
+Configuration uses `CIVIC_SPARK_*` settings and the Sprite runtime command is `civic-spark`. This is a breaking namespace change; existing installations require an explicit [migration](docs/rename-migration.md) before reconnecting saved workspaces.
 
 ## Start locally
 
@@ -18,9 +18,9 @@ cp .env.example .env
 npm run dev
 ```
 
-Open **http://127.0.0.1:4310**. For a local UI rehearsal, set `VIBEHACK_AUTH_MODE=prototype` in `.env` and restart. Enter any email to create or resume that prototype identity; sign out and use another email to try another person's view. Prototype mode uses separate `.data/prototype/` storage and cookies, accepts only loopback access, and visibly labels the app. Existing real-auth data is preserved.
+Open **http://127.0.0.1:4310**. For a local UI rehearsal, set `CIVIC_SPARK_AUTH_MODE=prototype` in `.env` and restart. Enter any email to create or resume that prototype identity; sign out and use another email to try another person's view. Prototype mode uses separate `.data/prototype/` storage and cookies, accepts only loopback access, and visibly labels the app. Existing real-auth data is preserved.
 
-For verified sign-in, use `VIBEHACK_AUTH_MODE=email` (the default) and configure SMTP or Resend using [sign-in setup](docs/authentication.md). Prototype identities are not promoted into verified accounts.
+For verified sign-in, use `CIVIC_SPARK_AUTH_MODE=email` (the default) and configure SMTP or Resend using [sign-in setup](docs/authentication.md). Prototype identities are not promoted into verified accounts.
 
 ## The experience
 
@@ -33,7 +33,7 @@ For verified sign-in, use `VIBEHACK_AUTH_MODE=email` (the default) and configure
 
 ## Sprites
 
-Authenticate the official `sprite` CLI and set `VIBEHACK_ENABLE_SPRITES=1`. Optional `VIBEHACK_SPRITE_ORG` selects an organization. Opening a team workspace for the first time prepares a dedicated Sprite using the organizer’s configured account, uploads its committed team checkout, and then displays the real remote filesystem. Reopening uses the same Sprite.
+Authenticate the official `sprite` CLI and set `CIVIC_SPARK_ENABLE_SPRITES=1`. Optional `CIVIC_SPARK_SPRITE_ORG` selects an organization. Opening a team workspace for the first time prepares a dedicated Sprite using the organizer’s configured account, uploads its committed team checkout, and then displays the real remote filesystem. Reopening uses the same Sprite.
 
 The remote browser/editor supports text and CSV files, rejects stale saves and path escapes, and checks the authenticated owner before every operation. Files live at `/home/sprite/project`. Team Git uses independent clones, not cross-VM filesystem worktrees.
 
@@ -47,7 +47,7 @@ When Sprites are disabled, the same membership permissions apply to local checko
 - **Changes:** refreshes a diff against the last synchronized team baseline, including changes committed by an agent and new/deleted files.
 - **Agent:** Fixed Opus 5 (Anthropic key) or GLM (OpenRouter key), with streaming Markdown, compact tool activity, questions, and stop/reconnect. The chat uses copied and adapted T3 Code components under the MIT license. Connect runs a locked, scripted installation and verifies executable health inside the Sprite. Model readiness waits for the runtime and key check. Keys and fixed model defaults are saved privately in the Sprite for both browser and terminal use. Both harnesses bypass tool permissions; no model calls happen on connect. Refresh/reopen restores your project, model, conversation, and active session automatically. Saved keys stay hidden unless missing or their provider fails; reconnect retries the saved key. Active turns use the T3 elapsed-time and animated activity indicators.
 - **Terminal:** xterm.js connects through the authenticated API to the Sprite CLI and a persistent tmux shell. Tools execute inside the Sprite. Opening the terminal prepares the same agent tools. No SSH setup needed.
-- **Local folder:** Chrome/Edge users grant folder access and review initial changes. The single Sync now action transfers changes in both directions. Later nonconflicting saves sync while the workspace remains open and the page active. Conflicts and deletions require review. Reconnect the same folder after reopening; `.vibehack-sync.json` retains its workspace binding and baseline.
+- **Local folder:** Chrome/Edge users grant folder access and review initial changes. The single Sync now action transfers changes in both directions. Later nonconflicting saves sync while the workspace remains open and the page active. Conflicts and deletions require review. Reconnect the same folder after reopening; `.civic-spark-sync.json` retains its workspace binding and baseline.
 
 Sync supports project files up to 25 MiB each, 50 MiB total, and 5,000 files. Hidden paths, credentials, dependencies, caches, build output, symlinks, and nonportable filenames are excluded or rejected. Unsupported browsers can use file upload/download. Local folder sync is separate from sharing changes with the team. See [workspace implementation](docs/workspaces.md) for boundaries and verification limits.
 
@@ -74,11 +74,11 @@ Explicit cloud checks:
 # Creates and retains one dedicated test Sprite; makes zero model calls.
 npm run test:sprite -- --live
 # Uses an existing dedicated test Sprite, temporarily edits README, and restores it.
-npm run test:remote-files -- --sprite vibehack-smoke-NAME
+npm run test:remote-files -- --sprite civic-spark-smoke-NAME
 # Existing test Sprite only; installs pinned agent tools, tests terminal/runner reconnect, no model calls.
-npm run test:workspace-live -- --sprite vibehack-smoke-NAME
+npm run test:workspace-live -- --sprite civic-spark-smoke-NAME
 # Verify or repair an existing workspace runtime with the same setup used by the UI.
-npm run setup:sprite -- --sprite vibehack-NAME
+npm run setup:sprite -- --sprite civic-spark-NAME
 ```
 
 ## Storage and limits

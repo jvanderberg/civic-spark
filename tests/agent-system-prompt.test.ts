@@ -9,7 +9,7 @@ import { expect, it } from "vitest";
 import { claudeSystemPrompt } from "../packages/agents/src/context.ts";
 
 it("sends fresh guidance and disables prompt snapshots across the real SDK resume boundary", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-prompt-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-prompt-"));
   const project = join(root, "project");
   mkdirSync(project);
   const session = "ae5f4a33-3d36-4fa6-b7f7-d82fc8f4d707";
@@ -77,7 +77,7 @@ it("sends fresh guidance and disables prompt snapshots across the real SDK resum
       expect(initialized?.appendSystemPrompt).toContain(
         "React + TypeScript + Vite + Tailwind CSS + Biome",
       );
-      expect(initialized?.appendSystemPrompt).toContain("vibehack preview start");
+      expect(initialized?.appendSystemPrompt).toContain("civic-spark preview start");
       expect(initialized?.appendSystemPrompt).toContain("360px and 390px phone widths");
       expect(initialized?.appendSystemPrompt).toContain("on-screen keyboard");
       expect(initialized?.appendSystemPrompt).toContain(

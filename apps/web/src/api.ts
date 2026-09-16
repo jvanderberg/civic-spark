@@ -13,7 +13,7 @@ export async function api<T>(path: string, method = "GET", body?: object): Promi
       "The connection was interrupted while receiving the response. Check the workspace status before retrying.",
     );
   }
-  const unavailable = `The VibeHack server returned ${response.ok ? "an incomplete response" : `HTTP ${response.status}`}. Check the workspace status before retrying.`;
+  const unavailable = `The Civic Spark server returned ${response.ok ? "an incomplete response" : `HTTP ${response.status}`}. Check the workspace status before retrying.`;
   if (!text.trim()) throw new Error(unavailable);
   let result: unknown;
   try {

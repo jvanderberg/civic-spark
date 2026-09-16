@@ -1,10 +1,10 @@
 # Prototype evidence
 
-This is a chronological evidence log. Earlier counts and limitations describe their revision, not the current implementation. Start with [the current handoff](handoff.md) for status and remaining verification.
+This is a chronological evidence log. Earlier counts and limitations describe their revision, not the current implementation. Start with [the current handoff](handoff.md) for status and remaining verification. Historical cloud resource names are omitted; existing resources and ignored evidence directories retain their original names. Current command examples use the new namespace and require a dedicated compatible fixture; this source rename did not rerun live checks or migrate resources.
 
 ## Sprite transport
 
-A live test created the dedicated Sprite `vibehack-smoke-mu345odi` using the existing authenticated CLI. Existing Sprites were not modified.
+A live test created a dedicated smoke Sprite using the existing authenticated CLI. Existing Sprites were not modified.
 
 - Confirmed remote working directory `/home/sprite`.
 - Seeded `/home/sprite/project` from a Git bundle generated on the Mac.
@@ -13,7 +13,7 @@ A live test created the dedicated Sprite `vibehack-smoke-mu345odi` using the exi
 - Returned commit matched: `bef759a4101f5a029aa4b8ca67ea1310624099eb`.
 - No model calls, no public Mac tunnel, no GitHub repository, no hosted Git endpoint.
 
-The test Sprite is retained for inspection. Local bundles, repository, and machine-readable report are under `.data/sprite-smoke/vibehack-smoke-mu345odi/` and excluded from source control. Resource usage is not measured by this test; zero model calls does not mean zero Sprite infrastructure cost.
+The test Sprite was retained for inspection. Local bundles, repository, and machine-readable report are under its original resource-named directory within `.data/sprite-smoke/` and excluded from source control. Resource usage is not measured by this test; zero model calls does not mean zero Sprite infrastructure cost.
 
 Reproduce with `npm run test:sprite -- --live`; each invocation creates another named Sprite.
 
@@ -29,7 +29,7 @@ Verified in this implementation session: seven behavioral/API tests passed, prod
 
 The anonymous organizer UI is superseded by sign-in, project/team discovery, My teams, and an event-admin view. The browser test now uses separate admin/participant sessions backed by real signed cookies in disposable databases. It verifies multiple team membership, custom project briefs, owner-only files, contribution/ZIP, admin promotion, membership revocation, mobile layout, and logout. It does not fake Google/Apple redirects.
 
-The existing `vibehack-smoke-mu345odi` was also used to verify the authenticated file API against its real filesystem: list/read/save/reread, other-account rejection, stale-write rejection, and hidden metadata rejection. The temporary README change was restored. No model calls or new Sprites were used for this file test.
+The same dedicated smoke Sprite was also used to verify the authenticated file API against its real filesystem: list/read/save/reread, other-account rejection, stale-write rejection, and hidden metadata rejection. The temporary README change was restored. No model calls or new Sprites were used for this file test.
 
 ## Email-link revision
 
@@ -45,7 +45,7 @@ Explicit local prototype mode now accepts an email without mailbox verification,
 
 New workspace views implement files, live diffs, agent adapters, a browser terminal, and local folder sync. All 45 automated tests, Biome, strict TypeScript, and the build passed. Both browser checks passed. The workspace check used real Chromium FileSystem handles and a substituted OS picker: initial copy, two-way updates, repeated automatic saves after creating a new file, conflict choice, deletion review, preserved unsaved browser edits, returning account/team, and mobile layout. Changes, conflict, and mobile screenshots were inspected. Native Windows/macOS picker testing remains outstanding.
 
-The existing dedicated `vibehack-smoke-mu345odi` passed remote manifest/revision/diff checks, agent runner startup/reconnect, a real terminal command, and persistence of a shell variable across terminal reconnection. The temporary project file and tmux test session were removed. Pinned agent tools remain installed in the test Sprite. Zero model calls were made; actual Claude/OpenCode model-turn behavior is not claimed as verified.
+The existing dedicated smoke Sprite passed remote manifest/revision/diff checks, agent runner startup/reconnect, a real terminal command, and persistence of a shell variable across terminal reconnection. The temporary project file and tmux test session were removed. Pinned agent tools remained installed in the test Sprite. Zero model calls were made; actual Claude/OpenCode model-turn behavior is not claimed as verified.
 
 ## Full-screen workspace and runtime repair
 
@@ -115,7 +115,7 @@ Incoming team changes use ancestry-aware polling and a top-bar menu. Local Git/P
 
 Combined `npm run check` passed 90 tests across 21 files plus Biome, strict application/runtime TypeScript checks and production build. Main portal, workspace/folder-sync, terminal and Changes browser flows passed. Actual Claude inference and the native Windows folder-picker matrix remain unverified.
 
-Final dedicated Sprite incoming-update rehearsal passed through real SpriteClient upload and response validation in an isolated temporary project: ancestry polling, clean divergent merge, unchanged conflict preview, durable agent-merge setup/verification, and backed-up replacement. The test did not call a model or modify user projects. The full browser handoff from Team updates through Workspace to the selected ready Claude adapter sent exactly one mocked request and verified the original Git hashes on completion. `scripts/team-updates-live-smoke.ts --sprite vibehack-smoke-NAME` reproduces the explicit live transport check.
+Final dedicated Sprite incoming-update rehearsal passed through real SpriteClient upload and response validation in an isolated temporary project: ancestry polling, clean divergent merge, unchanged conflict preview, durable agent-merge setup/verification, and backed-up replacement. The test did not call a model or modify user projects. The full browser handoff from Team updates through Workspace to the selected ready Claude adapter sent exactly one mocked request and verified the original Git hashes on completion. `scripts/team-updates-live-smoke.ts --sprite civic-spark-smoke-NAME` reproduces the explicit live transport check.
 
 ## Local-folder sync correction
 
@@ -129,7 +129,7 @@ Follow-up browser verification passed: one-click initial sync and a later batch 
 
 Changes/main/team-update browser flows passed after the compact UI/toast revision. File-toolbar browser tests passed for six icons, keyboard upload, create/download/save/shortcut, dirty reload confirmation, delete confirmation/stale-revision rejection and outsider denial across desktop/mobile and both themes. Terminal browser checks passed automatic opening, existing connection reuse, refresh, bounded retries, explicit disconnect and denied access. Reconnect regression first reproduced the historical-error flash and then verified its removal while preserving live credential errors. No paid inference was used.
 
-Final combined follow-up verification: `npm run check` passed 92 tests across 21 files, repository Biome, strict app/runtime TypeScript checks and production build. All associated browser checks described above passed against the current source. No deployment or VibeHack repository commit was made.
+Final combined follow-up verification: `npm run check` passed 92 tests across 21 files, repository Biome, strict app/runtime TypeScript checks and production build. All associated browser checks described above passed against the current source. No deployment or Civic Spark repository commit was made.
 
 ## Agent environment, Git relay and personal web preview
 
@@ -139,7 +139,7 @@ Verification:
 
 - Context/native launch tests and actual Git fixtures cover fresh project data, preserved credentials, clean rebase of unpublished commits, untouched checkout/index before conflict approval, recovery refs, dirty/stale guards and export of exact native HEAD.
 - Access tests deny other team members, unsigned/cross-origin callers and forged approval tickets. Tickets survive control-plane re-instantiation. Private preview tests cover capability isolation, stripped credentials, static assets, WebSockets and revocation.
-- A dedicated `vibehack-smoke-` Sprite ran the actual CLI request relay against disposable `/tmp` projects. Publication fetched an independently advanced shared main, rebased local work and published the exact native commit. A divergent edit stopped unchanged until separate owner confirmation, then completed a recoverable rebase and publication. No model calls.
+- A dedicated smoke Sprite ran the actual CLI request relay against disposable `/tmp` projects. Publication fetched an independently advanced shared main, rebased local work and published the exact native commit. A divergent edit stopped unchanged until separate owner confirmation, then completed a recoverable rebase and publication. No model calls.
 - The same isolated Sprite ran Vite 8.3.0: actual HTTP readiness, repeated launch, private HTML/JS requests, restart and stop all passed. Lifecycle tests do not mutate participant projects.
 - Chromium exercised Launch/Restart/Stop, the actual separate-origin capability redirect, dark/light/mobile controls and explicit conflict approval with agent handoff. Screenshots were reviewed. Browser testing caught and fixed the initial SameSite=Strict redirect failure; authenticated top-level navigation now uses Lax while cross-origin API requests remain blocked.
 - The actual existing Oak Park static dashboard was opened through the owner-authorized workspace button in an isolated browser session. It rendered 17,098 reported crashes, 702 mapped walking/biking crashes and the complete charts/tables without page errors. It uses the configured static directory, not an invented root npm script. Its existing unrelated server was preserved.

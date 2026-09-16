@@ -8,7 +8,7 @@ import { createEventSchema, type Result } from "../packages/domain/src/types.ts"
 const dirs: string[] = [];
 const services: EventService[] = [];
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), "vibehack-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "civic-spark-test-"));
   dirs.push(dir);
   const service = new EventService(dir);
   services.push(service);
@@ -106,7 +106,7 @@ describe("workspace revisions and Git collaboration", () => {
   it("exports accepted code as a ZIP and rejects saving once a Sprite owns the workspace", () => {
     const { service, t, a } = team();
     expect(value(service.exportTeam(t.id)).subarray(0, 2).toString()).toBe("PK");
-    value(service.setSprite(a.id, "vibehack-test", "ready", null));
+    value(service.setSprite(a.id, "civic-spark-test", "ready", null));
     expect(service.saveFile(a.id, "README.md", "x", "old").ok).toBe(false);
   });
 });

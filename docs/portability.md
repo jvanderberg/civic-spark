@@ -1,6 +1,6 @@
 # Portability requirement
 
-VibeHack must not depend on Fly private networking for correctness or access control. Fly is the first deployment target and Sprites the first workspace runtime. A private network may be an optional deployment optimization after its connectivity is verified.
+Civic Spark must not depend on Fly private networking for correctness or access control. Fly is the first deployment target and Sprites the first workspace runtime. A private network may be an optional deployment optimization after its connectivity is verified.
 
 The portable Git contract is standard Smart HTTP over HTTPS, with mutually authenticated client certificates and application-level team/ref authorization. The repository URL is configuration, not an assumed `.internal` name. A deployment can terminate mTLS in its own Git gateway or a capable provider edge, provided the application receives verified identity through a trusted, non-spoofable channel.
 

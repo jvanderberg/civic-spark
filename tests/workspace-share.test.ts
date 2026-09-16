@@ -18,7 +18,7 @@ const unwrap = <T>(r: Result<T>): T => {
   return r.value;
 };
 function setup() {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-share-test-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-share-test-"));
   const service = new EventService(root);
   cleanups.push(() => {
     service.close();
@@ -159,7 +159,7 @@ it("the trusted Sprite adapter previews and bundles large files with snapshot gu
       "ROOT = pathlib.Path('/home/sprite/project')",
       `ROOT = pathlib.Path(${JSON.stringify(dir)})`,
     )
-    .replace("'/home/sprite/.vibehack-file-lock'", JSON.stringify(join(root, "lock")));
+    .replace("'/home/sprite/.civic-spark-file-lock'", JSON.stringify(join(root, "lock")));
   const run = (payload: object) =>
     JSON.parse(
       spawnSync("python3", ["-c", script], {
@@ -286,7 +286,7 @@ it("Sprite legacy repair adopts the already-created commit without touching late
       "ROOT = pathlib.Path('/home/sprite/project')",
       `ROOT = pathlib.Path(${JSON.stringify(dir)})`,
     )
-    .replace("'/home/sprite/.vibehack-file-lock'", JSON.stringify(join(root, "lock")));
+    .replace("'/home/sprite/.civic-spark-file-lock'", JSON.stringify(join(root, "lock")));
   const result = JSON.parse(
     spawnSync("python3", ["-c", script], {
       input: JSON.stringify({ operation: "adopt-share", commit, head }),

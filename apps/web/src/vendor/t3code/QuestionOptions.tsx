@@ -1,5 +1,5 @@
 // Option rows extracted from T3 Code ComposerPendingUserInputPanel.tsx (MIT; LICENSE.txt).
-// VibeHack currently carries one text answer; expose single-question/single-choice rows only.
+// Civic Spark currently carries one text answer; expose single-question/single-choice rows only.
 import { CheckIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 export type QuestionOption = { label: string; description?: string };

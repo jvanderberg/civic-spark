@@ -6,7 +6,7 @@ import { createApp } from "../apps/server/src/app.ts";
 import { testIdentity } from "./auth-fixture.ts";
 
 it("requires real verified sessions, rejects identity spoofing and CSRF, and revokes logout", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-auth-test-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-auth-test-"));
   const { app, authentication } = await createApp(root, false);
   try {
     const host = { host: "127.0.0.1:4311" };
@@ -69,7 +69,7 @@ it("requires real verified sessions, rejects identity spoofing and CSRF, and rev
 });
 
 it("authorizes workspace owners and event admins at the HTTP boundary", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-api-test-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-api-test-"));
   const { app, authentication } = await createApp(root, false);
   try {
     const alice = await testIdentity(authentication, "Alice");

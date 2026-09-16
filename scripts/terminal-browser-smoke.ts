@@ -7,7 +7,7 @@ import { chromium, type WebSocketRoute } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 
-const root = mkdtempSync(join(tmpdir(), "vibehack-terminal-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-terminal-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {

@@ -86,7 +86,7 @@ export function registerTeamUpdateRoutes(
     agents.setGitUpdating(r.params.id, true);
     let temp: string | undefined;
     try {
-      temp = mkdtempSync(join(tmpdir(), "vibehack-team-"));
+      temp = mkdtempSync(join(tmpdir(), "civic-spark-team-"));
       const bundle = join(temp, "team.bundle");
       git(p.value.repo, ["bundle", "create", bundle, "main"]);
       if (statSync(bundle).size > 10 * 1024 * 1024)

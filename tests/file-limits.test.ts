@@ -28,7 +28,7 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 function directory() {
-  const dir = mkdtempSync(join(tmpdir(), "vibehack-file-limits-"));
+  const dir = mkdtempSync(join(tmpdir(), "civic-spark-file-limits-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -152,7 +152,7 @@ it("round-trips 25 MiB through SpriteClient and the real Python adapters, includ
   const executable = join(dir, "sprite");
   writeFileSync(
     executable,
-    `#!/usr/bin/env python3\nimport sys\nscript = sys.argv[-1].replace('/home/sprite/project', ${JSON.stringify(dir)}).replace('/home/sprite/.vibehack-file-lock', ${JSON.stringify(join(dir, ".file-lock"))})\nexec(compile(script, '<trusted-sprite-adapter>', 'exec'))\n`,
+    `#!/usr/bin/env python3\nimport sys\nscript = sys.argv[-1].replace('/home/sprite/project', ${JSON.stringify(dir)}).replace('/home/sprite/.civic-spark-file-lock', ${JSON.stringify(join(dir, ".file-lock"))})\nexec(compile(script, '<trusted-sprite-adapter>', 'exec'))\n`,
   );
   chmodSync(executable, 0o755);
   vi.stubEnv("PATH", `${dir}:${process.env.PATH}`);
@@ -160,7 +160,7 @@ it("round-trips 25 MiB through SpriteClient and the real Python adapters, includ
   git(dir, ["add", "sprite"]);
   git(dir, ["commit", "-m", "Test fixture"]);
   const client = new SpriteClient();
-  const name = "vibehack-file-limit-test";
+  const name = "civic-spark-file-limit-test";
   const data = Buffer.alloc(FILE_LIMIT, "a");
   const created = unwrap(
     await client.mutateBlob(name, {

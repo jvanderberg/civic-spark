@@ -50,7 +50,7 @@ function buildTree(paths: string[]): Entry[] {
 function initialPreference(workspace: string): { width: number; collapsed: boolean } {
   try {
     const stored = JSON.parse(
-      localStorage.getItem(`vibehack:workspace:${workspace}:explorer`) ?? "null",
+      localStorage.getItem(`civic-spark:workspace:${workspace}:explorer`) ?? "null",
     );
     return {
       width:
@@ -124,7 +124,10 @@ export function FileExplorer({
   }, []);
   useEffect(() => {
     try {
-      localStorage.setItem(`vibehack:workspace:${workspace}:explorer`, JSON.stringify(preference));
+      localStorage.setItem(
+        `civic-spark:workspace:${workspace}:explorer`,
+        JSON.stringify(preference),
+      );
     } catch {
       // Only layout preferences are stored; browsing never depends on storage.
     }

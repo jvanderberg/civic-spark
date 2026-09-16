@@ -10,8 +10,8 @@ import sys
 import uuid
 
 ROOT = pathlib.Path('/home/sprite/project')
-ENV = dict(os.environ, GIT_AUTHOR_NAME='VibeHack participant', GIT_AUTHOR_EMAIL='participant@vibehack.local',
-           GIT_COMMITTER_NAME='VibeHack', GIT_COMMITTER_EMAIL='workspace@vibehack.local')
+ENV = dict(os.environ, GIT_AUTHOR_NAME='Civic Spark participant', GIT_AUTHOR_EMAIL='participant@civic-spark.local',
+           GIT_COMMITTER_NAME='Civic Spark', GIT_COMMITTER_EMAIL='workspace@civic-spark.local')
 
 
 def git(*args):
@@ -43,7 +43,7 @@ def status(remote):
     result = {'head': head, 'remote': remote, 'incoming': not ancestor(remote, head), 'outgoing': head != remote and ancestor(remote, head),
               'dirty': bool(git('status', '--porcelain', '-z')), 'merging': (directory() / 'MERGE_HEAD').exists(),
               'conflicts': [p for p in git('diff', '--name-only', '--diff-filter=U', '-z').decode().split('\0') if p]}
-    receipt = directory() / 'vibehack-agent-merge.json'
+    receipt = directory() / 'civic-spark-agent-merge.json'
     if receipt.exists():
         saved = json.loads(receipt.read_text())
         result['resolution'] = {'head': valid_sha(saved['head']), 'remote': valid_sha(saved['remote'])}
@@ -59,7 +59,7 @@ def resolution_prompt(head, remote):
 
 
 def backup_working(id):
-    target = directory() / 'vibehack-recovery' / id
+    target = directory() / 'civic-spark-recovery' / id
     (target / 'files').mkdir(parents=True, exist_ok=True)
     def paths():
         return sorted(set(p for p in git('ls-files', '-z', '--cached', '--others', '--exclude-standard').decode().split('\0') if p))
@@ -115,7 +115,7 @@ def apply(request):
     state = status(remote)
     if state['head'] != head:
         raise ValueError('Your workspace changed since the update preview. Check for updates again.')
-    if git('rev-parse', 'refs/vibehack/team-incoming').decode().strip() != remote:
+    if git('rev-parse', 'refs/civic-spark/team-incoming').decode().strip() != remote:
         raise ValueError('The incoming team version changed. Check for updates again.')
     continuing = state['merging'] and mode == 'agent' and (directory() / 'MERGE_HEAD').read_text().strip() == remote
     if state['merging'] and not continuing and mode != 'replace':
@@ -131,7 +131,7 @@ def apply(request):
             return {'status': 'conflict', 'head': head, 'remote': remote, 'conflicts': []}
     backup = None
     if mode != 'pull':
-        backup = 'refs/vibehack/recovery/' + str(uuid.uuid4())
+        backup = 'refs/civic-spark/recovery/' + str(uuid.uuid4())
         git('update-ref', backup + '/head', head)
     if mode == 'replace':
         verify_recovery = backup_working(backup.split('/')[-1])
@@ -140,7 +140,7 @@ def apply(request):
             raise ValueError('Your Git branch changed during recovery. Your workspace was not replaced.')
         git('reset', '--hard', remote)
         git('clean', '-fd')
-        (directory() / 'vibehack-agent-merge.json').unlink(missing_ok=True)
+        (directory() / 'civic-spark-agent-merge.json').unlink(missing_ok=True)
     else:
         if not continuing:
             if status(remote)['head'] != head:
@@ -154,12 +154,12 @@ def apply(request):
             unresolved = status(remote)['conflicts']
             if mode == 'pull':
                 return {'status': 'conflict', 'head': head, 'remote': remote, 'conflicts': unresolved}
-            receipt = directory() / 'vibehack-agent-merge.json'
+            receipt = directory() / 'civic-spark-agent-merge.json'
             receipt.write_text(json.dumps({'head': head, 'remote': remote, 'backup': backup}))
             receipt.chmod(0o600)
             return {'status': 'agent', 'head': head, 'remote': remote, 'conflicts': unresolved,
                     'backup': backup, 'prompt': resolution_prompt(head, remote)}
-    git('update-ref', 'refs/vibehack/base', remote)
+    git('update-ref', 'refs/civic-spark/base', remote)
     result = {'status': 'updated', 'head': git('rev-parse', 'HEAD').decode().strip(), 'remote': remote, 'conflicts': []}
     if backup:
         result['backup'] = backup
@@ -168,7 +168,7 @@ def apply(request):
 
 def verify(request):
     head, remote = valid_sha(request['head']), valid_sha(request['remote'])
-    path = directory() / 'vibehack-agent-merge.json'
+    path = directory() / 'civic-spark-agent-merge.json'
     if not path.exists():
         raise ValueError('No agent merge is awaiting verification.')
     saved = json.loads(path.read_text())
@@ -177,7 +177,7 @@ def verify(request):
     state = status(remote)
     if state['merging'] or state['conflicts'] or not ancestor(head, state['head']) or not ancestor(remote, state['head']):
         raise ValueError('The agent has not finished a merge preserving both versions yet. Continue the resolution in Agent.')
-    git('update-ref', 'refs/vibehack/base', remote)
+    git('update-ref', 'refs/civic-spark/base', remote)
     path.unlink()
     return {'status': 'updated', 'head': state['head'], 'remote': remote, 'conflicts': [], 'backup': saved['backup']}
 
@@ -190,12 +190,12 @@ try:
     elif operation == 'import':
         remote = valid_sha(request['remote'])
         bundle = pathlib.Path(request['bundle'])
-        if not re.fullmatch(r'/tmp/vibehack-team-[a-f0-9-]+\.bundle', str(bundle)):
+        if not re.fullmatch(r'/tmp/civic-spark-team-[a-f0-9-]+\.bundle', str(bundle)):
             raise ValueError('Invalid incoming bundle')
         try:
             git('bundle', 'verify', str(bundle))
-            git('fetch', str(bundle), 'refs/heads/main:refs/vibehack/team-incoming')
-            if git('rev-parse', 'refs/vibehack/team-incoming').decode().strip() != remote:
+            git('fetch', str(bundle), 'refs/heads/main:refs/civic-spark/team-incoming')
+            if git('rev-parse', 'refs/civic-spark/team-incoming').decode().strip() != remote:
                 raise ValueError('The team version changed during transfer. Check for updates again.')
             value = {'imported': remote}
         finally:

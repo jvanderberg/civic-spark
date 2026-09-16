@@ -38,7 +38,7 @@ describe("T3 source code highlighting", () => {
     expect(light).not.toContain("<img");
   });
   it("unknown languages leave a working plain-text highlighter", async () => {
-    const highlighter = await getSyntaxHighlighterPromise("vibehack-unknown-language");
+    const highlighter = await getSyntaxHighlighterPromise("civic-spark-unknown-language");
     const result = markup(
       highlighter.codeToHast("<script>example</script>\n", { lang: "text", theme: "pierre-light" }),
     );

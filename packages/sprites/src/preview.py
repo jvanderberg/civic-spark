@@ -9,8 +9,8 @@ import time
 import urllib.error
 import urllib.request
 
-ROOT = pathlib.Path('/home/sprite/.vibehack-agent')
-SESSION = 'vibehack-web-preview'
+ROOT = pathlib.Path('/home/sprite/.civic-spark-agent')
+SESSION = 'civic-spark-web-preview'
 CONFIG = ROOT / 'environment.json'
 LOG = ROOT / 'preview.log'
 
@@ -67,7 +67,7 @@ try:
             import socket
             with socket.socket() as probe:
                 if probe.connect_ex(('127.0.0.1', config['port'])) == 0:
-                    raise ValueError('The configured port is already used by another process. Stop it or choose another port; VibeHack will not kill it.')
+                    raise ValueError('The configured port is already used by another process. Stop it or choose another port; Civic Spark will not kill it.')
             CONFIG.write_text(json.dumps(config)); CONFIG.chmod(0o600)
             LOG.write_text(''); LOG.chmod(0o600)
             command = shlex.join(config['command']) + ' >>' + shlex.quote(str(LOG)) + ' 2>&1'

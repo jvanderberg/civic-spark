@@ -25,7 +25,7 @@ function value<T>(r: Result<T>): T {
   return r.value;
 }
 function setup(capacity = 40) {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-members-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-members-"));
   const service = new EventService(root);
   opened.push({ root, service });
   const event = value(

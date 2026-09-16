@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 
-root = pathlib.Path('/home/sprite/.vibehack-agent/integration')
+root = pathlib.Path('/home/sprite/.civic-spark-agent/integration')
 root.mkdir(mode=0o700, parents=True, exist_ok=True)
 os.chmod(root, 0o700)
 seen = set()

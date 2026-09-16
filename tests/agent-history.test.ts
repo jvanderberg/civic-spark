@@ -10,7 +10,7 @@ import type { AgentEvent } from "../packages/agents/src/protocol.ts";
 
 const roots: string[] = [];
 function path() {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-history-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-history-"));
   roots.push(root);
   return join(root, "conversation.json");
 }

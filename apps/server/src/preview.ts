@@ -26,7 +26,7 @@ export async function spritePreviewTransport(
   const child = spawn(
     "sprite",
     [
-      ...(process.env.VIBEHACK_SPRITE_ORG ? ["-o", process.env.VIBEHACK_SPRITE_ORG] : []),
+      ...(process.env.CIVIC_SPARK_SPRITE_ORG ? ["-o", process.env.CIVIC_SPARK_SPRITE_ORG] : []),
       "-s",
       sprite,
       "proxy",
@@ -70,7 +70,7 @@ export class WorkspacePreviews {
     if (existing && existing.port === port) {
       existing.expires = Date.now() + 60 * 60 * 1000;
       existing.authorized = authorized;
-      return { url: `${existing.url}/__vibehack_open?token=${existing.token}`, port };
+      return { url: `${existing.url}/__civic_spark_open?token=${existing.token}`, port };
     }
     this.stop(id);
     const transport = await this.transport(sprite, port);
@@ -94,7 +94,7 @@ export class WorkspacePreviews {
         }
         const parsed = new URL(req.url ?? "/", current.url);
         if (
-          parsed.pathname === "/__vibehack_open" &&
+          parsed.pathname === "/__civic_spark_open" &&
           req.method === "GET" &&
           parsed.searchParams.get("token") === token &&
           current.expires > Date.now() &&
@@ -113,7 +113,7 @@ export class WorkspacePreviews {
         if (!(await valid(req.headers))) {
           res
             .writeHead(401, { "Content-Type": "text/plain" })
-            .end("Reopen Preview from your VibeHack workspace.");
+            .end("Reopen Preview from your Civic Spark workspace.");
           return;
         }
         if (
@@ -232,7 +232,7 @@ export class WorkspacePreviews {
       authorized,
     };
     this.previews.set(id, current);
-    return { url: `${current.url}/__vibehack_open?token=${token}`, port };
+    return { url: `${current.url}/__civic_spark_open?token=${token}`, port };
   }
   stop(id: string) {
     const item = this.previews.get(id);

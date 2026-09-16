@@ -19,7 +19,7 @@ export async function createAuthentication(
     .int()
     .min(1)
     .max(1000)
-    .parse(process.env.VIBEHACK_AUTH_REQUESTS_PER_MINUTE ?? "120");
+    .parse(process.env.CIVIC_SPARK_AUTH_REQUESTS_PER_MINUTE ?? "120");
   mkdirSync(root, { recursive: true });
   const secretPath = join(root, "auth-secret");
   if (!process.env.BETTER_AUTH_SECRET && !existsSync(secretPath))
@@ -28,7 +28,7 @@ export async function createAuthentication(
   const database = new Database(join(root, "auth.sqlite"));
   database.pragma("journal_mode = WAL");
   const config: BetterAuthOptions = {
-    appName: "VibeHack",
+    appName: "Civic Spark",
     baseURL,
     secret,
     database,
@@ -41,10 +41,10 @@ export async function createAuthentication(
     },
     rateLimit: { enabled: true, storage: "database" },
     advanced: {
-      cookiePrefix: prototype ? "vibehack-prototype" : "better-auth",
+      cookiePrefix: prototype ? "civic-spark-prototype" : "better-auth",
       disableOriginCheck: false,
       disableCSRFCheck: false,
-      ipAddress: { ipAddressHeaders: ["x-vibehack-client-ip"] },
+      ipAddress: { ipAddressHeaders: ["x-civic-spark-client-ip"] },
     },
     databaseHooks: {
       user: {

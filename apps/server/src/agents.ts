@@ -59,10 +59,10 @@ export class AgentSessions {
     const work = new SpriteClient()
       .exec(sprite, [
         "-file",
-        `${fileURLToPath(new URL("../../../packages/agents/runtime/environment.json", import.meta.url))}:/home/sprite/.vibehack-agent/environment.defaults.json`,
+        `${fileURLToPath(new URL("../../../packages/agents/runtime/environment.json", import.meta.url))}:/home/sprite/.civic-spark-agent/environment.defaults.json`,
         ...["package.json", "package-lock.json", "setup.sh", "relay.py"].flatMap((name) => [
           "-file",
-          `${fileURLToPath(new URL(`../../../packages/agents/runtime/${name}`, import.meta.url))}:/home/sprite/.vibehack-agent/${name}`,
+          `${fileURLToPath(new URL(`../../../packages/agents/runtime/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
         ]),
         ...[
           "cli.ts",
@@ -73,10 +73,10 @@ export class AgentSessions {
           "integration-cli.ts",
         ].flatMap((name) => [
           "-file",
-          `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.vibehack-agent/${name}`,
+          `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
         ]),
         "bash",
-        "/home/sprite/.vibehack-agent/setup.sh",
+        "/home/sprite/.civic-spark-agent/setup.sh",
       ])
       .then((r) => r.ok)
       .finally(() => this.preparing.delete(sprite));
@@ -84,10 +84,10 @@ export class AgentSessions {
     return work;
   }
   attach(id: string, sprite: string, socket: WebSocket, authorized: () => Promise<boolean>) {
-    if (!/^vibehack-[a-z0-9-]{1,45}$/.test(sprite)) throw new Error("Invalid Sprite");
+    if (!/^civic-spark-[a-z0-9-]{1,45}$/.test(sprite)) throw new Error("Invalid Sprite");
     let session = this.sessions.get(id);
     if (!session) {
-      const org = process.env.VIBEHACK_SPRITE_ORG;
+      const org = process.env.CIVIC_SPARK_SPRITE_ORG;
       const runner = fileURLToPath(
         new URL("../../../packages/agents/src/runner.ts", import.meta.url),
       );
@@ -102,18 +102,18 @@ export class AgentSessions {
           sprite,
           "exec",
           "-file",
-          `${runner}:/home/sprite/.vibehack-agent/runner.ts`,
+          `${runner}:/home/sprite/.civic-spark-agent/runner.ts`,
           "-file",
-          `${protocol}:/home/sprite/.vibehack-agent/protocol.ts`,
+          `${protocol}:/home/sprite/.civic-spark-agent/protocol.ts`,
           "-file",
-          `${fileURLToPath(new URL("../../../packages/agents/src/credentials.ts", import.meta.url))}:/home/sprite/.vibehack-agent/credentials.ts`,
+          `${fileURLToPath(new URL("../../../packages/agents/src/credentials.ts", import.meta.url))}:/home/sprite/.civic-spark-agent/credentials.ts`,
           ...["history.ts", "journal.ts", "provider.ts", "context.ts"].flatMap((name) => [
             "-file",
-            `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.vibehack-agent/${name}`,
+            `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
           ]),
           "node",
           "--experimental-strip-types",
-          "/home/sprite/.vibehack-agent/runner.ts",
+          "/home/sprite/.civic-spark-agent/runner.ts",
         ],
         { stdio: "pipe" },
       );

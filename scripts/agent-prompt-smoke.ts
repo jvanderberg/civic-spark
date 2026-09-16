@@ -8,7 +8,7 @@ import { claudeSystemPrompt } from "../packages/agents/src/context.ts";
 
 // Run the installed native CLI against an isolated local API double. No real
 // account key, user session, participant code, or paid inference is involved.
-const root = await mkdtemp(join(tmpdir(), "vibehack-prompt-wire-"));
+const root = await mkdtemp(join(tmpdir(), "civic-spark-prompt-wire-"));
 const project = join(root, "project");
 await mkdir(project);
 const prompts: string[] = [];
@@ -99,14 +99,14 @@ try {
     const system = prompts.at(-1) ?? "";
     if (!previous) {
       assert(system.includes("Legacy harness without app guidance"));
-      assert(!system.includes("vibehack preview start"));
+      assert(!system.includes("civic-spark preview start"));
       continue;
     }
     assert(system.includes(brief), "Current project brief missing from actual API system field");
     assert(system.includes("React + TypeScript + Vite + Tailwind CSS + Biome"));
     assert(system.includes("unless the user asks for a different stack"));
     assert(system.includes("Leaflet with an OpenStreetMap basemap"));
-    assert(system.includes("vibehack preview start"));
+    assert(system.includes("civic-spark preview start"));
     assert(system.includes("Never publish or push without the user's explicit confirmation"));
   }
   console.log(

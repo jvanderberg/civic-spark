@@ -14,10 +14,10 @@ type Session = { process: pty.IPty; history: string; clients: Set<WebSocket> };
 export class TerminalSessions {
   private sessions = new Map<string, Session>();
   attach(id: string, sprite: string, socket: WebSocket, authorized: () => Promise<boolean>) {
-    if (!/^vibehack-[a-z0-9-]{1,45}$/.test(sprite)) throw new Error("Invalid Sprite");
+    if (!/^civic-spark-[a-z0-9-]{1,45}$/.test(sprite)) throw new Error("Invalid Sprite");
     let session = this.sessions.get(id);
     if (!session) {
-      const org = process.env.VIBEHACK_SPRITE_ORG;
+      const org = process.env.CIVIC_SPARK_SPRITE_ORG;
       const args = [
         ...(org ? ["-o", org] : []),
         "-s",
@@ -26,7 +26,7 @@ export class TerminalSessions {
         "-tty",
         "bash",
         "-lc",
-        "export PATH=/home/sprite/.vibehack-agent/bin:/home/sprite/.vibehack-agent/node_modules/.bin:$PATH; cd /home/sprite/project && printf 'VibeHack terminal connected\\r\\n' && exec tmux new-session -A -s vibehack-workspace",
+        "export PATH=/home/sprite/.civic-spark-agent/bin:/home/sprite/.civic-spark-agent/node_modules/.bin:$PATH; cd /home/sprite/project && printf 'Civic Spark terminal connected\\r\\n' && exec tmux new-session -A -s civic-spark-workspace",
       ];
       // Only this fixed Sprite CLI is launched on the host. User input goes to the remote PTY.
       const proc = pty.spawn("sprite", args, {

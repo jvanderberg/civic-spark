@@ -95,7 +95,7 @@ export function Agent({
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [provider, setProvider] = useState<"claude" | "opencode">(() => {
     try {
-      return localStorage.getItem(`vibehack:workspace:${workspace}:agent`) === "claude"
+      return localStorage.getItem(`civic-spark:workspace:${workspace}:agent`) === "claude"
         ? "claude"
         : "opencode";
     } catch {
@@ -161,7 +161,7 @@ export function Agent({
   const connectLatest = useRef<(retry?: boolean) => Promise<void>>(async () => {});
   useEffect(() => {
     try {
-      localStorage.setItem(`vibehack:workspace:${workspace}:agent`, provider);
+      localStorage.setItem(`civic-spark:workspace:${workspace}:agent`, provider);
     } catch {
       // Only a nonsecret model preference is stored in the browser.
     }

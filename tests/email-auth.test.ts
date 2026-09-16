@@ -10,7 +10,7 @@ const origin = "http://127.0.0.1:4310";
 const headers = { host: "127.0.0.1:4310", origin };
 
 it("verifies email with hashed single-use links and preserves the account on return", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-email-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-email-"));
   const outbox: LoginEmail[] = [];
   const { app } = await createApp(root, false, origin, {
     configured: true,
@@ -97,7 +97,7 @@ it("verifies email with hashed single-use links and preserves the account on ret
 
 it("fails explicitly when delivery is disabled or fails; never creates a session", async () => {
   for (const configured of [false, true]) {
-    const root = mkdtempSync(join(tmpdir(), "vibehack-email-fail-"));
+    const root = mkdtempSync(join(tmpdir(), "civic-spark-email-fail-"));
     const { app } = await createApp(root, false, origin, {
       configured,
       async send() {

@@ -9,7 +9,7 @@ import type { Result } from "../packages/domain/src/types.ts";
 import { git } from "../packages/git/src/repository.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 
-const root = mkdtempSync(join(tmpdir(), "vibehack-changes-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-changes-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {
@@ -61,7 +61,7 @@ try {
   writeFileSync(join(dir, "z-last.txt"), "LAST FILE IS ACCESSIBLE\n");
   await page.context().addCookies([identity.browserCookie]);
   await page.addInitScript(
-    (id) => localStorage.setItem(`vibehack:workspace:${id}:tab`, "changes"),
+    (id) => localStorage.setItem(`civic-spark:workspace:${id}:tab`, "changes"),
     id,
   );
   await page.goto(`${address}/#workspace=${id}`);

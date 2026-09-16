@@ -53,7 +53,7 @@ function conflicts(root: string) {
 export function teamStatus(root: string, remote: string): TeamStatus {
   sha.parse(remote);
   const head = git(root, ["rev-parse", "HEAD"]).toString().trim();
-  const receipt = join(directory(root), "vibehack-agent-merge.json");
+  const receipt = join(directory(root), "civic-spark-agent-merge.json");
   const resolution = existsSync(receipt)
     ? (JSON.parse(readFileSync(receipt, "utf8")) as { head: string; remote: string })
     : undefined;
@@ -74,8 +74,8 @@ export function resolutionPrompt(head: string, remote: string) {
 export function importTeamBundle(root: string, bundle: string, remote: string) {
   sha.parse(remote);
   git(root, ["bundle", "verify", bundle]);
-  git(root, ["fetch", bundle, "refs/heads/main:refs/vibehack/team-incoming"]);
-  if (git(root, ["rev-parse", "refs/vibehack/team-incoming"]).toString().trim() !== remote)
+  git(root, ["fetch", bundle, "refs/heads/main:refs/civic-spark/team-incoming"]);
+  if (git(root, ["rev-parse", "refs/civic-spark/team-incoming"]).toString().trim() !== remote)
     throw new Error("The team version changed during transfer. Check for updates again.");
 }
 export function applyTeamUpdate(root: string, input: TeamUpdate): TeamUpdateResult {
@@ -83,7 +83,7 @@ export function applyTeamUpdate(root: string, input: TeamUpdate): TeamUpdateResu
   const state = teamStatus(root, input.remote);
   if (state.head !== input.head)
     throw new Error("Your workspace changed since the update preview. Check for updates again.");
-  if (git(root, ["rev-parse", "refs/vibehack/team-incoming"]).toString().trim() !== input.remote)
+  if (git(root, ["rev-parse", "refs/civic-spark/team-incoming"]).toString().trim() !== input.remote)
     throw new Error("The incoming team version changed. Check for updates again.");
   const continuing =
     state.merging &&
@@ -107,7 +107,7 @@ export function applyTeamUpdate(root: string, input: TeamUpdate): TeamUpdateResu
   }
   let backup: string | undefined;
   if (input.mode !== "pull") {
-    backup = `refs/vibehack/recovery/${randomUUID()}`;
+    backup = `refs/civic-spark/recovery/${randomUUID()}`;
     git(root, ["update-ref", `${backup}/head`, input.head]);
   }
   if (input.mode === "replace") {
@@ -119,7 +119,7 @@ export function applyTeamUpdate(root: string, input: TeamUpdate): TeamUpdateResu
       throw new Error("Your Git branch changed during recovery. Your workspace was not replaced.");
     git(root, ["reset", "--hard", input.remote]);
     git(root, ["clean", "-fd"]);
-    const receipt = join(directory(root), "vibehack-agent-merge.json");
+    const receipt = join(directory(root), "civic-spark-agent-merge.json");
     if (existsSync(receipt)) unlinkSync(receipt);
   } else {
     if (teamStatus(root, input.remote).head !== input.head)
@@ -143,7 +143,7 @@ export function applyTeamUpdate(root: string, input: TeamUpdate): TeamUpdateResu
         };
       }
       writeFileSync(
-        join(directory(root), "vibehack-agent-merge.json"),
+        join(directory(root), "civic-spark-agent-merge.json"),
         JSON.stringify({ head: input.head, remote: input.remote, backup }),
         { mode: 0o600 },
       );
@@ -157,7 +157,7 @@ export function applyTeamUpdate(root: string, input: TeamUpdate): TeamUpdateResu
       };
     }
   }
-  git(root, ["update-ref", "refs/vibehack/base", input.remote]);
+  git(root, ["update-ref", "refs/civic-spark/base", input.remote]);
   return {
     status: "updated",
     head: git(root, ["rev-parse", "HEAD"]).toString().trim(),
@@ -169,7 +169,7 @@ export function applyTeamUpdate(root: string, input: TeamUpdate): TeamUpdateResu
 export function verifyTeamUpdate(root: string, head: string, remote: string): TeamUpdateResult {
   sha.parse(head);
   sha.parse(remote);
-  const path = join(directory(root), "vibehack-agent-merge.json");
+  const path = join(directory(root), "civic-spark-agent-merge.json");
   if (!existsSync(path)) throw new Error("No agent merge is awaiting verification.");
   const receipt = JSON.parse(readFileSync(path, "utf8")) as {
     head: string;
@@ -188,7 +188,7 @@ export function verifyTeamUpdate(root: string, head: string, remote: string): Te
     throw new Error(
       "The agent has not finished a merge preserving both versions yet. Continue the resolution in Agent.",
     );
-  git(root, ["update-ref", "refs/vibehack/base", remote]);
+  git(root, ["update-ref", "refs/civic-spark/base", remote]);
   unlinkSync(path);
   return { status: "updated", head: state.head, remote, conflicts: [], backup: receipt.backup };
 }

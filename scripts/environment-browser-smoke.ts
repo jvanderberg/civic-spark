@@ -12,7 +12,7 @@ import type { PortalState } from "../packages/domain/src/access-types.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 
-const root = mkdtempSync(join(tmpdir(), "vibehack-environment-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-environment-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {
@@ -69,7 +69,7 @@ try {
     }),
   );
   const id = team.workspace.id;
-  const opened = await previews.open(id, "vibehack-test", 5173, async () => true);
+  const opened = await previews.open(id, "civic-spark-test", 5173, async () => true);
   let running = false;
   let conflict = false;
   let approved = false;

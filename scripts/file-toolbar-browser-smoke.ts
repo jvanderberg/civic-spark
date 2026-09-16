@@ -9,7 +9,7 @@ import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 import { editorInput, readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
 
-const root = mkdtempSync(join(tmpdir(), "vibehack-toolbar-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-toolbar-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {
@@ -65,15 +65,17 @@ try {
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme);
-    for (const width of [1280, 390]) {
+    for (const width of [1280, 360, 390]) {
       await page.setViewportSize({ width, height: 800 });
       let y: number | undefined;
       for (const name of labels) {
         const button = toolbar.getByRole("button", { name, exact: true });
         const box = await button.boundingBox();
         assert(box);
-        assert(box.x >= 0 && box.x + box.width <= 190);
-        assert.equal(box.height, 28);
+        assert(box.x >= 0 && box.x + box.width <= (width <= 390 ? width : 190));
+        if (width <= 390) {
+          assert(box.height >= 44 && box.width >= 44, "Phone actions need touch-sized targets");
+        } else assert.equal(box.height, 28);
         assert.equal((await button.innerText()).trim(), "");
         assert(await button.getAttribute("title"));
         if (y !== undefined) assert.equal(box.y, y);

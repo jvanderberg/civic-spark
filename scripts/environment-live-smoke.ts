@@ -11,13 +11,13 @@ import { git } from "../packages/git/src/repository.ts";
 import { SpriteClient } from "../packages/sprites/src/client.ts";
 
 const sprite = process.argv[process.argv.indexOf("--sprite") + 1];
-if (!sprite || !/^vibehack-smoke-[a-z0-9-]+$/.test(sprite))
-  throw new Error("Use an existing dedicated --sprite vibehack-smoke-NAME");
+if (!sprite || !/^civic-spark-smoke-[a-z0-9-]+$/.test(sprite))
+  throw new Error("Use an existing dedicated --sprite civic-spark-smoke-NAME");
 const name = sprite;
-const root = mkdtempSync(join(tmpdir(), "vibehack-environment-live-"));
-const remote = `/tmp/vibehack-environment-${randomUUID()}`;
+const root = mkdtempSync(join(tmpdir(), "civic-spark-environment-live-"));
+const remote = `/tmp/civic-spark-environment-${randomUUID()}`;
 const runtime = `${remote}-runtime`;
-const session = `vibehack-preview-${randomUUID().slice(0, 8)}`;
+const session = `civic-spark-preview-${randomUUID().slice(0, 8)}`;
 const unwrap = <T>(result: Result<T>): T => {
   if (!result.ok) throw new Error(result.error);
   return result.value;
@@ -29,9 +29,9 @@ class FixtureSprite extends SpriteClient {
       "utf8",
     )
       .replaceAll("/home/sprite/project", remote)
-      .replaceAll("/home/sprite/.vibehack-agent", runtime)
-      .replace("SESSION = 'vibehack-web-preview'", `SESSION = '${session}'`);
-    const destination = `/tmp/vibehack-team-${randomUUID()}.bundle`;
+      .replaceAll("/home/sprite/.civic-spark-agent", runtime)
+      .replace("SESSION = 'civic-spark-web-preview'", `SESSION = '${session}'`);
+    const destination = `/tmp/civic-spark-team-${randomUUID()}.bundle`;
     const response = unwrap(
       await this.command(
         [
@@ -127,7 +127,7 @@ try {
       `${seed}:${remote}.bundle`,
       "python3",
       "-c",
-      "import pathlib,subprocess,json,sys; p,r=sys.argv[1:]; subprocess.run(['git','clone',p+'.bundle',p],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); pathlib.Path(r).mkdir(); pathlib.Path(r,'environment.json').write_text(json.dumps({'port': 15173, 'command':['npx','vite','--host','127.0.0.1','--port','15173','--strictPort']})); pathlib.Path(p,'index.html').write_text('<h1>VibeHack live preview</h1><script type=\"module\" src=\"/app.js\"></script>'); pathlib.Path(p,'app.js').write_text('console.log(\"asset loaded\")'); pathlib.Path(p,'package.json').write_text(json.dumps({'type':'module','devDependencies':{'vite':'8.3.0'}}))",
+      "import pathlib,subprocess,json,sys; p,r=sys.argv[1:]; subprocess.run(['git','clone',p+'.bundle',p],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); pathlib.Path(r).mkdir(); pathlib.Path(r,'environment.json').write_text(json.dumps({'port': 15173, 'command':['npx','vite','--host','127.0.0.1','--port','15173','--strictPort']})); pathlib.Path(p,'index.html').write_text('<h1>Civic Spark live preview</h1><script type=\"module\" src=\"/app.js\"></script>'); pathlib.Path(p,'app.js').write_text('console.log(\"asset loaded\")'); pathlib.Path(p,'package.json').write_text(json.dumps({'type':'module','devDependencies':{'vite':'8.3.0'}}))",
       remote,
       runtime,
     ]),
@@ -149,7 +149,11 @@ try {
   integrations.ensure(id, actor, name, async () => service.workspace(actor, id, true).ok);
   const published = JSON.parse(
     unwrap(
-      await client.exec(name, ["/home/sprite/.vibehack-agent/bin/vibehack", "git", "publish"]),
+      await client.exec(name, [
+        "/home/sprite/.civic-spark-agent/bin/civic-spark",
+        "git",
+        "publish",
+      ]),
     ).toString(),
   );
   assert(published.ok, published.error);
@@ -181,7 +185,11 @@ try {
   git(local, ["push", "origin", "main"]);
   const paused = JSON.parse(
     unwrap(
-      await client.exec(name, ["/home/sprite/.vibehack-agent/bin/vibehack", "git", "publish"]),
+      await client.exec(name, [
+        "/home/sprite/.civic-spark-agent/bin/civic-spark",
+        "git",
+        "publish",
+      ]),
     ).toString(),
   );
   assert(paused.ok);
@@ -205,7 +213,11 @@ try {
   );
   const resumed = JSON.parse(
     unwrap(
-      await client.exec(name, ["/home/sprite/.vibehack-agent/bin/vibehack", "git", "publish"]),
+      await client.exec(name, [
+        "/home/sprite/.civic-spark-agent/bin/civic-spark",
+        "git",
+        "publish",
+      ]),
     ).toString(),
   );
   assert(resumed.ok, resumed.error);
@@ -230,7 +242,7 @@ try {
   const origin = new URL(opened.url).origin;
   const html = await fetch(origin, { headers: { cookie } });
   assert.equal(html.status, 200);
-  assert.match(await html.text(), /VibeHack live preview/);
+  assert.match(await html.text(), /Civic Spark live preview/);
   const asset = await fetch(`${origin}/app.js`, { headers: { cookie } });
   assert.equal(asset.status, 200);
   assert.match(await asset.text(), /asset loaded/);

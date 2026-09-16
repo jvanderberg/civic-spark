@@ -15,7 +15,7 @@ export function cliConfiguration(
   // Native Claude's version probe must not initialize a prompt-file session.
   // Setup verifies the executable; only actual coding launches need context.
   if (args.includes("--version")) return { env, args };
-  const runtime = join(home, ".vibehack-agent");
+  const runtime = join(home, ".civic-spark-agent");
   mkdirSync(runtime, { recursive: true, mode: 0o700 });
   const contextFile = join(runtime, "workspace-context.md");
   writeFileSync(contextFile, workspaceContext(join(home, "project")), { mode: 0o600 });

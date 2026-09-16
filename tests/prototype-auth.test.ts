@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { createApp } from "../apps/server/src/app.ts";
 
 it("uses normalized email identity only in isolated local prototype mode", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-prototype-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-prototype-"));
   const origin = "http://127.0.0.1:4310";
   const headers = { host: "127.0.0.1:4310", origin };
   const prototype = await createApp(root, false, origin, undefined, "prototype");
@@ -20,6 +20,7 @@ it("uses normalized email identity only in isolated local prototype mode", async
       });
     const first = await login();
     expect(first.statusCode).toBe(200);
+    expect(first.cookies.some((c) => c.name === "civic-spark-prototype.session_token")).toBe(true);
     const cookie = first.cookies.map((c) => `${c.name}=${c.value}`).join("; ");
     const session = (
       await prototype.app.inject({ url: "/api/session", headers: { ...headers, cookie } })

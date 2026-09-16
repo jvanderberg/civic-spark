@@ -43,7 +43,7 @@ try:
                         fail("Too many files to browse", 413)
         value = sorted(files)
     else:
-        with open("/home/sprite/.vibehack-file-lock", "a") as lock:
+        with open("/home/sprite/.civic-spark-file-lock", "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             path = safe_path(request["path"])
             content = path.read_bytes()

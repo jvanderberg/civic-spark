@@ -11,7 +11,7 @@ import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
 
 // Disposable local APIs and deterministic Sprite transports; never runs participant
 // code or contacts a paid agent. Touch emulation does not claim physical-device QA.
-const root = mkdtempSync(join(tmpdir(), "vibehack-mobile-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-mobile-browser-"));
 const artifacts = resolve("artifacts/mobile");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {
@@ -42,6 +42,7 @@ await page.addInitScript(() => {
   Reflect.deleteProperty(window, "showDirectoryPicker");
 });
 let remote = false;
+let incompletePreview = false;
 let connection: WebSocketRoute | undefined;
 const requests: AgentInput[] = [];
 await page.route("**/api/state", async (route) => {
@@ -52,15 +53,17 @@ await page.route("**/api/state", async (route) => {
   await route.fulfill({ response, json: state });
 });
 await page.route("**/preview*", (route) =>
-  route.fulfill({
-    json: {
-      port: 5173,
-      command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"],
-      ready: true,
-      running: true,
-      logs: "Fixture preview ready\n".repeat(40),
-    },
-  }),
+  incompletePreview
+    ? route.fulfill({ status: 200, body: "" })
+    : route.fulfill({
+        json: {
+          port: 5173,
+          command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"],
+          ready: true,
+          running: true,
+          logs: "Fixture preview ready\n".repeat(40),
+        },
+      }),
 );
 await page.route("**/agent-git", (route) => route.fulfill({ json: { pending: null } }));
 await page.route("**/agent/prepare", (route) => route.fulfill({ json: { ready: true } }));
@@ -126,6 +129,12 @@ try {
   await capture("360-sign-in-light");
   await page.getByRole("button", { name: "Enter prototype" }).tap();
   await page.getByRole("button", { name: "Create your first event" }).tap();
+  assert(
+    (await context.cookies()).some(
+      (cookie) => cookie.name === "civic-spark-prototype.session_token",
+    ),
+    "Prototype sign-in must use the Civic Spark cookie namespace",
+  );
   await page.getByLabel("Event name").fill("Community data and neighborhood connections");
   await page.getByLabel("Date", { exact: true }).fill("2026-10-03");
   await page.getByLabel("Location").fill("Community library");
@@ -246,6 +255,21 @@ try {
     .getByRole("status")
     .filter({ hasText: /^Ready$/ })
     .waitFor();
+  const state = (await (await context.request.get(`${address}/api/state`)).json()) as PortalState;
+  const workspace = state.myWorkspaces[0];
+  assert(workspace);
+  assert.equal(
+    await page.evaluate(
+      (id) => localStorage.getItem(`civic-spark:workspace:${id}:tab`),
+      workspace.id,
+    ),
+    "agent",
+  );
+  await page.reload();
+  await page
+    .getByRole("status")
+    .filter({ hasText: /^Ready$/ })
+    .waitFor();
   assert(connection);
   for (let index = 0; index < 12; index++)
     connection.send(
@@ -281,6 +305,17 @@ try {
   const environment = page.getByRole("region", { name: "Web server and publishing" });
   await inViewport(environment.getByRole("button", { name: "Refresh logs" }));
   await capture("360-short-preview-details", true);
+  incompletePreview = true;
+  await environment.getByRole("button", { name: "Refresh logs" }).tap();
+  await environment
+    .getByRole("alert")
+    .filter({ hasText: "The Civic Spark server returned an incomplete response." })
+    .waitFor();
+  await inViewport(environment.getByRole("alert"));
+  await capture("360-short-preview-error", true);
+  incompletePreview = false;
+  await environment.getByRole("button", { name: "Refresh logs" }).tap();
+  await environment.getByRole("alert").waitFor({ state: "detached" });
   await environment.getByRole("button", { name: "Close", exact: true }).tap();
   await page.getByRole("button", { name: "Team updates", exact: true }).tap();
   await inViewport(page.getByRole("button", { name: "Later", exact: true }));

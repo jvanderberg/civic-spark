@@ -10,7 +10,7 @@ import type { PortalState } from "../packages/domain/src/access-types.ts";
 
 // Deterministic transport fixture: exercises the shipped React UI and real local
 // session/event/file APIs. No Sprite, provider request, or real API key is used.
-const root = mkdtempSync(join(tmpdir(), "vibehack-agent-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-agent-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {

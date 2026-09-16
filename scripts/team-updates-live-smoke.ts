@@ -8,14 +8,14 @@ import { git } from "../packages/git/src/repository.ts";
 import { SpriteClient } from "../packages/sprites/src/client.ts";
 
 const name = process.argv[process.argv.indexOf("--sprite") + 1];
-if (!name || !/^vibehack-smoke-[a-z0-9-]+$/.test(name))
-  throw new Error("Supply an existing dedicated --sprite vibehack-smoke-NAME");
+if (!name || !/^civic-spark-smoke-[a-z0-9-]+$/.test(name))
+  throw new Error("Supply an existing dedicated --sprite civic-spark-smoke-NAME");
 const unwrap = <T>(r: Result<T>): T => {
   if (!r.ok) throw new Error(r.error);
   return r.value;
 };
-const root = mkdtempSync(join(tmpdir(), "vibehack-team-live-"));
-const remote = `/tmp/vibehack-team-smoke-${randomUUID()}`;
+const root = mkdtempSync(join(tmpdir(), "civic-spark-team-live-"));
+const remote = `/tmp/civic-spark-team-smoke-${randomUUID()}`;
 const script = readFileSync(
   new URL("../packages/sprites/src/team_git.py", import.meta.url),
   "utf8",
@@ -63,7 +63,7 @@ try {
       `${bundle}:${remote}.bundle`,
       "python3",
       "-c",
-      "import subprocess,sys; p=sys.argv[1]; subprocess.run(['git','clone',p+'.bundle',p],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); subprocess.run(['git','-C',p,'config','user.name','Smoke'],check=True); subprocess.run(['git','-C',p,'config','user.email','smoke@example.test'],check=True); subprocess.run(['git','-C',p,'update-ref','refs/vibehack/base','HEAD'],check=True)",
+      "import subprocess,sys; p=sys.argv[1]; subprocess.run(['git','clone',p+'.bundle',p],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); subprocess.run(['git','-C',p,'config','user.name','Smoke'],check=True); subprocess.run(['git','-C',p,'config','user.email','smoke@example.test'],check=True); subprocess.run(['git','-C',p,'update-ref','refs/civic-spark/base','HEAD'],check=True)",
       remote,
     ]),
   );
@@ -142,7 +142,7 @@ try {
     unwrap(
       await client.exec(name, [
         "cat",
-        `${remote}/.git/vibehack-recovery/${recoveryId}/files/notes.txt`,
+        `${remote}/.git/civic-spark-recovery/${recoveryId}/files/notes.txt`,
       ]),
     ).toString(),
     "Keep my draft in recovery\n",

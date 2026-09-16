@@ -34,13 +34,13 @@ it("recognizes converged copies and never treats excluded paths as deletions", (
   ).toEqual([]);
 });
 it("creates, updates and deletes with revision checks; diffs include untracked and committed changes", () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-files-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-files-"));
   try {
     git(root, ["init", "--initial-branch=main"]);
     writeFileSync(join(root, "README.md"), "Before\n");
     git(root, ["add", "."]);
     git(root, ["commit", "-m", "Start"]);
-    git(root, ["update-ref", "refs/vibehack/base", "HEAD"]);
+    git(root, ["update-ref", "refs/civic-spark/base", "HEAD"]);
     const fs = new WorkspaceFiles(root);
     const old = fs.read("README.md");
     fs.mutate({

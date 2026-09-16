@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { PortalState, Workspace } from "../packages/domain/src/access-types.ts";
 
-const root = mkdtempSync(join(tmpdir(), "vibehack-provision-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-provision-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {
@@ -37,7 +37,7 @@ await page.route("**/api/state", async (route) => {
   for (const item of state.myWorkspaces) {
     item.spriteStatus = status;
     item.spritePhase = phase;
-    item.spriteName = status === "local" ? null : "vibehack-provision-fixture";
+    item.spriteName = status === "local" ? null : "civic-spark-provision-fixture";
     workspace = item;
   }
   await route.fulfill({ response, json: state });

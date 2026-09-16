@@ -10,7 +10,7 @@ import type { PortalState } from "../packages/domain/src/access-types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
 
-const root = mkdtempSync(join(tmpdir(), "vibehack-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve, reject) => {

@@ -9,7 +9,7 @@ import { EventService } from "../packages/domain/src/service.ts";
 import { testIdentity } from "./auth-fixture.ts";
 
 it("preview and confirmation API deny signed-out callers, other team members, and cross-origin approval", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-integration-auth-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-integration-auth-"));
   const { app, service, authentication } = await createApp(
     root,
     false,
@@ -72,7 +72,7 @@ it("preview and confirmation API deny signed-out callers, other team members, an
   }
 });
 it("a conflict ticket survives control-plane restart and only its owner can decline it", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-integration-ticket-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-integration-ticket-"));
   const service = new EventService(root);
   const owner = {
     id: "owner",

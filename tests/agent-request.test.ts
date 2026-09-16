@@ -36,7 +36,7 @@ it("external requests send once after an explicit action, preserve drafts, and i
     }
     createRoot(document.getElementById('root')).render(React.createElement(Harness));
   `;
-  const cacheDir = mkdtempSync(join(tmpdir(), "vibehack-request-vite-"));
+  const cacheDir = mkdtempSync(join(tmpdir(), "civic-spark-request-vite-"));
   const server = await createServer({
     configFile: false,
     cacheDir,

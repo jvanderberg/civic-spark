@@ -18,7 +18,7 @@ export class WorkspaceProvisioning {
         "Workspace preparation was interrupted by a server restart. Retry to resume safely.";
       this.service.setSprite(
         workspace.id,
-        workspace.spriteName ?? `vibehack-${workspace.id.slice(0, 8)}`,
+        workspace.spriteName ?? `civic-spark-${workspace.id.slice(0, 8)}`,
         "error",
         error,
       );
@@ -32,7 +32,7 @@ export class WorkspaceProvisioning {
     const dir = this.service.workspacePath(workspace.id);
     if (git(dir, ["status", "--porcelain"]).toString().trim())
       return fail("Share saved changes before preparing your Sprite", 409);
-    const name = workspace.spriteName ?? `vibehack-${workspace.id.slice(0, 8)}`;
+    const name = workspace.spriteName ?? `civic-spark-${workspace.id.slice(0, 8)}`;
     const bundle = join(this.root, `${workspace.id}.bundle`);
     const phase = (next: SpritePhase) => {
       const result = this.service.setSprite(workspace.id, name, "provisioning", null, next);

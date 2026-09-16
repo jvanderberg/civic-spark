@@ -192,7 +192,10 @@ export class EventService {
     if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
     const user = this.state.users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
     if (!user)
-      return fail("This person needs to sign in to VibeHack first, using this email address", 404);
+      return fail(
+        "This person needs to sign in to Civic Spark first, using this email address",
+        404,
+      );
     const existing = this.state.eventMembers.find(
       (m) => m.eventId === eventId && m.userId === user.id,
     );

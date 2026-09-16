@@ -10,8 +10,8 @@ import { SpriteClient } from "../packages/sprites/src/client.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 
 const requestedSprite = process.argv[process.argv.indexOf("--sprite") + 1];
-if (!requestedSprite?.startsWith("vibehack-smoke-"))
-  throw new Error("Pass --sprite with an existing dedicated vibehack-smoke- Sprite");
+if (!requestedSprite?.startsWith("civic-spark-smoke-"))
+  throw new Error("Pass --sprite with an existing dedicated civic-spark-smoke- Sprite");
 const sprite: string = requestedSprite;
 const testModel = process.argv.includes("--model");
 let modelKey = "";
@@ -21,7 +21,7 @@ if (testModel) {
   modelKey = await new Promise<string>((resolve) => lines.once("line", resolve));
   lines.close();
 }
-const root = mkdtempSync(join(tmpdir(), "vibehack-workspace-live-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-workspace-live-"));
 const origin = "http://127.0.0.1:4310";
 const { app, service, authentication } = await createApp(root, false, origin, undefined, "email");
 const address = await app.listen({ host: "127.0.0.1", port: 0 });
@@ -48,10 +48,10 @@ const id = team.value.workspace.id;
 service.setSprite(id, sprite, "ready", null);
 const sockets: WebSocket[] = [];
 const client = new SpriteClient();
-const agentFilename = `vibehack-agent-probe-${Date.now()}.svg`;
-const filename = `vibehack-live-check-${Date.now()}.txt`;
+const agentFilename = `civic-spark-agent-probe-${Date.now()}.svg`;
+const filename = `civic-spark-live-check-${Date.now()}.txt`;
 let revision: string | null = null;
-const credentialBackup = `/home/sprite/.vibehack-agent/smoke-backup-${randomUUID()}`;
+const credentialBackup = `/home/sprite/.civic-spark-agent/smoke-backup-${randomUUID()}`;
 let credentialsBackedUp = false;
 async function preserveCredentials(restore: boolean) {
   const result = await client.exec(sprite, [
@@ -200,7 +200,7 @@ try {
   );
   const terminal = await connect("terminal");
   await until(
-    () => terminal.received.some((e) => e.data?.includes("VibeHack terminal connected")),
+    () => terminal.received.some((e) => e.data?.includes("Civic Spark terminal connected")),
     "terminal output",
   );
   await until(
@@ -210,18 +210,18 @@ try {
   terminal.socket.send(
     JSON.stringify({
       type: "input",
-      data: "VIBEHACK_PROBE=keep; printf 'VIBE%s\\n' 'HACK_TERMINAL_READY'\r",
+      data: "CIVIC_SPARK_PROBE=keep; printf 'CIVIC_%s\\n' 'SPARK_TERMINAL_READY'\r",
     }),
   );
   await until(
-    () => terminal.received.some((e) => e.data?.includes("VIBEHACK_TERMINAL_READY")),
+    () => terminal.received.some((e) => e.data?.includes("CIVIC_SPARK_TERMINAL_READY")),
     "remote shell command",
   );
   terminal.socket.close();
   const attached = await connect("terminal");
   attached.socket.send(JSON.stringify({ type: "resize", cols: 121, rows: 35 }));
   attached.socket.send(
-    JSON.stringify({ type: "input", data: "printf 'PERSIST_%s\\n' \"$VIBEHACK_PROBE\"\r" }),
+    JSON.stringify({ type: "input", data: "printf 'PERSIST_%s\\n' \"$CIVIC_SPARK_PROBE\"\r" }),
   );
   await until(
     () =>
@@ -246,7 +246,7 @@ try {
   }
   for (const socket of sockets) socket.close();
   if (revision) await client.mutateBlob(sprite, { path: filename, revision, data: null });
-  await client.exec(sprite, ["tmux", "kill-session", "-t", "vibehack-workspace"]);
+  await client.exec(sprite, ["tmux", "kill-session", "-t", "civic-spark-workspace"]);
   await app.close();
   if (credentialsBackedUp) await preserveCredentials(true);
   rmSync(root, { recursive: true, force: true });

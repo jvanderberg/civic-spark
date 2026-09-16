@@ -31,7 +31,7 @@ export function commitChanges(root: string, title: string, revision: string) {
   const index = join(dir, "index");
   const original = existsSync(index) ? readFileSync(index) : Buffer.alloc(0);
   const ref = git(root, ["rev-parse", "--symbolic-full-name", "HEAD"]).toString().trim();
-  const temp = mkdtempSync(join(tmpdir(), "vibehack-commit-"));
+  const temp = mkdtempSync(join(tmpdir(), "civic-spark-commit-"));
   const lock = `${index}.lock`;
   let fd: number | undefined;
   let ownsLock = false;
@@ -86,7 +86,7 @@ export function commitChanges(root: string, title: string, revision: string) {
     fd = undefined;
     renameSync(lock, index);
     ownsLock = false;
-    const transferRef = `refs/vibehack/share/${revision}`;
+    const transferRef = `refs/civic-spark/share/${revision}`;
     git(root, ["update-ref", transferRef, commit]);
     return { commit, ref: transferRef, revision };
   } finally {
@@ -105,7 +105,7 @@ export function adoptExistingCommit(root: string, commit: string, expectedHead: 
     lock = `${index}.lock`;
   let fd: number | undefined;
   let owned = false;
-  const temp = mkdtempSync(join(tmpdir(), "vibehack-adopt-"));
+  const temp = mkdtempSync(join(tmpdir(), "civic-spark-adopt-"));
   try {
     fd = openSync(lock, "wx", 0o600);
     owned = true;

@@ -15,7 +15,7 @@ const unwrap = <T>(result: Result<T>) => {
 };
 afterEach(() => vi.restoreAllMocks());
 it("persists real provisioning phases, deduplicates starts, exposes errors and safely resumes after interruption", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-provision-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-provision-"));
   const { app, service, authentication } = await createApp(
     root,
     true,
@@ -68,6 +68,7 @@ it("persists real provisioning phases, deduplicates starts, exposes errors and s
     expect(await status()).toMatchObject({ spriteStatus: "provisioning", spritePhase: "creating" });
     expect((await app.inject({ method: "POST", url, headers })).statusCode).toBe(202);
     expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith(`civic-spark-${id.slice(0, 8)}`);
     finishCreate(fail("Provider connection failed; retry when connected", 502));
     await vi.waitFor(async () =>
       expect(await status()).toMatchObject({
@@ -99,7 +100,7 @@ it("persists real provisioning phases, deduplicates starts, exposes errors and s
   }
 });
 it("the checkout script is repeatable and preserves existing edits; unrelated projects are rejected", () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-checkout-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-checkout-"));
   try {
     git(root, ["init", "--initial-branch=main"]);
     writeFileSync(join(root, "README.md"), "Seed\n");
@@ -111,7 +112,7 @@ it("the checkout script is repeatable and preserves existing edits; unrelated pr
       new URL("../packages/sprites/src/checkout.sh", import.meta.url),
       "utf8",
     )
-      .replaceAll("/tmp/vibehack-seed.bundle", bundle)
+      .replaceAll("/tmp/civic-spark-seed.bundle", bundle)
       .replaceAll("/home/sprite", root);
     const run = () => spawnSync("bash", ["-c", script], { encoding: "utf8" });
     expect(run().status).toBe(0);

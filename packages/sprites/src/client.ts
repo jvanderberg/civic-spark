@@ -20,9 +20,9 @@ import {
 } from "../../workspace/src/types.ts";
 
 const execute = promisify(execFile);
-const spriteNamePattern = /^vibehack-[a-z0-9-]{1,45}$/;
+const spriteNamePattern = /^civic-spark-[a-z0-9-]{1,45}$/;
 export class SpriteClient {
-  constructor(private org = process.env.VIBEHACK_SPRITE_ORG) {}
+  constructor(private org = process.env.CIVIC_SPARK_SPRITE_ORG) {}
   private args(args: string[]) {
     return this.org ? ["-o", this.org, ...args] : args;
   }
@@ -50,7 +50,7 @@ export class SpriteClient {
   }
   async create(name: string): Promise<Result<string>> {
     if (!spriteNamePattern.test(name))
-      return fail("Prototype Sprite names must start with vibehack-.");
+      return fail("Prototype Sprite names must start with civic-spark-.");
     const result = await this.command(["create", "-skip-console", name]);
     return result.ok ? ok(name) : result;
   }
@@ -61,7 +61,7 @@ export class SpriteClient {
       name,
       "exec",
       "-file",
-      `${bundle}:/tmp/vibehack-seed.bundle`,
+      `${bundle}:/tmp/civic-spark-seed.bundle`,
       "bash",
       "-lc",
       readFileSync(new URL("./checkout.sh", import.meta.url), "utf8"),
@@ -161,7 +161,7 @@ export class SpriteClient {
     );
   }
   importTeam(name: string, bundle: string, remote: string) {
-    const destination = `/tmp/vibehack-team-${randomUUID()}.bundle`;
+    const destination = `/tmp/civic-spark-team-${randomUUID()}.bundle`;
     return this.fileOperation(
       name,
       { operation: "import", remote, bundle: destination },
@@ -198,7 +198,7 @@ export class SpriteClient {
       { operation: "share", title, revision },
       z.object({
         commit: z.string().regex(/^[a-f0-9]{40}$/),
-        ref: z.string().regex(/^refs\/vibehack\/share\/[a-f0-9]{64}$/),
+        ref: z.string().regex(/^refs\/civic-spark\/share\/[a-f0-9]{64}$/),
         revision: z.string(),
         bundle: z.string().max(14 * 1024 * 1024),
       }),

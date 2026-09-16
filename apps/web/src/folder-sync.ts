@@ -31,7 +31,7 @@ export const directorySupport = () => "showDirectoryPicker" in window;
 export function pickDirectory(): Promise<LocalFolder> {
   return (
     window as unknown as { showDirectoryPicker(options: object): Promise<LocalFolder> }
-  ).showDirectoryPicker({ mode: "readwrite", id: "vibehack-workspace" });
+  ).showDirectoryPicker({ mode: "readwrite", id: "civic-spark-workspace" });
 }
 async function digest(data: Uint8Array): Promise<string> {
   return [...new Uint8Array(await crypto.subtle.digest("SHA-256", data as Uint8Array<ArrayBuffer>))]
@@ -101,7 +101,7 @@ export async function localManifest(root: LocalFolder): Promise<Manifest> {
   await walk(root);
   return { files, skipped };
 }
-const marker = ".vibehack-sync.json";
+const marker = ".civic-spark-sync.json";
 const checkpointSchema = z.object({
   version: z.literal(1),
   workspace: z.string(),

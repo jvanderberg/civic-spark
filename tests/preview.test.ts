@@ -33,7 +33,7 @@ it("isolates preview origin, requires its capability, strips credentials, proxie
     close() {},
   }));
   cleanup.push(() => previews.close());
-  const opened = await previews.open("alice", "vibehack-test", 5173, async () => allowed);
+  const opened = await previews.open("alice", "civic-spark-test", 5173, async () => allowed);
   const origin = new URL(opened.url).origin;
   expect(new URL(origin).hostname).toBe("localhost");
   expect((await fetch(origin)).status).toBe(401);
@@ -88,12 +88,12 @@ it("one workspace preview capability cannot open another workspace preview", asy
     close() {},
   }));
   cleanup.push(() => previews.close());
-  const a = await previews.open("alice", "vibehack-a", 5173, async () => true);
-  const b = await previews.open("bob", "vibehack-b", 5173, async () => true);
+  const a = await previews.open("alice", "civic-spark-a", 5173, async () => true);
+  const b = await previews.open("bob", "civic-spark-b", 5173, async () => true);
   const auth = await fetch(a.url, { redirect: "manual" });
   const cookie = auth.headers.get("set-cookie")?.split(";")[0] ?? "";
   expect((await fetch(new URL(b.url).origin, { headers: { cookie } })).status).toBe(401);
-  await expect(previews.open("denied", "vibehack-a", 5173, async () => false)).rejects.toThrow(
+  await expect(previews.open("denied", "civic-spark-a", 5173, async () => false)).rejects.toThrow(
     "access ended",
   );
 });

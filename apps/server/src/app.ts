@@ -41,11 +41,11 @@ function send(reply: FastifyReply, result: Result<unknown>) {
     : reply.code(result.status).send({ error: result.error });
 }
 export async function createApp(
-  root = resolve(process.env.VIBEHACK_DATA_DIR ?? ".data"),
-  spritesEnabled = process.env.VIBEHACK_ENABLE_SPRITES === "1",
+  root = resolve(process.env.CIVIC_SPARK_DATA_DIR ?? ".data"),
+  spritesEnabled = process.env.CIVIC_SPARK_ENABLE_SPRITES === "1",
   baseURL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:4310",
   delivery?: EmailDelivery,
-  authMode = z.enum(["email", "prototype"]).parse(process.env.VIBEHACK_AUTH_MODE ?? "email"),
+  authMode = z.enum(["email", "prototype"]).parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
 ) {
   const prototype = authMode === "prototype";
   if (prototype) {
@@ -78,7 +78,7 @@ export async function createApp(
   app.decorateRequest("actor", null);
   app.addHook("onRequest", async (request) => {
     // Replace, never trust, a caller-supplied IP hint. Deployment proxy trust must be configured explicitly.
-    request.headers["x-vibehack-client-ip"] = request.ip;
+    request.headers["x-civic-spark-client-ip"] = request.ip;
   });
   app.addContentTypeParser(
     "application/x-www-form-urlencoded",
@@ -483,7 +483,7 @@ export async function createApp(
       // Reauthorize after remote I/O: removed members and closed events cannot publish.
       const access = service.workspace(actor(r.actor), r.params.id, true);
       if (!access.ok) return send(reply, access);
-      temp = mkdtempSync(join(tmpdir(), "vibehack-incoming-"));
+      temp = mkdtempSync(join(tmpdir(), "civic-spark-incoming-"));
       const bundle = join(temp, "contribution.bundle");
       const data = Buffer.from(result.value.bundle, "base64");
       if (data.length > 10 * 1024 * 1024 || data.toString("base64") !== result.value.bundle)

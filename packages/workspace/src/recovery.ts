@@ -15,7 +15,7 @@ import { git } from "../../git/src/repository.ts";
 export function backupWorkingTree(root: string, id: string) {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid recovery identifier");
   const gitDir = git(root, ["rev-parse", "--absolute-git-dir"]).toString().trim();
-  const target = join(gitDir, "vibehack-recovery", id);
+  const target = join(gitDir, "civic-spark-recovery", id);
   mkdirSync(join(target, "files"), { recursive: true });
   const paths = [
     ...new Set(

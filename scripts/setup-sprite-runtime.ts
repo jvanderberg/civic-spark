@@ -2,8 +2,8 @@ import { AgentSessions } from "../apps/server/src/agents.ts";
 
 const flag = process.argv.indexOf("--sprite");
 const sprite = flag >= 0 ? process.argv[flag + 1] : undefined;
-if (!sprite || !/^vibehack-[a-z0-9-]{1,45}$/.test(sprite)) {
-  throw new Error("Usage: npm run setup:sprite -- --sprite vibehack-NAME");
+if (!sprite || !/^civic-spark-[a-z0-9-]{1,45}$/.test(sprite)) {
+  throw new Error("Usage: npm run setup:sprite -- --sprite civic-spark-NAME");
 }
 if (!(await new AgentSessions().prepare(sprite))) {
   throw new Error(

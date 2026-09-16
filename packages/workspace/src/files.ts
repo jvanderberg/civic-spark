@@ -98,7 +98,7 @@ export class WorkspaceFiles {
       throw new Error("Invalid file data or file exceeds 25 MiB");
     mkdirSync(dirname(path), { recursive: true });
     this.path(input.path);
-    const temp = join(dirname(path), `.vibehack-${crypto.randomUUID()}`);
+    const temp = join(dirname(path), `.civic-spark-${crypto.randomUUID()}`);
     try {
       writeFileSync(temp, data, { flag: "wx" });
       renameSync(temp, path);
@@ -110,7 +110,7 @@ export class WorkspaceFiles {
   snapshot() {
     let base: string;
     try {
-      base = git(this.root, ["rev-parse", "refs/vibehack/base"]).toString().trim();
+      base = git(this.root, ["rev-parse", "refs/civic-spark/base"]).toString().trim();
     } catch {
       try {
         base = git(this.root, ["rev-parse", "origin/main"]).toString().trim();

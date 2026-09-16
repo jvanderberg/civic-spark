@@ -21,7 +21,7 @@ import {
 } from "./protocol.ts";
 import { verifyProviderKey } from "./provider.ts";
 
-const root = "/home/sprite/.vibehack-agent";
+const root = "/home/sprite/.civic-spark-agent";
 async function contextModule() {
   // Reproducible setup may refresh guidance while a conversation stays attached.
   // Load the changed module on the next turn without losing provider context.
@@ -220,7 +220,7 @@ async function openTurn(input: Extract<AgentInput, { type: "prompt" }>) {
   if (!keys.opencode) throw new Error("API key missing");
   const client = await startOpen();
   if (!state.opencode) {
-    const created = await client.session.create({ title: "VibeHack workspace" });
+    const created = await client.session.create({ title: "Civic Spark workspace" });
     state.opencode = created.data?.id;
     save();
   }

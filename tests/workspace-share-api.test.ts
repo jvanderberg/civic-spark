@@ -13,7 +13,7 @@ const unwrap = <T>(r: Result<T>): T => {
   return r.value;
 };
 it("Share API requires an owner and description, publishes main, and rechecks membership after Sprite transfer", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-share-api-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-share-api-"));
   const { app, service, authentication } = await createApp(
     root,
     false,
@@ -57,14 +57,14 @@ it("Share API requires an owner and description, publishes main, and rechecks me
     expect(response.statusCode).toBe(200);
     expect(response.json().status).toBe("accepted");
     expect(service.portal(actor, false).contributions).toHaveLength(1);
-    service.setSprite(id, "vibehack-smoke-test", "ready", null);
+    service.setSprite(id, "civic-spark-smoke-test", "ready", null);
     vi.spyOn(SpriteClient.prototype, "share").mockImplementationOnce(async () => {
       unwrap(service.removeMember(actor, team.team.id, actor.id));
       return {
         ok: true,
         value: {
           commit: "a".repeat(40),
-          ref: `refs/vibehack/share/${revision}`,
+          ref: `refs/civic-spark/share/${revision}`,
           revision: revision as string,
           bundle: "",
         },

@@ -96,14 +96,14 @@ export class WorkspaceIntegrations {
     const child = spawn(
       "sprite",
       [
-        ...(process.env.VIBEHACK_SPRITE_ORG ? ["-o", process.env.VIBEHACK_SPRITE_ORG] : []),
+        ...(process.env.CIVIC_SPARK_SPRITE_ORG ? ["-o", process.env.CIVIC_SPARK_SPRITE_ORG] : []),
         "-s",
         sprite,
         "exec",
         "-file",
-        `${fileURLToPath(new URL("../../../packages/agents/runtime/relay.py", import.meta.url))}:/home/sprite/.vibehack-agent/relay.py`,
+        `${fileURLToPath(new URL("../../../packages/agents/runtime/relay.py", import.meta.url))}:/home/sprite/.civic-spark-agent/relay.py`,
         "python3",
-        "/home/sprite/.vibehack-agent/relay.py",
+        "/home/sprite/.civic-spark-agent/relay.py",
       ],
       { stdio: "pipe" },
     );
@@ -149,7 +149,7 @@ export class WorkspaceIntegrations {
                 value: {
                   pending: this.pending(id, owner),
                   instructions:
-                    "If conflict resolution is pending, the participant must approve in the workspace top bar. Once resolving is approved, resolve conflicts, git add the resolved paths, and GIT_EDITOR=true git rebase --continue. Summarize the resolved result and ask for explicit publication confirmation before vibehack git publish. Conflict approval alone does not authorize publication.",
+                    "If conflict resolution is pending, the participant must approve in the workspace top bar. Once resolving is approved, resolve conflicts, git add the resolved paths, and GIT_EDITOR=true git rebase --continue. Summarize the resolved result and ask for explicit publication confirmation before civic-spark git publish. Conflict approval alone does not authorize publication.",
                 },
               };
             else
@@ -216,7 +216,7 @@ export class WorkspaceIntegrations {
     if (team.workspace.spriteStatus !== "ready" || !team.workspace.spriteName)
       throw new Error("Agent publishing needs a running Sprite.");
     const sprite = team.workspace.spriteName;
-    const temp = mkdtempSync(join(tmpdir(), "vibehack-agent-fetch-"));
+    const temp = mkdtempSync(join(tmpdir(), "civic-spark-agent-fetch-"));
     try {
       const bundle = join(temp, "team.bundle");
       git(team.repo, ["bundle", "create", bundle, "main"]);
@@ -244,7 +244,7 @@ export class WorkspaceIntegrations {
           status: "confirmation",
           request: saved,
           instructions:
-            "Paused before changing your checkout. The participant must approve conflict resolution in the VibeHack top bar. Do not start the rebase or resolve conflicts before approval. After approval, use vibehack git status and continue.",
+            "Paused before changing your checkout. The participant must approve conflict resolution in the Civic Spark top bar. Do not start the rebase or resolve conflicts before approval. After approval, use civic-spark git status and continue.",
         };
       if (saved?.status === "declined")
         throw new Error(
@@ -270,7 +270,7 @@ export class WorkspaceIntegrations {
           status: "confirmation",
           request: { ...pending, owner: undefined },
           instructions:
-            "Conflicts need the participant's confirmation in the workspace top bar. The original checkout is unchanged. After approval, use vibehack git status, then resolve and continue the rebase. Summarize the resolved changes and ask for explicit publication confirmation before publishing again.",
+            "Conflicts need the participant's confirmation in the workspace top bar. The original checkout is unchanged. After approval, use civic-spark git status, then resolve and continue the rebase. Summarize the resolved changes and ask for explicit publication confirmation before publishing again.",
         };
       }
       if (!result.head) throw new Error("Missing rebased Git head");
@@ -287,13 +287,13 @@ export class WorkspaceIntegrations {
         !exported.title
       )
         throw new Error("Invalid Git export");
-      temp = mkdtempSync(join(tmpdir(), "vibehack-agent-push-"));
+      temp = mkdtempSync(join(tmpdir(), "civic-spark-agent-push-"));
       const bundle = join(temp, "contribution.bundle");
       const data = Buffer.from(exported.bundle, "base64");
       if (
         data.length > 10 * 1024 * 1024 ||
         data.toString("base64") !== exported.bundle ||
-        !/^refs\/vibehack\/share\/[a-f0-9]{64}$/.test(exported.ref)
+        !/^refs\/civic-spark\/share\/[a-f0-9]{64}$/.test(exported.ref)
       )
         throw new Error("Invalid Git bundle");
       writeFileSync(bundle, data, { mode: 0o600 });
@@ -351,7 +351,7 @@ export class WorkspaceIntegrations {
       return {
         ...result,
         instructions:
-          "Conflict resolution approved. Ask your agent to run vibehack git status, resolve the pending rebase, run checks and publish.",
+          "Conflict resolution approved. Ask your agent to run civic-spark git status, resolve the pending rebase, run checks and publish.",
       };
     } finally {
       this.busy.delete(id);

@@ -215,7 +215,7 @@ export class WorkspaceEngine {
       mkdirSync(dirname(this.workspacePath(p.id)), { recursive: true });
       git(this.root, ["clone", this.repoPath(teamId), this.workspacePath(p.id)]);
       git(this.workspacePath(p.id), ["switch", "-c", `participant/${p.id}`]);
-      git(this.workspacePath(p.id), ["update-ref", "refs/vibehack/base", "HEAD"]);
+      git(this.workspacePath(p.id), ["update-ref", "refs/civic-spark/base", "HEAD"]);
       this.state.participants.push(p);
       this.record(event.id, `${p.name} joined ${team.name}.`);
       return ok(p);
@@ -319,7 +319,7 @@ export class WorkspaceEngine {
         (c) => c.participantId === id && c.previewRevision === revision && c.status === "accepted",
       );
       if (prior) {
-        git(this.workspacePath(id), ["update-ref", "refs/vibehack/base", prior.commit]);
+        git(this.workspacePath(id), ["update-ref", "refs/civic-spark/base", prior.commit]);
         return ok(prior);
       }
       const snapshot = commitChanges(this.workspacePath(id), title, revision);
@@ -331,7 +331,7 @@ export class WorkspaceEngine {
         snapshot.commit,
       );
       if (result.ok)
-        git(this.workspacePath(id), ["update-ref", "refs/vibehack/base", snapshot.commit]);
+        git(this.workspacePath(id), ["update-ref", "refs/civic-spark/base", snapshot.commit]);
       return result;
     });
   }
@@ -476,7 +476,7 @@ export class WorkspaceEngine {
         git(dir, ["merge", "--abort"]);
         return fail("Your changes overlap with team updates. Your version is preserved.", 409);
       }
-      git(dir, ["update-ref", "refs/vibehack/base", "origin/main"]);
+      git(dir, ["update-ref", "refs/civic-spark/base", "origin/main"]);
       return ok("Workspace updated to include the team version.");
     });
   }

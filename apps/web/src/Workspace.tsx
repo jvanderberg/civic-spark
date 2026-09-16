@@ -48,7 +48,7 @@ export function Workspace({
 }) {
   const [view, setView] = useState<WorkspaceView>(() => {
     try {
-      const saved = localStorage.getItem(`vibehack:workspace:${participant.id}:tab`);
+      const saved = localStorage.getItem(`civic-spark:workspace:${participant.id}:tab`);
       if (saved && ["files", "changes", "agent", "terminal", "local"].includes(saved))
         return saved as WorkspaceView;
     } catch {
@@ -58,7 +58,7 @@ export function Workspace({
   });
   useEffect(() => {
     try {
-      localStorage.setItem(`vibehack:workspace:${participant.id}:tab`, view);
+      localStorage.setItem(`civic-spark:workspace:${participant.id}:tab`, view);
     } catch {
       // Preferences contain no files, messages, or credentials.
     }

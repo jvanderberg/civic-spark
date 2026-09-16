@@ -15,7 +15,7 @@ const unwrap = <T>(r: Result<T>): T => {
   return r.value;
 };
 it("team update API enforces ownership, active-turn/stale guards, and reauthorization after remote transfer", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-team-api-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-team-api-"));
   const { app, service, authentication } = await createApp(
     root,
     false,
@@ -95,7 +95,7 @@ it("team update API enforces ownership, active-turn/stale guards, and reauthoriz
       .toString()
       .trim();
     const head = git(service.workspacePath(other.id), ["rev-parse", "HEAD"]).toString().trim();
-    service.setSprite(other.id, "vibehack-smoke-test", "ready", null);
+    service.setSprite(other.id, "civic-spark-smoke-test", "ready", null);
     vi.spyOn(SpriteClient.prototype, "importTeam").mockImplementationOnce(async () => {
       unwrap(service.removeMember(alice, team.team.id, bob.id));
       return { ok: true, value: { imported: remote } };

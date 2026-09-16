@@ -8,7 +8,7 @@ import { createApp } from "../apps/server/src/app.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 
-const root = mkdtempSync(join(tmpdir(), "vibehack-changes-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-changes-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {
@@ -84,7 +84,7 @@ try {
           head: remote,
           remote,
           conflicts: [],
-          backup: "refs/vibehack/recovery/test",
+          backup: "refs/civic-spark/recovery/test",
         },
       });
     } else if (conflicted) {

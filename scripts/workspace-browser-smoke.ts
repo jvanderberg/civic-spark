@@ -9,7 +9,7 @@ import type { PortalState } from "../packages/domain/src/access-types.ts";
 import type { FileBlob } from "../packages/workspace/src/types.ts";
 import { editorInput, readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
 
-const root = mkdtempSync(join(tmpdir(), "vibehack-workspace-browser-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-workspace-browser-"));
 const artifacts = resolve("artifacts");
 mkdirSync(artifacts, { recursive: true });
 const port = await new Promise<number>((resolve) => {

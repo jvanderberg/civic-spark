@@ -2,7 +2,7 @@
 
 ## Naming and branding
 
-The repository is `civic-spark` and the provisional platform name is Civic Spark. Participant-facing branding should primarily use the event name, with modest platform identification. Existing `vibehack` runtime/configuration identifiers remain compatible.
+The repository is `civic-spark` and the platform name is Civic Spark. Participant-facing branding should primarily use the event name, with modest platform identification. Runtime/configuration identifiers use the Civic Spark namespace. This breaks earlier names without compatibility aliases or automatic resource migration; see [migration requirements](rename-migration.md).
 
 ## Product model
 
@@ -97,7 +97,7 @@ The browser interface remains the default. Terminal and local editing are option
 
 1. The participant selects **Connect local folder**, chooses a folder, and grants browser read/write permission.
 2. Offer a fresh folder for the initial project copy. If the selected folder already has files, show a reconciliation preview before writing; never overwrite them silently.
-3. Transfer saved project-file changes in both directions between that folder and the personal Sprite through authenticated VibeHack access.
+3. Transfer saved project-file changes in both directions between that folder and the personal Sprite through authenticated Civic Spark access.
 4. Track the last successful sync and compare both sides against it. Preserve conflicting versions and present a resolution flow when both sides changed a file.
 5. Track deletions explicitly. Lost permissions, incomplete directory scans, and disconnected folders must never be interpreted as mass deletions.
 6. Exclude `.git`, dependencies, caches, and credentials by default. Git remains managed inside the Sprite; local sync does not require a local Git checkout.
@@ -105,7 +105,7 @@ The browser interface remains the default. Terminal and local editing are option
 8. Support desktop Chrome and Edge on macOS and Windows first, with feature detection and a clear fallback to browser editing and ZIP download/file upload where writable directory access is unavailable. Upload/download is not advertised as automatic two-way sync.
 9. Promise sync only while the page is open and active. Reconcile after a suspended tab resumes, a network reconnects, or permission is restored. Reliable sync after the browser closes would require an optional local helper, outside the initial browser-sync requirement.
 
-Browser directory permissions enable this design but do not provide a synchronization engine; VibeHack must implement comparison, transfer, conflicts, and recovery. Recheck browser compatibility during implementation. [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access), [directory picker support](https://developer.mozilla.org/en-US/docs/Web/API/Window/showDirectoryPicker)
+Browser directory permissions enable this design but do not provide a synchronization engine; Civic Spark must implement comparison, transfer, conflicts, and recovery. Recheck browser compatibility during implementation. [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access), [directory picker support](https://developer.mozilla.org/en-US/docs/Web/API/Window/showDirectoryPicker)
 
 Acceptance includes local-to-Sprite and Sprite-to-local edits, new files, deletions, simultaneous edits, unsaved browser edits, interrupted transfers, permission revocation, tab suspension/resume, excluded files, and cross-workspace access denial. Verify the supported macOS/Windows browser combinations and the fallback experience before claiming support.
 

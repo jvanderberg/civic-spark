@@ -9,8 +9,8 @@ import { loadCredentials, saveCredential } from "../packages/agents/src/credenti
 import type { AgentEvent } from "../packages/agents/src/protocol.ts";
 
 it("keeps a saved OpenRouter key through startup failure and retries the native credential without browser key submission", async () => {
-  const home = mkdtempSync(join(tmpdir(), "vibehack-saved-key-"));
-  const runtime = join(home, ".vibehack-agent");
+  const home = mkdtempSync(join(tmpdir(), "civic-spark-saved-key-"));
+  const runtime = join(home, ".civic-spark-agent");
   mkdirSync(runtime);
   mkdirSync(join(home, "project"));
   saveCredential(home, "opencode", "fake-router-startup");

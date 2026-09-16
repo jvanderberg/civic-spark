@@ -10,7 +10,7 @@ import { TerminalSessions } from "../apps/server/src/terminal.ts";
 import { testIdentity } from "./auth-fixture.ts";
 
 it("keeps Sprite execution private even when harness tool permissions are bypassed", async () => {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-execution-access-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-execution-access-"));
   const origin = "http://127.0.0.1:4310";
   // Never launch a Sprite, terminal, agent, or model in this authorization test.
   const agent = vi
@@ -44,7 +44,7 @@ it("keeps Sprite execution private even when harness tool permissions are bypass
     });
     assert(team.ok);
     const id = team.value.workspace.id;
-    service.setSprite(id, "vibehack-smoke-access", "ready", null);
+    service.setSprite(id, "civic-spark-smoke-access", "ready", null);
     const headers = { host: "127.0.0.1:4310", origin };
     expect(
       (

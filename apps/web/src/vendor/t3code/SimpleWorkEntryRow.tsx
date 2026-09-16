@@ -1,5 +1,5 @@
 // Extracted from T3 Code MessagesTimeline.tsx SimpleWorkEntryRow (MIT; see LICENSE.txt).
-// Structured VibeHack events are translated before this view; native button supplies keyboard behavior.
+// Structured Civic Spark events are translated before this view; native button supplies keyboard behavior.
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "./utils.ts";

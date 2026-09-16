@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run inside a Sprite; no agent, credentials, or project commands are involved.
 set -euo pipefail
-runtime=/home/sprite/.vibehack-agent
+runtime=/home/sprite/.civic-spark-agent
 mkdir -p "$runtime"
 cd "$runtime"
 if ! test -f environment.json; then cp environment.defaults.json environment.json; chmod 600 environment.json; fi
@@ -26,15 +26,15 @@ fi
 # existing tmux shells already have node_modules/.bin in PATH.
 mkdir -p "$runtime/bin" /home/sprite/.local/bin
 for command in opencode claude; do
-  printf '#!/usr/bin/env bash\nexec node --experimental-strip-types /home/sprite/.vibehack-agent/cli.ts %s "$@"\n' "$command" > "$runtime/bin/$command"
+  printf '#!/usr/bin/env bash\nexec node --experimental-strip-types /home/sprite/.civic-spark-agent/cli.ts %s "$@"\n' "$command" > "$runtime/bin/$command"
   chmod 755 "$runtime/bin/$command"
   ln -sfn "$runtime/bin/$command" "$runtime/node_modules/.bin/$command"
   ln -sfn "$runtime/bin/$command" "/home/sprite/.local/bin/$command"
 done
-printf '#!/usr/bin/env bash\nexec node --experimental-strip-types /home/sprite/.vibehack-agent/integration-cli.ts "$@"\n' > "$runtime/bin/vibehack"
-chmod 755 "$runtime/bin/vibehack"
-ln -sfn "$runtime/bin/vibehack" "$runtime/node_modules/.bin/vibehack"
-ln -sfn "$runtime/bin/vibehack" /home/sprite/.local/bin/vibehack
+printf '#!/usr/bin/env bash\nexec node --experimental-strip-types /home/sprite/.civic-spark-agent/integration-cli.ts "$@"\n' > "$runtime/bin/civic-spark"
+chmod 755 "$runtime/bin/civic-spark"
+ln -sfn "$runtime/bin/civic-spark" "$runtime/node_modules/.bin/civic-spark"
+ln -sfn "$runtime/bin/civic-spark" /home/sprite/.local/bin/civic-spark
 test "$("$runtime/bin/opencode" --version 2>/dev/null)" = "1.18.31"
 "$runtime/bin/claude" --version 2>/dev/null | grep -q '^2\.1\.273 '
-printf 'VibeHack runtime verified: OpenCode 1.18.31; Claude Code 2.1.273\n'
+printf 'Civic Spark runtime verified: OpenCode 1.18.31; Claude Code 2.1.273\n'

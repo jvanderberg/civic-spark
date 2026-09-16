@@ -75,7 +75,7 @@ describe("Anthropic workspace authentication", () => {
     );
   });
   it("persists a shared SDK and CLI workspace header while preserving other headers and env settings", () => {
-    const root = mkdtempSync(join(tmpdir(), "vibehack-provider-"));
+    const root = mkdtempSync(join(tmpdir(), "civic-spark-provider-"));
     roots.push(root);
     mkdirSync(join(root, ".claude"));
     const file = join(root, ".claude/settings.json");

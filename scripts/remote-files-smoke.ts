@@ -7,15 +7,15 @@ import type { FileContent, Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 
 const name = process.argv[process.argv.indexOf("--sprite") + 1];
-if (!process.argv.includes("--sprite") || !name?.startsWith("vibehack-smoke-"))
+if (!process.argv.includes("--sprite") || !name?.startsWith("civic-spark-smoke-"))
   throw new Error(
-    "Pass --sprite vibehack-smoke-NAME for an existing dedicated test Sprite. This test temporarily edits README.md and restores it.",
+    "Pass --sprite civic-spark-smoke-NAME for an existing dedicated test Sprite. This test temporarily edits README.md and restores it.",
   );
 function value<T>(r: Result<T>): T {
   if (!r.ok) throw new Error(r.error);
   return r.value;
 }
-const root = mkdtempSync(join(tmpdir(), "vibehack-remote-files-"));
+const root = mkdtempSync(join(tmpdir(), "civic-spark-remote-files-"));
 const { app, service, authentication } = await createApp(root, false);
 let original: FileContent | null = null;
 let saved: FileContent | null = null;

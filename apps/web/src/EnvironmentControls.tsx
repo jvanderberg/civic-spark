@@ -89,7 +89,7 @@ export function EnvironmentControls({
         onResolve({
           id: `publish-${pending.id}`,
           prompt:
-            "I explicitly approve resolving the pending agent-publication rebase conflicts. Run vibehack git status to inspect the approved request. The controlled integration has begun the rebase and created a recovery reference. Reconcile both sides' intent, preserving unrelated work. Stage resolved paths and run GIT_EDITOR=true git rebase --continue until complete; run appropriate checks, summarize the resolved result, and ask me before publishing. This approval is for conflict resolution only. Run vibehack git publish only after I explicitly confirm publication of the resolved changes. Do not force push or discard either side wholesale. If unsafe or ambiguous, keep recovery intact and ask me.",
+            "I explicitly approve resolving the pending agent-publication rebase conflicts. Run civic-spark git status to inspect the approved request. The controlled integration has begun the rebase and created a recovery reference. Reconcile both sides' intent, preserving unrelated work. Stage resolved paths and run GIT_EDITOR=true git rebase --continue until complete; run appropriate checks, summarize the resolved result, and ask me before publishing. This approval is for conflict resolution only. Run civic-spark git publish only after I explicitly confirm publication of the resolved changes. Do not force push or discard either side wholesale. If unsafe or ambiguous, keep recovery intact and ask me.",
         });
       await refresh();
     } catch (e) {

@@ -38,7 +38,7 @@ class Folder implements LocalFolder {
         let pending = new Uint8Array();
         return {
           write: async (input: string | Uint8Array) => {
-            if (name === ".vibehack-sync.json" && this.checkpointFailure)
+            if (name === ".civic-spark-sync.json" && this.checkpointFailure)
               throw new Error("Disk full");
             pending = new Uint8Array(
               typeof input === "string" ? new TextEncoder().encode(input) : input,

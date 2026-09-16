@@ -19,7 +19,9 @@ it.each(["", "<html>proxy failure with private details</html>"])(
       "fetch",
       vi.fn(async () => new Response(body, { status: 502 })),
     );
-    await expect(api("/workspaces/test/preview")).rejects.toThrow("HTTP 502");
+    await expect(api("/workspaces/test/preview")).rejects.toThrow(
+      "The Civic Spark server returned HTTP 502.",
+    );
     await expect(api("/workspaces/test/preview")).rejects.not.toThrow("private details");
   },
 );

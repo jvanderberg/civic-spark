@@ -82,7 +82,7 @@ def git(*args):
 
 def snapshot():
     base = None
-    for ref in ['refs/vibehack/base', 'origin/main', 'HEAD']:
+    for ref in ['refs/civic-spark/base', 'origin/main', 'HEAD']:
         try:
             base = git('rev-parse', ref).decode().strip()
             break
@@ -172,11 +172,11 @@ def share(request):
         # Git's own lock blocks concurrent native commits/checkouts/staging.
         fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         owns_lock = True
-        with os.fdopen(fd, 'wb') as lock_stream, tempfile.TemporaryDirectory(prefix='vibehack-commit-') as folder:
+        with os.fdopen(fd, 'wb') as lock_stream, tempfile.TemporaryDirectory(prefix='civic-spark-commit-') as folder:
             if (index.read_bytes() if index.exists() else b'') != original:
                 raise ValueError('Git staging changed. Review Changes before sharing.')
-            env = dict(os.environ, GIT_AUTHOR_NAME='VibeHack participant', GIT_AUTHOR_EMAIL='participant@vibehack.local',
-                       GIT_COMMITTER_NAME='VibeHack', GIT_COMMITTER_EMAIL='workspace@vibehack.local')
+            env = dict(os.environ, GIT_AUTHOR_NAME='Civic Spark participant', GIT_AUTHOR_EMAIL='participant@civic-spark.local',
+                       GIT_COMMITTER_NAME='Civic Spark', GIT_COMMITTER_EMAIL='workspace@civic-spark.local')
             def stage(index_name, *args, data=None):
                 return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', *args], cwd=ROOT,
                     env=dict(env, GIT_INDEX_FILE=folder + '/' + index_name), input=data,
@@ -211,9 +211,9 @@ def share(request):
                 stage('commit-index', 'update-ref', branch, commit, head)
         os.replace(lock, index)
         owns_lock = False
-        ref = 'refs/vibehack/share/' + revision
+        ref = 'refs/civic-spark/share/' + revision
         git('update-ref', ref, commit)
-        with tempfile.TemporaryDirectory(prefix='vibehack-push-') as folder:
+        with tempfile.TemporaryDirectory(prefix='civic-spark-push-') as folder:
             bundle = folder + '/share.bundle'
             git('bundle', 'create', bundle, ref)
             data = pathlib.Path(bundle).read_bytes()
@@ -235,7 +235,7 @@ def adopt_existing(request):
     try:
         fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         owned = True
-        with os.fdopen(fd, 'wb') as stream, tempfile.TemporaryDirectory(prefix='vibehack-adopt-') as folder:
+        with os.fdopen(fd, 'wb') as stream, tempfile.TemporaryDirectory(prefix='civic-spark-adopt-') as folder:
             head = git('rev-parse', 'HEAD').decode().strip()
             if head == commit:
                 return {'commit': commit, 'alreadyCompleted': True}
@@ -259,7 +259,7 @@ def adopt_existing(request):
 
 try:
     request = json.loads(sys.stdin.read(((LIMIT + 2) // 3) * 4 + 65536))
-    with open('/home/sprite/.vibehack-file-lock', 'a') as lock:
+    with open('/home/sprite/.civic-spark-file-lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         op = request['operation']
         if op == 'manifest':
@@ -273,10 +273,10 @@ try:
         elif op == 'shared':
             if not re.fullmatch(r'[a-f0-9]{64}', request['revision']) or not re.fullmatch(r'[a-f0-9]{40}', request['commit']):
                 raise ValueError('Invalid shared snapshot')
-            ref = 'refs/vibehack/share/' + request['revision']
+            ref = 'refs/civic-spark/share/' + request['revision']
             if git('rev-parse', ref).decode().strip() != request['commit']:
                 raise ValueError('Shared snapshot has changed')
-            git('update-ref', 'refs/vibehack/base', request['commit'])
+            git('update-ref', 'refs/civic-spark/base', request['commit'])
             value = {'updated': True}
         else:
             name = request['path']
@@ -296,7 +296,7 @@ try:
                         raise ValueError('File exceeds 25 MiB')
                     path.parent.mkdir(parents=True, exist_ok=True)
                     target(name)
-                    handle, temp = tempfile.mkstemp(prefix='.vibehack-', dir=path.parent)
+                    handle, temp = tempfile.mkstemp(prefix='.civic-spark-', dir=path.parent)
                     try:
                         with os.fdopen(handle, 'wb') as stream:
                             stream.write(data)

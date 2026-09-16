@@ -17,7 +17,7 @@ afterEach(() => {
   for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 function setup() {
-  const root = mkdtempSync(join(tmpdir(), "vibehack-team-test-"));
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-team-test-"));
   cleanup.push(root);
   const repo = join(root, "team.git"),
     local = join(root, "local"),
@@ -30,7 +30,7 @@ function setup() {
   git(other, ["commit", "-m", "Start"]);
   git(other, ["push", "origin", "main"]);
   git(root, ["clone", repo, local]);
-  git(local, ["update-ref", "refs/vibehack/base", "HEAD"]);
+  git(local, ["update-ref", "refs/civic-spark/base", "HEAD"]);
   const head = () => git(local, ["rev-parse", "HEAD"]).toString().trim();
   const remote = () => git(repo, ["rev-parse", "main"]).toString().trim();
   const update = (path = "team.txt", content = "Team update\n") => {
@@ -66,7 +66,7 @@ it("polling sees incoming team commits, ignores local-ahead commits, and clean p
   expect(git(f.local, ["merge-base", "--is-ancestor", f.remote(), "HEAD"]).length).toBe(0);
   expect(readFileSync(join(f.local, "mine.txt"), "utf8")).toBe("Mine\n");
   expect(readFileSync(join(f.local, "team.txt"), "utf8")).toBe("Team update\n");
-  expect(git(f.local, ["rev-parse", "refs/vibehack/base"]).toString().trim()).toBe(f.remote());
+  expect(git(f.local, ["rev-parse", "refs/civic-spark/base"]).toString().trim()).toBe(f.remote());
   expect(new WorkspaceFiles(f.local).changes().files.some((file) => file.path === "mine.txt")).toBe(
     true,
   );
@@ -121,7 +121,7 @@ it("Use team version preserves conflicted files, untracked files, index, and loc
   expect(result.status).toBe("updated");
   const recovery = join(
     f.local,
-    ".git/vibehack-recovery",
+    ".git/civic-spark-recovery",
     result.backup?.split("/").at(-1) ?? "missing",
   );
   expect(readFileSync(join(recovery, "files/story.txt"), "utf8")).toBe(conflicted);
@@ -187,7 +187,7 @@ it("Sprite Python adapter matches clean/conflict/agent/replace behavior with no 
   expect(f.head()).toBe(f.remote());
   const copy = join(
     f.local,
-    ".git/vibehack-recovery",
+    ".git/civic-spark-recovery",
     replaced.value.backup.split("/").at(-1),
     "files/story.txt",
   );

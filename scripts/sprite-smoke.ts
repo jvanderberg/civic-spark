@@ -13,14 +13,14 @@ function unwrap<T>(result: Result<T>): T {
   if (!result.ok) throw new Error(result.error);
   return result.value;
 }
-const name = `vibehack-smoke-${Date.now().toString(36)}`;
+const name = `civic-spark-smoke-${Date.now().toString(36)}`;
 const root = resolve(".data/sprite-smoke", name);
 const local = join(root, "local");
 mkdirSync(local, { recursive: true });
 git(local, ["init", "--initial-branch=main"]);
 writeFileSync(
   join(local, "README.md"),
-  "# VibeHack transport rehearsal\n\nCreated on the organizer’s Mac.\n",
+  "# Civic Spark transport rehearsal\n\nCreated on the organizer’s Mac.\n",
 );
 git(local, ["add", "."]);
 git(local, ["commit", "-m", "Seed repository on Mac"]);
@@ -51,7 +51,7 @@ unwrap(
   await client.exec(name, [
     "bash",
     "-lc",
-    "set -e; cd /home/sprite/project; printf 'This commit was made inside a Sprite.\n' > sprite-result.txt; git add sprite-result.txt; git commit -m 'Return work from Sprite'; git bundle create /tmp/vibehack-return.bundle --all",
+    "set -e; cd /home/sprite/project; printf 'This commit was made inside a Sprite.\n' > sprite-result.txt; git add sprite-result.txt; git commit -m 'Return work from Sprite'; git bundle create /tmp/civic-spark-return.bundle --all",
   ]),
 );
 const remoteCommit = unwrap(
@@ -60,7 +60,7 @@ const remoteCommit = unwrap(
   .toString()
   .trim();
 const inbound = join(root, "inbound.bundle");
-writeFileSync(inbound, unwrap(await client.exec(name, ["cat", "/tmp/vibehack-return.bundle"])));
+writeFileSync(inbound, unwrap(await client.exec(name, ["cat", "/tmp/civic-spark-return.bundle"])));
 git(local, ["bundle", "verify", inbound]);
 git(local, ["fetch", inbound, "main:refs/remotes/sprite/main"]);
 git(local, ["merge", "--ff-only", "refs/remotes/sprite/main"]);

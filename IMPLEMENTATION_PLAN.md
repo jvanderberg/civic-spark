@@ -2,6 +2,13 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Civic Spark namespace
+
+- [x] Rename tracked display copy, configuration, runtime/CLI paths, package metadata, cookies, storage keys, Git refs, fixtures, scripts and documentation consistently; no compatibility aliases
+- [x] Document breaking installation migration and preserve historical evidence without claiming live resources were renamed; see [migration requirements](docs/rename-migration.md)
+- [x] Complete renamed-source lint/type/unit/build (124 tests / 29 files) and isolated mobile, portal, workspace, agent, terminal, provisioning, updates, changes, file-toolbar, preview and editor browser validation; screenshots reviewed, no unexpected console errors
+- [ ] Separately authorize, rehearse and perform existing-installation migration; no participant Sprites, data, credentials or services were changed by the source rename
+
 ## Authenticated event and participant foundation
 
 - [x] Email-link signup/sign-in using Better Auth; verified database sessions

@@ -9,7 +9,7 @@ export type EmailDelivery = { configured: boolean; send: (message: LoginEmail) =
 export function createEmailDelivery(env: NodeJS.ProcessEnv = process.env): EmailDelivery {
   const provider = z
     .enum(["disabled", "resend", "smtp"])
-    .parse(env.VIBEHACK_EMAIL_PROVIDER ?? "disabled");
+    .parse(env.CIVIC_SPARK_EMAIL_PROVIDER ?? "disabled");
   if (provider === "disabled")
     return {
       configured: false,
@@ -22,12 +22,12 @@ export function createEmailDelivery(env: NodeJS.ProcessEnv = process.env): Email
     if (!value?.trim()) throw new Error(`${key} is required for ${provider} email delivery`);
     return value;
   };
-  const from = required("VIBEHACK_EMAIL_FROM");
+  const from = required("CIVIC_SPARK_EMAIL_FROM");
   const message = ({ email, url }: LoginEmail) => ({
     from,
     to: [email],
-    subject: "Your VibeHack sign-in link",
-    text: `Sign in to VibeHack:\n\n${url}\n\nThis link verifies your email and signs you in. It expires in 10 minutes and can be used once.\n\nIf you did not request this email, you can ignore it.`,
+    subject: "Your Civic Spark sign-in link",
+    text: `Sign in to Civic Spark:\n\n${url}\n\nThis link verifies your email and signs you in. It expires in 10 minutes and can be used once.\n\nIf you did not request this email, you can ignore it.`,
   });
   if (provider === "smtp") {
     const port = z.coerce

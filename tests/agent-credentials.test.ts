@@ -16,7 +16,7 @@ import { agentFailure, agentModels } from "../packages/agents/src/protocol.ts";
 
 const homes: string[] = [];
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "vibehack-credential-test-"));
+  const home = mkdtempSync(join(tmpdir(), "civic-spark-credential-test-"));
   homes.push(home);
   return home;
 }
@@ -112,7 +112,7 @@ describe("native CLI credential sharing", () => {
       agentModels.claude.model,
       "--dangerously-skip-permissions",
       "--append-system-prompt-file",
-      join(home, ".vibehack-agent/workspace-context.md"),
+      join(home, ".civic-spark-agent/workspace-context.md"),
       "--continue",
     ]);
     expect(JSON.stringify([opencode.args, claude.args])).not.toContain("fixture");

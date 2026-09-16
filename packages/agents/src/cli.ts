@@ -13,11 +13,11 @@ const configuration = cliConfiguration(
 );
 const executable =
   provider === "claude"
-    ? "/home/sprite/.vibehack-agent/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
-    : "/home/sprite/.vibehack-agent/node_modules/opencode-ai/bin/opencode.exe";
+    ? "/home/sprite/.civic-spark-agent/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+    : "/home/sprite/.civic-spark-agent/node_modules/opencode-ai/bin/opencode.exe";
 const child = spawn(executable, configuration.args, { env: configuration.env, stdio: "inherit" });
 child.on("error", () => {
-  process.stderr.write("The agent runtime is incomplete. Reconnect in VibeHack to repair it.\n");
+  process.stderr.write("The agent runtime is incomplete. Reconnect in Civic Spark to repair it.\n");
   process.exitCode = 1;
 });
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {

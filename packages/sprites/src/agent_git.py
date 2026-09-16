@@ -11,8 +11,8 @@ import tempfile
 import uuid
 
 ROOT = pathlib.Path('/home/sprite/project')
-ENV = dict(os.environ, GIT_AUTHOR_NAME='VibeHack participant', GIT_AUTHOR_EMAIL='participant@vibehack.local',
-           GIT_COMMITTER_NAME='VibeHack', GIT_COMMITTER_EMAIL='workspace@vibehack.local', GIT_EDITOR='true', GIT_SEQUENCE_EDITOR='true')
+ENV = dict(os.environ, GIT_AUTHOR_NAME='Civic Spark participant', GIT_AUTHOR_EMAIL='participant@civic-spark.local',
+           GIT_COMMITTER_NAME='Civic Spark', GIT_COMMITTER_EMAIL='workspace@civic-spark.local', GIT_EDITOR='true', GIT_SEQUENCE_EDITOR='true')
 
 
 def git(*args, cwd=None):
@@ -56,7 +56,7 @@ def checked(request):
     clean()
     if head() != expected:
         raise ValueError('Your branch changed during publication. Retry after reviewing it.')
-    if git('rev-parse', 'refs/vibehack/team-incoming').decode().strip() != remote:
+    if git('rev-parse', 'refs/civic-spark/team-incoming').decode().strip() != remote:
         raise ValueError('Team changes moved during publication. Retry to fetch again.')
     return expected, remote
 
@@ -73,7 +73,7 @@ def rebase(request):
     if git('rev-list', '--merges', remote + '..' + expected).strip():
         raise ValueError('Unpublished merge commits require the existing Team updates merge workflow. They will not be rewritten automatically.')
     if not request.get('confirmed'):
-        with tempfile.TemporaryDirectory(prefix='vibehack-rebase-trial-') as folder:
+        with tempfile.TemporaryDirectory(prefix='civic-spark-rebase-trial-') as folder:
             checkout = folder + '/checkout'
             git('worktree', 'add', '--detach', checkout, expected)
             try:
@@ -85,7 +85,7 @@ def rebase(request):
             finally:
                 git('worktree', 'remove', '--force', checkout)
         checked(request)
-    backup = 'refs/vibehack/recovery/agent-' + str(uuid.uuid4())
+    backup = 'refs/civic-spark/recovery/agent-' + str(uuid.uuid4())
     git('update-ref', backup, expected)
     try:
         if ancestor(expected, remote):
@@ -99,7 +99,7 @@ def rebase(request):
             return {'status': 'confirmation', 'head': expected, 'remote': remote, 'conflicts': []}
         return {'status': 'resolving', 'head': expected, 'remote': remote, 'backup': backup,
                 'conflicts': [p for p in git('diff', '--name-only', '--diff-filter=U', '-z').decode().split('\0') if p]}
-    git('update-ref', 'refs/vibehack/base', remote)
+    git('update-ref', 'refs/civic-spark/base', remote)
     return {'status': 'ready', 'head': head(), 'remote': remote, 'backup': backup}
 
 
@@ -110,9 +110,9 @@ def export(request):
         raise ValueError('Your branch changed before push. Retry after reviewing it.')
     title = git('log', '-1', '--format=%s').decode().strip()[:160]
     revision = hashlib.sha256(('agent-publish:' + commit).encode()).hexdigest()
-    ref = 'refs/vibehack/share/' + revision
+    ref = 'refs/civic-spark/share/' + revision
     git('update-ref', ref, commit)
-    with tempfile.TemporaryDirectory(prefix='vibehack-agent-push-') as folder:
+    with tempfile.TemporaryDirectory(prefix='civic-spark-agent-push-') as folder:
         bundle = folder + '/push.bundle'
         git('bundle', 'create', bundle, ref)
         data = pathlib.Path(bundle).read_bytes()

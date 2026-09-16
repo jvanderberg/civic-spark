@@ -9,14 +9,14 @@ import { git } from "../packages/git/src/repository.ts";
 import { SpriteClient } from "../packages/sprites/src/client.ts";
 
 const name = process.argv[process.argv.indexOf("--sprite") + 1];
-if (!name || !/^vibehack-smoke-[a-z0-9-]+$/.test(name))
-  throw new Error("Supply an existing dedicated --sprite vibehack-smoke-NAME");
+if (!name || !/^civic-spark-smoke-[a-z0-9-]+$/.test(name))
+  throw new Error("Supply an existing dedicated --sprite civic-spark-smoke-NAME");
 const unwrap = <T>(result: Result<T>): T => {
   if (!result.ok) throw new Error(result.error);
   return result.value;
 };
-const root = mkdtempSync(join(tmpdir(), "vibehack-share-live-"));
-const remote = `/tmp/vibehack-share-smoke-${randomUUID()}`;
+const root = mkdtempSync(join(tmpdir(), "civic-spark-share-live-"));
+const remote = `/tmp/civic-spark-share-smoke-${randomUUID()}`;
 const service = new EventService(root);
 const client = new SpriteClient();
 try {
@@ -52,7 +52,7 @@ try {
       `${outbound}:${remote}.bundle`,
       "python3",
       "-c",
-      "import pathlib,subprocess,sys; p=sys.argv[1]; subprocess.run(['git','clone',p+'.bundle',p],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); subprocess.run(['git','-C',p,'update-ref','refs/vibehack/base','HEAD'],check=True); pathlib.Path(p,'large.csv').write_text('year,count\\n'+('2017,3\\n'*160000)); pathlib.Path(p,'note.txt').write_text('First update\\n')",
+      "import pathlib,subprocess,sys; p=sys.argv[1]; subprocess.run(['git','clone',p+'.bundle',p],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); subprocess.run(['git','-C',p,'update-ref','refs/civic-spark/base','HEAD'],check=True); pathlib.Path(p,'large.csv').write_text('year,count\\n'+('2017,3\\n'*160000)); pathlib.Path(p,'note.txt').write_text('First update\\n')",
       remote,
     ]),
   );

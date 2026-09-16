@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { setTimeout } from "node:timers/promises";
 
-const root = "/home/sprite/.vibehack-agent";
+const root = "/home/sprite/.civic-spark-agent";
 const folder = `${root}/integration`;
 const args = process.argv.slice(2);
 const [group, action] = args;
@@ -24,7 +24,7 @@ async function request(value: object) {
       await setTimeout(250);
     }
     throw new Error(
-      "VibeHack integration did not respond. Reopen your workspace in the browser, then retry. Your local commits remain saved.",
+      "Civic Spark integration did not respond. Reopen your workspace in the browser, then retry. Your local commits remain saved.",
     );
   } finally {
     rmSync(input, { force: true });
@@ -36,7 +36,7 @@ try {
     await request({ operation: action === "publish" ? "git-publish" : "git-status" });
   } else if (group === "preview") {
     if (!["start", "restart", "stop", "status", "logs"].includes(action ?? ""))
-      throw new Error("Use vibehack preview start, restart, stop, status, or logs.");
+      throw new Error("Use civic-spark preview start, restart, stop, status, or logs.");
     if (args.length > 2) {
       const port = Number(args[3]);
       if (
@@ -48,11 +48,13 @@ try {
         args[4] !== "--" ||
         args.length < 6
       )
-        throw new Error("Usage: vibehack preview start [--port 5173 -- <command> args]");
+        throw new Error("Usage: civic-spark preview start [--port 5173 -- <command> args]");
       await request({ operation: "preview-start", port, command: args.slice(5) });
     } else await request({ operation: `preview-${action}` });
   } else
-    throw new Error("Use vibehack git publish/status or vibehack preview start/status/logs/stop.");
+    throw new Error(
+      "Use civic-spark git publish/status or civic-spark preview start/status/logs/stop.",
+    );
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : "Integration failed"}\n`);
   process.exitCode = 1;
