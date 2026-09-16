@@ -4,7 +4,7 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 
 ## Outstanding admin feedback — September 16, 2026
 
-- [ ] Replace Sprite cards with a compact list for dozens of resources, individual Pause/Delete, elapsed runtime and one estimated amount assuming continuously running since start; existing live bulk controls are insufficient.
+- [ ] Replace Sprite cards with a compact list for dozens of resources, individual Pause/Delete, elapsed runtime and one Estimated cost currency amount using an internal best-guess assumption; no cost prose, ranges, formulas, disclosures or tooltips in the UI. Existing live bulk controls are insufficient.
 - [ ] Put a single Admin parent in portal navigation with Sprites, Projects, Teams and People & roles directly beneath it; remove duplicated Overview/Admin overview entries and the prepended separate navigation.
 - [ ] Review, integrate and deploy these corrections with browser/provider-contract tests; no live participant deletion is authorized by implementation/testing.
 
