@@ -113,6 +113,8 @@ describe("native CLI credential sharing", () => {
       "--dangerously-skip-permissions",
       "--append-system-prompt-file",
       join(home, ".vibehack-agent/workspace-context.md"),
+      "--system-prompt-snapshot",
+      "off",
       "--continue",
     ]);
     expect(JSON.stringify([opencode.args, claude.args])).not.toContain("fixture");

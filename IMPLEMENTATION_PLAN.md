@@ -9,6 +9,7 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Creator becomes event admin; promote members or add known accounts by verified email; retain last admin
 - [x] Server-enforced event roles and owner-only workspace access
 - [x] Signed-in discovery, existing teams, new teams, custom project briefs
+- [x] Event-admin project creation with validated Markdown briefs; existing description → PROJECT.md seeding, intact links, preserved app README and team edits
 - [x] Multiple team memberships per account; capacity counts people once
 - [x] Admin membership removal with immediate API revocation and preserved files
 - [x] Confirmed event-scoped person removal and team deletion with retained work; last-admin protection
@@ -67,6 +68,8 @@ A native helper for syncing while the browser is closed is a possible later exte
 - [ ] Event invitations/registration restrictions where required; account email changes
 - [x] Shared PROJECT.md/environment preamble in browser and native harnesses
 - [x] Browser Claude refreshed system guidance on resumed sessions, verified at the outgoing API boundary
+- [x] Canonical PROJECT.md reference and untrusted-data guidance in both browser/native harnesses; native Claude snapshot refresh verified across resume with a local API double
+- [ ] Rehearse native OpenCode resumed inference with project context on a dedicated Sprite; no paid inference in normal tests
 - [x] Agent guidance requires current-batch publication confirmation; conflict approval remains separate
 - [x] Configured Sprite web server Launch/Restart, actual readiness, logs and private local preview
 - [x] Agent Git publication relay, clean rebase and owner-confirmed conflict resolution

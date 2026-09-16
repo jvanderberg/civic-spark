@@ -38,6 +38,9 @@ export function cliConfiguration(
       "--dangerously-skip-permissions",
       "--append-system-prompt-file",
       contextFile,
+      // Match browser Claude: a resume must not restore an obsolete brief/policy.
+      "--system-prompt-snapshot",
+      "off",
       ...args,
     ],
   };

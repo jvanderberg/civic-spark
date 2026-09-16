@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import type { Identity } from "../../../packages/domain/src/access-types.ts";
+import { type Identity, projectInputSchema } from "../../../packages/domain/src/access-types.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
 import type { Result } from "../../../packages/domain/src/types.ts";
 import {
@@ -19,6 +19,12 @@ export function registerAdminRoutes(app: FastifyInstance, service: EventService)
   const send = (reply: FastifyReply, result: Result<unknown>) =>
     result.ok ? reply.send(result.value) : reply.code(result.status).send({ error: result.error });
   const confirm = z.object({ confirmed: z.literal(true) });
+  app.post<{ Params: { id: string } }>("/api/events/:id/projects", async (r, reply) =>
+    send(
+      reply,
+      service.createProject(actor(r.actor), r.params.id, projectInputSchema.parse(r.body)),
+    ),
+  );
   app.delete<{ Params: { id: string; userId: string } }>(
     "/api/events/:id/members/:userId",
     async (r, reply) => {

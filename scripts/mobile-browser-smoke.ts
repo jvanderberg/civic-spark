@@ -134,6 +134,46 @@ try {
   await page.getByRole("button", { name: "Create event", exact: true }).tap();
   await page.getByRole("button", { name: "Open registration" }).tap();
   await capture("360-admin-overview");
+  await page.getByRole("button", { name: "Create project", exact: true }).tap();
+  const projectDialog = page.getByRole("dialog", { name: "Create project", exact: true });
+  await projectDialog.getByLabel("Project name", { exact: true }).fill("Neighborhood data");
+  const projectBrief =
+    "# Neighborhood data\n\n[Data](https://example.test/data.csv?a=1&b=%20#year)\n\n" +
+    "- Explore local connections.\n".repeat(25);
+  await projectDialog.getByLabel("Project brief (Markdown)").fill(projectBrief);
+  for (const theme of ["light", "dark"] as const) {
+    for (const [width, height] of [
+      [360, 780],
+      [390, 844],
+      [1440, 900],
+      [360, 430],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: theme });
+      const input = projectDialog.getByLabel("Project brief (Markdown)");
+      await input.focus();
+      // The long textarea can scroll; focus and its trailing input remain usable.
+      await input.press("End");
+      assert.equal(await input.inputValue(), projectBrief);
+      if (width < 600)
+        assert.equal(await input.evaluate((el) => getComputedStyle(el).fontSize), "16px");
+      await inViewport(projectDialog.getByRole("button", { name: "Create project", exact: true }));
+      await capture(`${width}-${height}-create-project-${theme}`);
+      await inViewport(projectDialog.getByLabel("Project name", { exact: true }));
+      await inViewport(projectDialog.getByRole("button", { name: "Close dialog" }));
+    }
+  }
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.emulateMedia({ colorScheme: "light" });
+  await projectDialog.getByRole("button", { name: "Create project", exact: true }).tap();
+  await page.getByRole("status").filter({ hasText: "Created Neighborhood data" }).waitFor();
+  const projectState = (await (
+    await context.request.get(`${address}/api/state`)
+  ).json()) as PortalState;
+  assert.equal(
+    projectState.events[0]?.projects.find((p) => p.name === "Neighborhood data")?.description,
+    projectBrief,
+  );
   await page.getByRole("button", { name: "Explore projects", exact: true }).tap();
   await capture("360-discovery");
   await page.getByRole("button", { name: "Create a team", exact: true }).tap();
@@ -293,7 +333,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: mobile 360/390 and short/landscape viewports, touch workflows, light/dark, sign-in/create event/team, discovery/admin, file drawer/save/draft protection, Share, repo commits/files/diffs/cancel restore, copy/delete confirmations, folder/terminal fallback, chat/connection/preview/update menus, no page overflow, clean console. Chromium emulation and mocked Sprite transports; physical keyboards/Safari/native terminal require device rehearsal.",
+    "PASS: mobile 360/390 and short/landscape viewports, touch workflows, light/dark, sign-in/create event/project/team, project drafts across viewport/theme changes, discovery/admin, file drawer/save/draft protection, Share, repo commits/files/diffs/cancel restore, copy/delete confirmations, folder/terminal fallback, chat/connection/preview/update menus, no page overflow, clean console. Chromium emulation and mocked Sprite transports; physical keyboards/Safari/native terminal require device rehearsal.",
   );
 } catch (error) {
   await page.screenshot({ path: join(artifacts, "failure.png"), fullPage: true });
