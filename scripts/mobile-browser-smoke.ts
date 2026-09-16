@@ -7,8 +7,9 @@ import { chromium, type Locator, type WebSocketRoute } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { AgentEvent, AgentInput } from "../packages/agents/src/protocol.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
+import { verifyAdminProjects } from "./admin-projects-browser-smoke.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
-import { openPortalMenu } from "./browser-portal-menu.ts";
+import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
 import {
   projectBriefFixture,
   verifyProjectBrief,
@@ -174,6 +175,7 @@ try {
   await page.getByRole("button", { name: "Create event", exact: true }).tap();
   await page.getByRole("button", { name: "Open registration" }).tap();
   await capture("360-admin-overview");
+  await openAdminSection(page, "Projects");
   await page.getByRole("button", { name: "Create project", exact: true }).tap();
   const projectDialog = page.getByRole("dialog", { name: "Create project", exact: true });
   await projectDialog.getByLabel("Project name", { exact: true }).fill("Neighborhood data");
@@ -278,6 +280,7 @@ try {
   await page.getByRole("button", { name: "Back to teams" }).tap();
   await openPortalMenu(page);
   await page.getByRole("button", { name: "Admin overview", exact: true }).tap();
+  await openAdminSection(page, "Teams");
   await page.getByRole("button", { name: "Repository", exact: true }).tap();
   const repository = page.getByRole("dialog");
   await repository.getByRole("heading", { name: "Mobile shared finding", exact: true }).waitFor();
@@ -430,3 +433,5 @@ await verifySiteEventPortal();
 await verifyKeyboardViewport();
 
 await verifyLifecyclePortal();
+
+await verifyAdminProjects();

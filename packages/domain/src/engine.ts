@@ -109,6 +109,31 @@ export class WorkspaceEngine {
     this.save();
     return ok(id);
   }
+  updateProject(
+    eventId: string,
+    projectId: string,
+    name: string,
+    brief: string,
+    expectedRevision: number,
+  ) {
+    const event = this.state.events.find((e) => e.id === eventId);
+    const project = event?.projects.find((p) => p.id === projectId);
+    if (!project) return fail("Project not found in this event", 404);
+    if ((project.revision ?? 0) !== expectedRevision)
+      return fail(
+        "This project changed since you opened it. Your draft is kept. Load the latest version to review it before saving again.",
+        409,
+      );
+    if (
+      event?.projects.some((p) => p.id !== projectId && p.name.toLowerCase() === name.toLowerCase())
+    )
+      return fail("A project with this name already exists in this event", 409);
+    project.name = name;
+    project.description = brief;
+    project.revision = expectedRevision + 1;
+    this.save();
+    return ok(structuredClone(project));
+  }
   transition(id: string, status: Event["status"]): Result<Event> {
     const event = this.state.events.find((e) => e.id === id);
     if (!event) return fail("Event not found", 404);

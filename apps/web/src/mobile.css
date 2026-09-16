@@ -511,3 +511,53 @@ body:has(.workspace-screen) {
 .modal-body {
   padding: 20px;
 }
+
+.admin-nav {
+  border-top: 1px solid var(--app-border);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+.admin-nav button {
+  min-height: 44px;
+}
+.admin-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.modal:has(.project-editor) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.project-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+}
+.project-editor-fields {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 24px;
+}
+.project-editor .form-actions {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 12px 24px;
+  border-top: 1px solid var(--app-border);
+}
+.project-editor-fields .field {
+  margin-block: 16px;
+}
+.project-editor-fields textarea {
+  resize: vertical;
+  height: min(240px, 30dvh);
+  min-height: 80px;
+}
+
+@media (min-width: 651px) and (min-height: 501px), (min-width: 1001px) {
+  .sidebar {
+    overflow-y: auto;
+  }
+}

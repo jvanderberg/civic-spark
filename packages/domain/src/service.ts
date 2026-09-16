@@ -29,7 +29,9 @@ import {
   identitySchema,
   type PortalState,
   type ProjectInput,
+  type ProjectUpdate,
   projectInputSchema,
+  projectUpdateSchema,
   type TeamInput,
   teamInputSchema,
   type Workspace,
@@ -388,8 +390,26 @@ export class EventService {
     if (!event) return fail("Event not found", 404);
     if (event.status === "closed")
       return fail("This event has ended. Projects are read-only.", 409);
+    if (event.projects.some((p) => p.name.toLowerCase() === parsed.data.name.toLowerCase()))
+      return fail("A project with this name already exists in this event", 409);
     const created = this.engine.addProject(eventId, parsed.data.name, parsed.data.brief);
     return created.ok ? ok({ id: created.value }) : created;
+  }
+  updateProject(actor: Identity, eventId: string, projectId: string, input: ProjectUpdate) {
+    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const parsed = projectUpdateSchema.safeParse(input);
+    if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join(". "));
+    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    if (!event) return fail("Event not found", 404);
+    if (event.status === "closed")
+      return fail("This event has ended. Projects are read-only.", 409);
+    return this.engine.updateProject(
+      eventId,
+      projectId,
+      parsed.data.name,
+      parsed.data.brief,
+      parsed.data.expectedRevision,
+    );
   }
   joinTeam(actor: Identity, teamId: string): Result<Workspace> {
     const team = this.engine.snapshot().teams.find((t) => t.id === teamId && !t.deletedAt);

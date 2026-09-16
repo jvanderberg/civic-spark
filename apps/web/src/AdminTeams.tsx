@@ -1,15 +1,17 @@
 import { Copy, GitBranch, Trash2, Users } from "lucide-react";
 import { useState } from "react";
-import type { TeamView } from "../../../packages/domain/src/access-types.ts";
+import type { MemberView, TeamView } from "../../../packages/domain/src/access-types.ts";
 import { api } from "./api.ts";
 import { Badge, Empty, Field, Modal } from "./components.tsx";
 import { RepositoryBrowser } from "./RepositoryBrowser.tsx";
 
 export function AdminTeams({
   teams,
+  members,
   refresh,
 }: {
   teams: TeamView[];
+  members: MemberView[];
   refresh: () => Promise<void>;
 }) {
   const [repository, setRepository] = useState<TeamView | null>(null);
@@ -81,7 +83,47 @@ export function AdminTeams({
               <Users size={15} />
               {team.memberNames.join(", ") || "No members yet"}
             </div>
+            <div className="membership-chips">
+              {members
+                .filter((m) => m.teamIds.includes(team.id))
+                .map((member) => (
+                  <span className="membership-chip" key={member.userId}>
+                    {member.name}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Remove ${member.name} from ${team.name}`}
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            `Remove ${member.name} from ${team.name}? Their saved work will be kept.`,
+                          )
+                        )
+                          return;
+                        setBusy(true);
+                        setError("");
+                        try {
+                          await api(
+                            `/teams/${team.id}/members/${encodeURIComponent(member.userId)}`,
+                            "DELETE",
+                          );
+                          await refresh();
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Could not remove membership.");
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+            </div>
             <footer className="admin-team-actions">
+              <a className="button small" href={`/api/teams/${team.id}/export`}>
+                Shared team ZIP
+              </a>
               <button
                 className="button small"
                 type="button"

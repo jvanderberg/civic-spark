@@ -38,6 +38,7 @@
     "test:deploy-context": "tsx scripts/deployment-context-check.ts",
     "test:mobile": "tsx scripts/mobile-browser-smoke.ts",
     "test:hosted-preview-browser": "tsx scripts/hosted-preview-browser-smoke.ts",
+    "test:admin-browser": "tsx scripts/admin-projects-browser-smoke.ts",
     "test:lifecycle-browser": "tsx scripts/lifecycle-browser-smoke.ts"
   },
   "dependencies": {

@@ -29,6 +29,8 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Main portal Menu for phone/short viewports, retained desktop sidebar, and actionable Event admin entry; existing event roles unchanged
 - [x] Signed-in discovery, existing teams, new teams, custom project briefs
 - [x] Optional runtime-pinned single-event portal, event-first branding, scoped discovery/workspace navigation and validated Fly setup setting; multi-event domain retained
+- [x] Admin console sections for Sprites, Projects, Teams and People/roles; team membership removal and shared repository downloads remain accessible
+- [x] Revision-checked event-admin catalog editing by stable project ID, exact Markdown persistence, stale-draft recovery and no writes to existing team files/history
 - [x] Event-admin project creation with validated Markdown briefs; existing description → PROJECT.md seeding, intact links, preserved app README and team edits
 - [x] Safe Markdown rendering in catalog/team cards with bounded long-brief disclosure, internal code/table scrolling and light/dark phone/desktop browser regressions
 - [x] Multiple team memberships per account; capacity counts people once

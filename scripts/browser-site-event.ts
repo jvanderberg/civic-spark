@@ -8,7 +8,7 @@ import { chromium } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
-import { openPortalMenu } from "./browser-portal-menu.ts";
+import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
 
 const unwrap = <T>(result: Result<T>) => {
   if (!result.ok) throw new Error(result.error);
@@ -143,6 +143,7 @@ export async function verifySiteEventPortal() {
             entryBox.height >= 44,
         );
         await adminEntry.tap();
+        await openAdminSection(page, "People & roles");
         await page.getByRole("heading", { name: "People & event roles", exact: true }).waitFor();
         await openPortalMenu(page);
         await page.getByRole("button", { name: "Explore projects", exact: true }).tap();
@@ -173,10 +174,12 @@ export async function verifySiteEventPortal() {
           await portalToggle.press("Enter");
         }
         await adminNav.tap();
+        await openAdminSection(page, "People & roles");
         await page.getByRole("heading", { name: "People & event roles", exact: true }).waitFor();
         await page.screenshot({
           path: join(artifacts, `admin-entry-${width}-${height}-${theme}.png`),
         });
+        await openAdminSection(page, "Projects");
         await page.getByRole("button", { name: "Create project", exact: true }).tap();
         await page.getByLabel("Project name", { exact: true }).fill("New project draft");
         await page

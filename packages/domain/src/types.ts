@@ -5,6 +5,7 @@ export const projectSchema = z.object({
   name: z.string(),
   description: z.string(),
   tags: z.array(z.string()),
+  revision: z.number().int().nonnegative().optional(),
 });
 export const scheduleSchema = z.object({
   time: z.string(),

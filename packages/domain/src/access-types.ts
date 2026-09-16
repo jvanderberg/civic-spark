@@ -85,6 +85,10 @@ export const projectInputSchema = z.object({
     .refine((value) => value.trim().length >= 20, "Write a project brief of at least 20 characters")
     .refine((value) => !value.includes("\0"), "Project briefs cannot contain null characters"),
 });
+export const projectUpdateSchema = projectInputSchema.extend({
+  expectedRevision: z.number().int().nonnegative(),
+});
+export type ProjectUpdate = z.infer<typeof projectUpdateSchema>;
 export type ProjectInput = z.infer<typeof projectInputSchema>;
 export const teamInputSchema = z
   .object({

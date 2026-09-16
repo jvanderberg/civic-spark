@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { type Identity, projectInputSchema } from "../../../packages/domain/src/access-types.ts";
+import {
+  type Identity,
+  projectInputSchema,
+  projectUpdateSchema,
+} from "../../../packages/domain/src/access-types.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
 import type { Result } from "../../../packages/domain/src/types.ts";
 import {
@@ -24,6 +28,19 @@ export function registerAdminRoutes(app: FastifyInstance, service: EventService)
       reply,
       service.createProject(actor(r.actor), r.params.id, projectInputSchema.parse(r.body)),
     ),
+  );
+  app.patch<{ Params: { id: string; projectId: string } }>(
+    "/api/events/:id/projects/:projectId",
+    async (r, reply) =>
+      send(
+        reply,
+        service.updateProject(
+          actor(r.actor),
+          r.params.id,
+          r.params.projectId,
+          projectUpdateSchema.parse(r.body),
+        ),
+      ),
   );
   app.delete<{ Params: { id: string; userId: string } }>(
     "/api/events/:id/members/:userId",

@@ -9,7 +9,7 @@ import { createApp } from "../apps/server/src/app.ts";
 import { ok, type Result } from "../packages/domain/src/types.ts";
 import { SpriteClient } from "../packages/sprites/src/client.ts";
 import { waitEditorText } from "./browser-editor.ts";
-import { openPortalMenu } from "./browser-portal-menu.ts";
+import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
 
 const unwrap = <T>(result: Result<T>) => {
   if (!result.ok) throw new Error(result.error);
@@ -171,6 +171,7 @@ export async function verifyLifecyclePortal() {
           await menu.press("Enter");
         }
         await page.getByRole("button", { name: "Admin overview", exact: true }).click();
+        await openAdminSection(page, "Sprites");
         const inventory = page.getByRole("region", { name: "Workspace Sprites" });
         await inventory.getByText("Workspace owner", { exact: true }).waitFor();
         assert.equal(wakes, stops / 2); // Inventory and main navigation never wake runtimes.
@@ -213,6 +214,12 @@ export async function verifyLifecyclePortal() {
         await paused.getByRole("link", { name: "Download shared source" }).click();
         assert.equal((await downloaded).suggestedFilename(), "team-project.zip");
         assert.equal(wakes, stops / 2 - 1);
+        await openAdminSection(page, "Teams");
+        const adminDownload = page.waitForEvent("download");
+        await page.getByRole("link", { name: "Shared team ZIP", exact: true }).click();
+        assert.equal((await adminDownload).suggestedFilename(), "team-project.zip");
+        assert.equal(wakes, stops / 2 - 1, "Admin shared downloads must not wake a Sprite");
+        await openAdminSection(page, "Sprites");
         await inventory.getByRole("button", { name: "Unpause hackathon", exact: true }).click();
         dialog = page.getByRole("dialog", { name: "Unpause hackathon", exact: true });
         await dialog.getByRole("button", { name: "Unpause hackathon", exact: true }).click();

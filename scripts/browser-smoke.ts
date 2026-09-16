@@ -9,7 +9,7 @@ import type { LoginEmail } from "../apps/server/src/email.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
-import { openPortalMenu } from "./browser-portal-menu.ts";
+import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
 import {
   projectBriefFixture,
   verifyProjectBrief,
@@ -81,6 +81,7 @@ try {
   await adminPage.getByLabel("Location").fill("Oak Park Library");
   await adminPage.getByRole("button", { name: "Create event", exact: true }).click();
   await adminPage.getByRole("button", { name: "Open registration" }).click();
+  await openAdminSection(adminPage, "Projects");
   await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
   const projectDialog = adminPage.getByRole("dialog", { name: "Create project", exact: true });
   await projectDialog.getByLabel("Project name", { exact: true }).fill("Community connections");
@@ -180,6 +181,7 @@ try {
   await adminPage.reload();
   await openPortalMenu(adminPage);
   await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
+  await openAdminSection(adminPage, "People & roles");
   await adminPage.getByRole("button", { name: "Make admin", exact: true }).click();
   await page.reload();
   await openPortalMenu(page);
@@ -196,6 +198,7 @@ try {
   await adminPage.screenshot({ path: join(artifacts, "admin-overview.png"), fullPage: true });
 
   // Admin tools stay scoped to one shared repository; all mutations use disposable fixtures.
+  await openAdminSection(adminPage, "Teams");
   const teamCard = adminPage
     .getByRole("article")
     .filter({ has: adminPage.getByRole("heading", { name: "Data neighbors", exact: true }) });
@@ -334,6 +337,7 @@ try {
   adminPage.once("dialog", (dialog) => void dialog.accept());
   await copiedCard.getByRole("button", { name: "Delete team", exact: true }).click();
   await copiedCard.waitFor({ state: "detached" });
+  await openAdminSection(adminPage, "People & roles");
   const coordinatorRow = adminPage
     .locator(".admin-member")
     .filter({ hasText: "Jamie Coordinator" });
@@ -384,20 +388,23 @@ try {
   await adminPage.reload();
   await openPortalMenu(adminPage);
   await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
+  await openAdminSection(adminPage, "Projects");
   await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
   await projectDialog
     .getByLabel("Project name", { exact: true })
     .fill("Unsent event-specific draft");
   await projectDialog.getByLabel("Project brief (Markdown)").fill(brief);
-  await projectDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await projectDialog.getByRole("button", { name: "Close", exact: true }).click();
   await openPortalMenu(adminPage);
+  adminPage.once("dialog", (dialog) => void dialog.accept());
   await adminPage.getByLabel("Select event").selectOption((await anotherEvent.json()).id);
   await openPortalMenu(adminPage);
   await adminPage.getByRole("button", { name: "Admin overview", exact: true }).click();
+  await openAdminSection(adminPage, "Projects");
   await adminPage.getByRole("button", { name: "Create project", exact: true }).click();
   assert.equal(await projectDialog.getByLabel("Project name", { exact: true }).inputValue(), "");
   assert.equal(await projectDialog.getByLabel("Project brief (Markdown)").inputValue(), "");
-  await projectDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await projectDialog.getByRole("button", { name: "Close", exact: true }).click();
   assert.deepEqual(briefRequests, [[], []]);
   assert.deepEqual(errors, []);
   console.log(

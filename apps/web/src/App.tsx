@@ -31,6 +31,14 @@ import { MobileMenu } from "./MobileMenu.tsx";
 import { ProjectBrief } from "./ProjectBrief.tsx";
 import { Workspace } from "./Workspace.tsx";
 
+type AdminSection = "overview" | "sprites" | "projects" | "teams" | "people";
+const adminSections: { id: AdminSection; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "sprites", label: "Sprites" },
+  { id: "projects", label: "Projects" },
+  { id: "teams", label: "Teams" },
+  { id: "people", label: "People & roles" },
+];
 type Tab = "discover" | "teams" | "admin" | "schedule";
 const nextStatus = {
   draft: "registration",
@@ -49,6 +57,8 @@ export function App() {
   const [session, setSession] = useState<SessionView | null>(null);
   const [state, setState] = useState<PortalState | null>(null);
   const [eventId, setEventId] = useState("");
+  const [adminSection, setAdminSection] = useState<AdminSection>("overview");
+  const [projectDirty, setProjectDirty] = useState(false);
   const [tab, setTab] = useState<Tab>("discover");
   const [modal, setModal] = useState<"event" | "team" | null>(null);
   const [projectChoice, setProjectChoice] = useState("");
@@ -165,10 +175,20 @@ export function App() {
   function openTeam(team: TeamView) {
     const own = state?.myWorkspaces.find((w) => w.teamId === team.id);
     if (!own) return;
+    if (
+      projectDirty &&
+      !window.confirm("Discard your unsaved project draft and open your workspace?")
+    )
+      return;
     setWorkspaceId(own.id);
   }
   function submitEvent(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (
+      projectDirty &&
+      !window.confirm("Discard your unsaved project draft and create another event?")
+    )
+      return;
     const form = new FormData(e.currentTarget);
     void run(async () => {
       const created = await api<Event>("/events", "POST", {
@@ -409,6 +429,22 @@ export function App() {
         </a>
         {session.siteEvent && <p className="site-platform">Powered by Civic Spark</p>}
         <MobileMenu label="Portal navigation" closeOnNavigate>
+          {admin && activeTab === "admin" && (
+            <nav className="main-nav admin-nav" aria-label="Admin navigation">
+              {adminSections.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  className={adminSection === section.id ? "active" : ""}
+                  aria-current={adminSection === section.id ? "page" : undefined}
+                  onClick={() => setAdminSection(section.id)}
+                >
+                  {section.label}
+                </button>
+              ))}
+            </nav>
+          )}
+
           {!session.siteEvent && (
             <div className="sidebar-group">
               <p className="eyebrow">YOUR EVENT</p>
@@ -417,6 +453,11 @@ export function App() {
                   aria-label="Select event"
                   value={eventId}
                   onChange={(e) => {
+                    if (
+                      projectDirty &&
+                      !window.confirm("Discard your unsaved project draft and switch events?")
+                    )
+                      return;
                     setEventId(e.target.value);
                     setTab("discover");
                   }}
@@ -461,7 +502,10 @@ export function App() {
               <button
                 type="button"
                 className={activeTab === "admin" ? "active" : ""}
-                onClick={() => setTab("admin")}
+                onClick={() => {
+                  setAdminSection("overview");
+                  setTab("admin");
+                }}
               >
                 <LayoutDashboard size={19} /> Admin overview
               </button>
@@ -480,6 +524,11 @@ export function App() {
               className="new-event-link"
               onClick={() =>
                 void run(async () => {
+                  if (
+                    projectDirty &&
+                    !window.confirm("Discard your unsaved project draft and sign out?")
+                  )
+                    return;
                   await api("/auth/sign-out", "POST", {});
                   setSentTo("");
                   setState(null);
@@ -705,130 +754,174 @@ export function App() {
               )}
               {activeTab === "admin" && (
                 <>
-                  <section className="metrics" aria-label="Event totals">
-                    <Metric
-                      label="People in teams"
-                      value={members.filter((m) => m.teamIds.length).length}
-                      detail={`of ${event.capacity} places`}
-                    />
-                    <Metric label="Teams" value={teams.length} detail="across your event" />
-                    <Metric
-                      label="Event admins"
-                      value={members.filter((m) => m.role === "admin").length}
-                      detail="with management access"
-                    />
-                    <Metric
-                      label="Shared changes"
-                      value={contributions.filter((c) => c.status === "accepted").length}
-                      detail="published by team members"
-                    />
-                  </section>
-                  <section className="section">
-                    <div className="section-heading">
-                      <div>
-                        <h2>People & event roles</h2>
-                        <p>
-                          People join with their own accounts. Manage roles and correct team
-                          memberships here.
-                        </p>
-                      </div>
-                      <button type="button" className="button" onClick={() => setAddingAdmin(true)}>
-                        <Plus size={15} /> Add admin
-                      </button>
-                    </div>
-                    <div className="people-list">
-                      {members.map((m) => (
-                        <div className="admin-member" key={m.userId}>
-                          <div className="person-row">
-                            <span className="avatar">{initials(m.name)}</span>
-                            <div className="person-name">
-                              <strong>
-                                {m.name}
-                                {m.userId === session.user?.id ? " (you)" : ""}
-                              </strong>
-                              <span>{m.email}</span>
-                            </div>
-                            <Badge tone={m.role === "admin" ? "green" : "neutral"}>{m.role}</Badge>
+                  {adminSection === "overview" && (
+                    <>
+                      <section className="metrics" aria-label="Event totals">
+                        <Metric
+                          label="People in teams"
+                          value={members.filter((m) => m.teamIds.length).length}
+                          detail={`of ${event.capacity} places`}
+                        />
+                        <Metric label="Teams" value={teams.length} detail="across your event" />
+                        <Metric
+                          label="Event admins"
+                          value={members.filter((m) => m.role === "admin").length}
+                          detail="with management access"
+                        />
+                        <Metric
+                          label="Shared changes"
+                          value={contributions.filter((c) => c.status === "accepted").length}
+                          detail="published by team members"
+                        />
+                      </section>
+                      <section className="section admin-shortcuts" aria-label="Admin sections">
+                        {adminSections
+                          .filter((section) => section.id !== "overview")
+                          .map((section) => (
                             <button
+                              className="button"
                               type="button"
-                              className="button small"
-                              disabled={
-                                busy ||
-                                (m.role === "admin" &&
-                                  members.filter((x) => x.role === "admin").length === 1)
-                              }
-                              onClick={() =>
-                                void run(async () => {
-                                  await api(`/events/${eventId}/members/${m.userId}/role`, "POST", {
-                                    role: m.role === "admin" ? "member" : "admin",
-                                  });
-                                })
-                              }
+                              key={section.id}
+                              onClick={() => setAdminSection(section.id)}
                             >
-                              {m.role === "admin" ? "Remove admin role" : "Make admin"}
+                              {section.label}
+                              <ArrowRight size={16} />
                             </button>
-                            <button
-                              type="button"
-                              className="button small danger-button"
-                              disabled={
-                                busy ||
-                                (m.role === "admin" &&
-                                  members.filter((x) => x.role === "admin").length === 1)
-                              }
-                              onClick={() => {
-                                if (
-                                  window.confirm(
-                                    `Remove ${m.name} from ${event.name}?\n\nThis removes their event role and all team memberships in this event. Shared history and private work are preserved. Their account and other events are unaffected. They may rejoin while registration is open.`,
-                                  )
-                                )
+                          ))}
+                      </section>
+                    </>
+                  )}
+                  {adminSection === "people" && (
+                    <section className="section">
+                      <div className="section-heading">
+                        <div>
+                          <h2>People & event roles</h2>
+                          <p>
+                            People join with their own accounts. Manage roles and correct team
+                            memberships here.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={() => setAddingAdmin(true)}
+                        >
+                          <Plus size={15} /> Add admin
+                        </button>
+                      </div>
+                      <div className="people-list">
+                        {members.map((m) => (
+                          <div className="admin-member" key={m.userId}>
+                            <div className="person-row">
+                              <span className="avatar">{initials(m.name)}</span>
+                              <div className="person-name">
+                                <strong>
+                                  {m.name}
+                                  {m.userId === session.user?.id ? " (you)" : ""}
+                                </strong>
+                                <span>{m.email}</span>
+                              </div>
+                              <Badge tone={m.role === "admin" ? "green" : "neutral"}>
+                                {m.role}
+                              </Badge>
+                              <button
+                                type="button"
+                                className="button small"
+                                disabled={
+                                  busy ||
+                                  (m.role === "admin" &&
+                                    members.filter((x) => x.role === "admin").length === 1)
+                                }
+                                onClick={() =>
                                   void run(async () => {
                                     await api(
-                                      `/events/${eventId}/members/${encodeURIComponent(m.userId)}`,
-                                      "DELETE",
-                                      { confirmed: true },
+                                      `/events/${eventId}/members/${m.userId}/role`,
+                                      "POST",
+                                      {
+                                        role: m.role === "admin" ? "member" : "admin",
+                                      },
                                     );
-                                  });
-                              }}
-                            >
-                              Remove from event
-                            </button>
-                          </div>
-                          <div className="membership-chips">
-                            {m.teamIds.length ? (
-                              m.teamIds.map((id) => (
-                                <span className="membership-chip" key={id}>
-                                  {teams.find((t) => t.id === id)?.name}
-                                  <button
-                                    type="button"
-                                    disabled={busy}
-                                    aria-label={`Remove ${m.name} from ${teams.find((t) => t.id === id)?.name}`}
-                                    onClick={() => {
-                                      if (
-                                        window.confirm(
-                                          `Remove ${m.name} from this team? Their saved work will be kept.`,
+                                  })
+                                }
+                              >
+                                {m.role === "admin" ? "Remove admin role" : "Make admin"}
+                              </button>
+                              <button
+                                type="button"
+                                className="button small danger-button"
+                                disabled={
+                                  busy ||
+                                  (m.role === "admin" &&
+                                    members.filter((x) => x.role === "admin").length === 1)
+                                }
+                                onClick={() => {
+                                  if (
+                                    window.confirm(
+                                      `Remove ${m.name} from ${event.name}?\n\nThis removes their event role and all team memberships in this event. Shared history and private work are preserved. Their account and other events are unaffected. They may rejoin while registration is open.`,
+                                    )
+                                  )
+                                    void run(async () => {
+                                      await api(
+                                        `/events/${eventId}/members/${encodeURIComponent(m.userId)}`,
+                                        "DELETE",
+                                        { confirmed: true },
+                                      );
+                                    });
+                                }}
+                              >
+                                Remove from event
+                              </button>
+                            </div>
+                            <div className="membership-chips">
+                              {m.teamIds.length ? (
+                                m.teamIds.map((id) => (
+                                  <span className="membership-chip" key={id}>
+                                    {teams.find((t) => t.id === id)?.name}
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      aria-label={`Remove ${m.name} from ${teams.find((t) => t.id === id)?.name}`}
+                                      onClick={() => {
+                                        if (
+                                          window.confirm(
+                                            `Remove ${m.name} from this team? Their saved work will be kept.`,
+                                          )
                                         )
-                                      )
-                                        void run(async () => {
-                                          await api(`/teams/${id}/members/${m.userId}`, "DELETE");
-                                        });
-                                    }}
-                                  >
-                                    <X size={13} />
-                                  </button>
-                                </span>
-                              ))
-                            ) : (
-                              <span className="small-text muted">No team memberships</span>
-                            )}
+                                          void run(async () => {
+                                            await api(`/teams/${id}/members/${m.userId}`, "DELETE");
+                                          });
+                                      }}
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="small-text muted">No team memberships</span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                  <AdminProjects key={`projects-${eventId}`} event={event} refresh={refresh} />
-                  <AdminSprites key={`sprites-${eventId}`} eventId={eventId} refresh={refresh} />
-                  <AdminTeams key={eventId} teams={teams} refresh={refresh} />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                  {adminSection === "sprites" && (
+                    <AdminSprites key={`sprites-${eventId}`} eventId={eventId} refresh={refresh} />
+                  )}
+                  {adminSection === "teams" && (
+                    <AdminTeams key={eventId} teams={teams} members={members} refresh={refresh} />
+                  )}
                 </>
+              )}
+              {admin && (
+                <div hidden={activeTab !== "admin" || adminSection !== "projects"}>
+                  <AdminProjects
+                    key={`${session.user.id}-projects-${eventId}`}
+                    event={event}
+                    refresh={refresh}
+                    onDirtyChange={setProjectDirty}
+                  />
+                </div>
               )}
               {activeTab === "schedule" && (
                 <section className="section">
