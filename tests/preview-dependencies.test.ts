@@ -1,0 +1,315 @@
+import { execFile, spawn } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
+import { afterEach, expect, it } from "vitest";
+
+const execute = promisify(execFile);
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
+const source = readFileSync(new URL("../packages/sprites/src/preview.py", import.meta.url), "utf8");
+async function fixture(real = false, timeout = 300) {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-preview-deps-"));
+  const project = join(root, "project"),
+    runtime = join(root, "runtime"),
+    bin = join(root, "bin");
+  for (const path of [project, runtime, bin]) mkdirSync(path);
+  const port = await new Promise<number>((resolve) => {
+    const server = createServer();
+    server.listen(0, "127.0.0.1", () => {
+      const a = server.address();
+      if (!a || typeof a === "string") throw Error();
+      server.close(() => resolve(a.port));
+    });
+  });
+  const script = source
+    .replace("INSTALL_TIMEOUT = 300", `INSTALL_TIMEOUT = ${timeout}`)
+    .replace(
+      "ROOT = pathlib.Path('/home/sprite/.civic-spark-agent')",
+      `ROOT = pathlib.Path(${JSON.stringify(runtime)})`,
+    )
+    .replace(
+      "PROJECT = pathlib.Path('/home/sprite/project')",
+      `PROJECT = pathlib.Path(${JSON.stringify(project)})`,
+    );
+  const tmux = `#!/usr/bin/env python3
+import os, sys, signal, subprocess, pathlib
+pidfile = pathlib.Path(${JSON.stringify(join(root, "server.pid"))})
+args = sys.argv[1:]
+if args[0] == 'has-session':
+    if not pidfile.exists(): sys.exit(1)
+    try: os.kill(int(pidfile.read_text()), 0)
+    except ProcessLookupError: sys.exit(1)
+if args[0] == 'kill-session' and pidfile.exists():
+    try: os.killpg(int(pidfile.read_text()), signal.SIGKILL)
+    except ProcessLookupError: pass
+    pidfile.unlink()
+if args[0] == 'new-session':
+    p = subprocess.Popen(['sh', '-c', args[-1]], cwd=args[args.index('-c') + 1], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    pidfile.write_text(str(p.pid))
+`;
+  writeFileSync(join(bin, "tmux"), tmux);
+  chmodSync(join(bin, "tmux"), 0o755);
+  if (!real) {
+    writeFileSync(
+      join(bin, "npm"),
+      `#!/usr/bin/env python3
+import sys, pathlib, json, time, os
+root = pathlib.Path(${JSON.stringify(root)})
+p = pathlib.Path.cwd()
+args = sys.argv[1:]
+if args[0] == '--version': print('11.0.0'); sys.exit(0)
+if args[0] == 'ls': sys.exit(0 if (p/'node_modules/installed').exists() else 1)
+if args[0] in ['ci', 'install']:
+    with (root/'calls').open('a') as f: f.write(json.dumps(args)+'\\n')
+    assert not any(k in os.environ for k in ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'SPRITE_TOKEN'])
+    if (root/'slow').exists(): time.sleep(3)
+    if (root/'fail').exists(): print('SECRET registry failure'); sys.exit(1)
+    (p/'node_modules').mkdir(exist_ok=True)
+    (p/'node_modules/installed').write_text('yes')
+`,
+    );
+    chmodSync(join(bin, "npm"), 0o755);
+  }
+  const defaults = {
+    port,
+    command: real
+      ? ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", `${port}`, "--strictPort"]
+      : ["python3", "-m", "http.server", `${port}`, "--bind", "127.0.0.1"],
+  };
+  const env = {
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    ANTHROPIC_API_KEY: "do-not-inherit",
+    OPENROUTER_API_KEY: "do-not-inherit",
+    SPRITE_TOKEN: "do-not-inherit",
+  };
+  let interrupt: (() => void) | undefined;
+  const run = async (operation: string) => {
+    const p = spawn("python3", ["-c", script], { env, stdio: ["pipe", "pipe", "pipe"] });
+    if (operation === "start")
+      interrupt = () => {
+        p.kill("SIGTERM");
+      };
+    let stdout = "",
+      stderr = "";
+    p.stdout.on("data", (data) => {
+      stdout += data;
+    });
+    p.stderr.on("data", (data) => {
+      stderr += data;
+    });
+    p.stdin.end(JSON.stringify({ operation, defaults }));
+    await new Promise<void>((done, reject) => {
+      p.on("error", reject);
+      p.on("close", () => done());
+    });
+    expect(stderr).toBe("");
+    return JSON.parse(stdout);
+  };
+  const calls = () =>
+    existsSync(join(root, "calls"))
+      ? readFileSync(join(root, "calls"), "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line) as string[])
+      : [];
+  const write = (file: string, data: unknown) =>
+    writeFileSync(join(project, file), typeof data === "string" ? data : JSON.stringify(data));
+  write("package.json", {
+    private: true,
+    scripts: {
+      dev: "vite",
+      ...(real
+        ? {
+            postinstall:
+              "node -e \"require('fs').writeFileSync('source-overwrite.txt', 'changed')\"",
+          }
+        : {}),
+    },
+    ...(real
+      ? {
+          devDependencies: {
+            vite: JSON.parse(readFileSync(resolve("node_modules/vite/package.json"), "utf8"))
+              .version,
+          },
+        }
+      : {}),
+  });
+  if (!real) write("package-lock.json", { lockfileVersion: 3 });
+  cleanups.push(async () => {
+    await run("stop");
+    rmSync(root, { recursive: true, force: true });
+  });
+  return {
+    root,
+    project,
+    runtime,
+    run,
+    calls,
+    write,
+    defaults,
+    env,
+    interrupt: () => interrupt?.(),
+  };
+}
+
+it("fresh checkout installs once, preserves files/config, detects changed manifests/lock and missing modules", async () => {
+  const f = await fixture();
+  const original = readFileSync(join(f.project, "package.json"));
+  f.write("draft.txt", "Unshared work");
+  expect((await f.run("status")).value.ready).toBe(false);
+  expect(existsSync(join(f.runtime, "environment.json"))).toBe(false);
+  expect((await f.run("start")).value).toMatchObject({ ready: true, phase: "ready" });
+  expect(f.calls()).toHaveLength(1);
+  expect(f.calls()[0]?.[0]).toBe("ci");
+  expect(readFileSync(join(f.project, "package.json"))).toEqual(original);
+  expect(readFileSync(join(f.project, "draft.txt"), "utf8")).toBe("Unshared work");
+  await f.run("restart");
+  expect(f.calls()).toHaveLength(1);
+  f.write("package-lock.json", { lockfileVersion: 3, changed: true });
+  await f.run("restart");
+  expect(f.calls()).toHaveLength(2);
+  f.write("package.json", { private: true, description: "Team update" });
+  await f.run("restart");
+  expect(f.calls()).toHaveLength(3);
+  rmSync(join(f.project, "node_modules"), { recursive: true });
+  await f.run("restart");
+  expect(f.calls()).toHaveLength(4);
+  await f.run("stop");
+  const custom = { ...f.defaults, command: [...f.defaults.command, "--directory", f.project] };
+  writeFileSync(join(f.runtime, "environment.json"), JSON.stringify(custom));
+  expect((await f.run("start")).value.command).toEqual(custom.command);
+}, 30000);
+
+it("no lock uses no-save/no-lockfile install; explicit managers and workspaces fail without install", async () => {
+  const f = await fixture();
+  rmSync(join(f.project, "package-lock.json"));
+  expect((await f.run("start")).value.ready).toBe(true);
+  expect(f.calls()[0]).toEqual(
+    expect.arrayContaining(["install", "--no-save", "--package-lock=false", "--ignore-scripts"]),
+  );
+  expect(existsSync(join(f.project, "package-lock.json"))).toBe(false);
+  await f.run("stop");
+  for (const manifest of [
+    { packageManager: "pnpm@10.0.0" },
+    { workspaces: ["packages/*"] },
+    { packageManager: "npm@0.0.1" },
+  ]) {
+    f.write("package.json", manifest);
+    expect((await f.run("start")).ok).toBe(false);
+  }
+  expect(f.calls()).toHaveLength(1);
+});
+
+it("concurrent launches share preparation; Stop cancels installation and retry repairs it without leaking secrets", async () => {
+  const f = await fixture();
+  writeFileSync(join(f.root, "slow"), "yes");
+  const pending = f.run("start");
+  await expect.poll(() => f.calls().length, { timeout: 5000 }).toBe(1);
+  expect((await f.run("status")).value.phase).toBe("installing");
+  expect((await f.run("start")).value.phase).toBe("installing");
+  expect((await f.run("stop")).value).toMatchObject({ ready: false, running: false });
+  expect((await pending).ok).toBe(false);
+  expect(existsSync(join(f.runtime, "project-installed.json"))).toBe(false);
+  rmSync(join(f.root, "slow"));
+  writeFileSync(join(f.root, "fail"), "yes");
+  expect((await f.run("start")).error).toContain("installation failed");
+  expect((await f.run("logs")).value.logs).not.toContain("SECRET");
+  expect((await f.run("status")).value).toMatchObject({ phase: "error", ready: false });
+  rmSync(join(f.root, "fail"));
+  expect((await f.run("start")).value.ready).toBe(true);
+  expect(f.calls()).toHaveLength(3);
+}, 15000);
+
+it("trusted fresh shared Vite clone becomes Ready with real npm ci, unchanged tracked files and no key/model/harness", async () => {
+  const f = await fixture(true);
+  f.write("index.html", "<!doctype html><h1>Shared Vite demo</h1>");
+  f.write(".gitignore", "node_modules/\n");
+  await execute(
+    "npm",
+    ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"],
+    { cwd: f.project },
+  );
+  await execute("git", ["init", "--initial-branch=main"], { cwd: f.project });
+  await execute("git", ["add", "."], { cwd: f.project });
+  await execute(
+    "git",
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.test",
+      "commit",
+      "-m",
+      "Shared demo",
+    ],
+    { cwd: f.project },
+  );
+  const shared = join(f.root, "shared");
+  await execute("git", ["clone", f.project, shared]);
+  rmSync(f.project, { recursive: true });
+  await execute("git", ["clone", shared, f.project]);
+  expect(existsSync(join(f.project, "node_modules"))).toBe(false);
+  const result = await f.run("start");
+  expect(result, JSON.stringify({ result, logs: await f.run("logs") })).toMatchObject({
+    ok: true,
+    value: { ready: true, phase: "ready" },
+  });
+  expect(await (await fetch(`http://127.0.0.1:${f.defaults.port}`)).text()).toContain(
+    "Shared Vite demo",
+  );
+  const marker = readFileSync(join(f.runtime, "project-installed.json"), "utf8");
+  expect((await f.run("restart")).value.ready).toBe(true);
+  expect(readFileSync(join(f.runtime, "project-installed.json"), "utf8")).toBe(marker);
+  expect((await execute("git", ["status", "--porcelain"], { cwd: f.project })).stdout).toBe("");
+  expect(existsSync(join(f.runtime, "node_modules"))).toBe(false);
+  rmSync(join(f.project, "node_modules/.bin/vite"));
+  expect((await f.run("restart")).value.ready).toBe(true);
+  expect(existsSync(join(f.project, "node_modules/.bin/vite"))).toBe(true);
+  const lock = readFileSync(join(f.project, "package-lock.json"));
+  rmSync(join(f.project, "package-lock.json"));
+  expect((await f.run("restart")).value.ready).toBe(true);
+  expect(existsSync(join(f.project, "package-lock.json"))).toBe(false);
+  expect(existsSync(join(f.project, "source-overwrite.txt"))).toBe(false);
+  writeFileSync(join(f.project, "package-lock.json"), lock);
+  f.write("package.json", {
+    private: true,
+    scripts: { dev: "vite" },
+    dependencies: { missing: "999.0.0" },
+  });
+  expect((await f.run("restart")).ok).toBe(false);
+  expect(readFileSync(join(f.project, "package-lock.json"))).toEqual(lock);
+  expect((await f.run("status")).value.ready).toBe(false);
+}, 60000);
+
+it("timeout and transport interruption leave no ready marker or late server; retry succeeds", async () => {
+  for (const timedOut of [true, false]) {
+    const f = await fixture(false, timedOut ? 0.8 : 300);
+    writeFileSync(join(f.root, "slow"), "yes");
+    const pending = f.run("start");
+    await expect.poll(() => f.calls().length, { timeout: 5000 }).toBe(1);
+    if (!timedOut) f.interrupt();
+    expect((await pending).error).toContain(timedOut ? "timed out" : "interrupted");
+    expect(existsSync(join(f.runtime, "project-installed.json"))).toBe(false);
+    expect((await f.run("status")).value).toMatchObject({
+      running: false,
+      ready: false,
+      phase: "error",
+    });
+    rmSync(join(f.root, "slow"));
+    expect((await f.run("start")).value.ready).toBe(true);
+  }
+}, 15000);

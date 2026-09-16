@@ -64,9 +64,12 @@ afterEach(() => {
   ptys.length = 0;
 });
 
-it.each(["manifest", "changes"])(
+it.each(["manifest", "changes", "preview", "preview-delete"])(
   "pause aborts and drains an actual in-flight %s CLI before provider stop; existing agent/terminal WebSockets revoke",
   async (operation) => {
+    const deleting = operation === "preview-delete";
+    const route = deleting ? "preview" : operation;
+    vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
     const root = mkdtempSync(join(tmpdir(), "cs-races-"));
     const bin = join(root, "bin");
     mkdirSync(bin);
@@ -89,7 +92,7 @@ it.each(["manifest", "changes"])(
       "email",
       undefined,
       undefined,
-      { inspect: vi.fn(), stop, destroy: vi.fn() },
+      { inspect: vi.fn(), stop, destroy: stop },
     );
     const sockets: WebSocket[] = [];
     try {
@@ -121,24 +124,32 @@ it.each(["manifest", "changes"])(
         (socket) => new Promise<number>((done) => socket.once("close", done)),
       );
       const request = app
-        .inject({ url: `/api/workspaces/${w.id}/${operation}`, headers })
+        .inject({
+          url: `/api/workspaces/${w.id}/${route}`,
+          headers,
+          ...(route === "preview" ? { method: "POST" as const, payload: { action: "start" } } : {}),
+        })
         .then((value) => value);
-      await vi.waitFor(() => expect(existsSync(started)).toBe(true));
+      await vi.waitFor(() => expect(existsSync(started)).toBe(true), { timeout: 5000 });
       const pause = await app.inject({
         method: "POST",
-        url: `/api/events/${event.id}/execution`,
+        url: deleting
+          ? `/api/events/${event.id}/sprites/${w.id}`
+          : `/api/events/${event.id}/execution`,
         headers,
-        payload: { action: "pause-event" },
+        payload: deleting
+          ? { action: "delete", generation: service.runtime(w.id).generation }
+          : { action: "pause-event" },
       });
-      expect(pause.json()).toMatchObject({ paused: true, failures: 0 });
-      expect((await request).statusCode).toBe(502);
+      expect(pause.json()).toMatchObject({ failures: 0, ...(deleting ? {} : { paused: true }) });
+      expect((await request).statusCode).toBe(route === "preview" ? 409 : 502);
       expect(await Promise.all(closes)).toEqual([1008, 1008]);
       expect(stop).toHaveBeenCalledOnce();
       expect(ptys[0]?.kill).toHaveBeenCalled();
       expect(
         (
           await app.inject({
-            url: `/api/workspaces/${w.id}/${operation}`,
+            url: `/api/workspaces/${w.id}/${route}`,
             headers: { ...headers, upgrade: "websocket" },
           })
         ).statusCode,

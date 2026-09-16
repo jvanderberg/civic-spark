@@ -124,7 +124,7 @@ SpriteClient.prototype.preview = async (_sprite, operation) => {
 };
 const { app, service, authentication } = await createApp(
   root,
-  false,
+  true,
   portal,
   undefined,
   "email",

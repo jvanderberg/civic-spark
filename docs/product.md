@@ -82,6 +82,7 @@ Both browser coding providers and native terminal launchers receive the canonica
 | Find a project | Browse briefs and existing teams; join or create one | Help people find teams; correct mistakes |
 | Work | Open My teams, then the workspace for a team | Check event-wide progress and shared changes |
 | First workspace visit | Sprite is prepared from that team’s committed repository; subsequent visits resume it | Help with failed provisioning |
+| Run shared app | Launch prepares supported project dependencies in the personal Sprite, then Open preview runs the shared demo without a model or key | Help with project configuration/install failures |
 | Explore/build | Browse and edit files on the personal Sprite; use an agent or optional terminal | Own files remain private even from the admin view |
 | Combine | Review Changes, enter a description, and Share directly to the shared team version | Help resolve conflicts and inspect shared results |
 | Finish | Export the shared team ZIP; GitHub publishing is planned | Close editing/joining, preserve work, apply retention policy |

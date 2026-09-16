@@ -39,10 +39,16 @@ const previews = new WorkspacePreviews(address, async () => ({
   close() {},
 }));
 const browser = await chromium.launch();
-const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+const context = await browser.newContext({
+  viewport: { width: 1280, height: 800 },
+  hasTouch: true,
+});
 const page = await context.newPage();
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
+page.on("console", (message) => {
+  if (message.type() === "error") errors.push(message.text());
+});
 const unwrap = <T>(r: Result<T>): T => {
   if (!r.ok) throw new Error(r.error);
   return r.value;
@@ -71,6 +77,9 @@ try {
   const id = team.workspace.id;
   const opened = await previews.open(id, "civic-spark-test", 5173, async () => true);
   let running = false;
+  let phase = "stopped";
+  let failNext = false;
+  let generation = 0;
   let conflict = false;
   let approved = false;
   const actions: string[] = [];
@@ -92,12 +101,32 @@ try {
       await route.fulfill({ json: opened });
       return;
     }
-    if (action === "start" || action === "restart") running = true;
-    if (action === "stop") running = false;
+    if (action === "start" || action === "restart") {
+      running = true;
+      phase = "installing";
+      const current = ++generation;
+      await new Promise((resolve) => setTimeout(resolve, 1400));
+      if (current === generation) phase = "starting";
+      await new Promise((resolve) => setTimeout(resolve, 1400));
+      if (current === generation) phase = failNext ? "error" : "ready";
+      if (failNext) {
+        running = false;
+        failNext = false;
+      }
+    }
+    if (action === "stop") {
+      generation++;
+      running = false;
+      phase = "stopped";
+    }
     await route.fulfill({
       json: {
         running,
-        ready: running,
+        ready: phase === "ready",
+        phase,
+        ...(phase === "error"
+          ? { error: "Dependency installation failed. Check registry access, then retry Launch." }
+          : {}),
         port: 5173,
         command: [
           "npm",
@@ -110,7 +139,12 @@ try {
           "5173",
           "--strictPort",
         ],
-        logs: "VITE ready\nLocal server verified",
+        logs:
+          phase === "installing"
+            ? "Installing project dependencies (npm ci)."
+            : phase === "ready"
+              ? "VITE ready\nLocal server verified"
+              : "Starting server",
       },
     });
   });
@@ -156,6 +190,51 @@ try {
   });
   await context.addCookies([identity.browserCookie]);
   await page.goto(`${address}/#workspace=${id}`);
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    for (const [width, height] of [
+      [360, 780],
+      [390, 844],
+      [1280, 800],
+      [844, 360],
+    ]) {
+      assert(width && height);
+      await page.setViewportSize({ width, height });
+      const menu = page.getByRole("button", { name: "Workspace controls", exact: true });
+      if ((await menu.isVisible()) && (await menu.getAttribute("aria-expanded")) !== "true")
+        await menu.click();
+      const launch = page.getByRole("button", { name: "Launch", exact: true });
+      if (width < 500) await launch.tap();
+      else {
+        await launch.focus();
+        await page.keyboard.press("Enter");
+      }
+      await page.getByRole("button", { name: "Installing…", exact: true }).waitFor();
+      const region = page.getByRole("region", { name: "Web server and publishing" });
+      const bounds = await region.boundingBox();
+      assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
+      await page.screenshot({
+        path: join(artifacts, `environment-installing-${width}-${theme}.png`),
+      });
+      await page.getByRole("button", { name: "Starting…", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Open preview", exact: true }).waitFor();
+      const stop = page.getByRole("button", { name: "Stop", exact: true });
+      await stop.scrollIntoViewIfNeeded();
+      const stopBounds = await stop.boundingBox();
+      assert(stopBounds && stopBounds.y >= 0 && stopBounds.y + stopBounds.height <= height);
+      await page.screenshot({ path: join(artifacts, `environment-ready-${width}-${theme}.png`) });
+      await page.getByRole("button", { name: "Stop", exact: true }).click();
+      await page.getByRole("button", { name: "Launch", exact: true }).waitFor();
+    }
+  }
+  failNext = true;
+  await page.getByRole("button", { name: "Launch", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Dependency installation failed" }).waitFor();
+  await page.getByRole("button", { name: "Launch", exact: true }).click();
+  await page.getByRole("button", { name: "Installing…", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.getByRole("button", { name: "Launch", exact: true }).waitFor();
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.getByRole("button", { name: "Launch", exact: true }).click();
   await page.getByRole("button", { name: "Restart", exact: true }).waitFor();
   assert(actions.includes("start"));
@@ -174,14 +253,18 @@ try {
   await popup.close();
   await page.getByRole("button", { name: "Restart", exact: true }).click();
   assert(actions.includes("restart"));
-  await page.getByRole("button", { name: "Web server details" }).click();
+  if (!(await page.getByRole("region", { name: "Web server and publishing" }).isVisible()))
+    await page.getByRole("button", { name: "Web server details" }).click();
+  await page.getByRole("button", { name: "Refresh logs", exact: true }).click();
   await page.getByText("VITE ready", { exact: false }).waitFor();
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await page.screenshot({ path: join(artifacts, `environment-${theme}.png`) });
   }
+  await page.getByRole("button", { name: "Open preview", exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
+  const menu = page.getByRole("button", { name: "Workspace controls", exact: true });
+  if ((await menu.getAttribute("aria-expanded")) !== "true") await menu.click();
   const panel = await page.getByRole("region", { name: "Web server and publishing" }).boundingBox();
   assert(panel && panel.x >= 0 && panel.x + panel.width <= 390);
   await page.screenshot({ path: join(artifacts, "environment-mobile.png") });

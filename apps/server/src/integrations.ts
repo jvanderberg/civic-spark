@@ -227,10 +227,29 @@ export class WorkspaceIntegrations {
     const workspace = unwrap(this.service.workspace(owner, id, true));
     if (workspace.spriteStatus !== "ready" || !workspace.spriteName)
       throw new Error("Web preview needs a running Sprite.");
-    const result = unwrap(await this.client.preview(workspace.spriteName, operation, config));
-    unwrap(this.service.workspace(owner, id, true));
-    if (operation === "stop" || operation === "restart") this.previews.stop(id);
-    return result;
+    const sprite = workspace.spriteName;
+    let cancellation: Promise<unknown> | undefined;
+    // Only an explicit, in-flight launch owns this check. Status polling never starts work.
+    const monitor = ["start", "restart"].includes(operation)
+      ? setInterval(() => {
+          if (!this.service.workspace(owner, id, true).ok && !cancellation) {
+            this.previews.stop(id);
+            cancellation = this.client.preview(sprite, "stop").catch(() => undefined);
+          }
+        }, 250)
+      : undefined;
+    try {
+      const result = unwrap(await this.client.preview(sprite, operation, config));
+      if (!this.service.workspace(owner, id, true).ok && !cancellation)
+        cancellation = this.client.preview(sprite, "stop").catch(() => undefined);
+      unwrap(this.service.workspace(owner, id, true));
+      unwrap(this.service.executionAllowed(id));
+      if (operation === "stop" || operation === "restart") this.previews.stop(id);
+      return result;
+    } finally {
+      clearInterval(monitor);
+      await cancellation;
+    }
   }
   async openPreview(id: string, owner: Identity, authorized: () => Promise<boolean>) {
     unwrap(this.service.executionAllowed(id));

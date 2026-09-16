@@ -122,7 +122,11 @@ export class SpriteClient {
         "-c",
         script,
       ],
-      transferringFile ? 120000 : 30000,
+      scriptName === "preview.py" && ["start", "restart"].includes(payload.operation)
+        ? 360000
+        : transferringFile
+          ? 120000
+          : 30000,
       JSON.stringify(payload),
       transferringFile
         ? scriptName === "files.py"
@@ -180,12 +184,20 @@ export class SpriteClient {
   ) {
     return this.fileOperation(
       name,
-      { operation, ...config },
+      {
+        operation,
+        ...config,
+        defaults: JSON.parse(
+          readFileSync(new URL("../../agents/runtime/environment.json", import.meta.url), "utf8"),
+        ),
+      },
       z.object({
         port: z.number(),
         command: z.array(z.string()),
         running: z.boolean(),
         ready: z.boolean(),
+        phase: z.enum(["installing", "starting", "ready", "stopped", "error"]).optional(),
+        error: z.string().optional(),
         logs: z.string().optional(),
       }),
       "preview.py",

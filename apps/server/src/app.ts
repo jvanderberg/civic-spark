@@ -83,7 +83,7 @@ export async function createApp(
     }
   }
   const app = Fastify({ logger: false, bodyLimit: 1500000 });
-  await app.register(websocket, { options: { maxPayload: 65536 } });
+  await app.register(websocket, { options: { maxPayload: 6 * 1024 * 1024 } });
   const allowed = (id: string) => service.executionAllowed(id).ok;
   const client: SpriteClient = new SpriteClient(undefined, (name, passive) =>
     lifecycle.acquire(name, passive),
@@ -501,6 +501,10 @@ export async function createApp(
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/preview", async (r, reply) => {
     const input = z.object({ action: z.enum(["start", "restart", "stop", "open"]) }).parse(r.body);
     const owner = actor(r.actor);
+    if (!spritesEnabled)
+      return reply
+        .code(409)
+        .send({ error: "Cloud workspaces are not enabled for this installation yet" });
     try {
       const workspace = service.workspace(owner, r.params.id, true);
       if (!workspace.ok) return send(reply, workspace);
@@ -517,9 +521,7 @@ export async function createApp(
       };
       if (input.action === "open")
         return await integrations.openPreview(r.params.id, owner, authorized);
-      if (!(await agents.prepare(workspace.value.spriteName)))
-        throw new Error("Runtime setup failed. Retry after checking the Sprite connection.");
-      integrations.ensure(r.params.id, owner, workspace.value.spriteName, authorized);
+      if (!(await authorized())) throw new Error("Workspace access ended.");
       return await integrations.preview(r.params.id, owner, input.action);
     } catch (e) {
       return reply

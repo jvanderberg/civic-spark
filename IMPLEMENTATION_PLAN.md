@@ -118,6 +118,7 @@ A native helper for syncing while the browser is closed is a possible later exte
 - [ ] Rehearse native OpenCode resumed inference with project context on a dedicated Sprite; no paid inference in normal tests
 - [x] Agent guidance requires current-batch publication confirmation; conflict approval remains separate
 - [x] Configured Sprite web server Launch/Restart, actual readiness, logs and private local preview
+- [x] Explicit owner Launch prepares root npm project dependencies independently of coding harness/key/model, with locked installs, durable reuse, cancellation and progress; isolated Vite/API/browser fixtures (no live participant validation)
 - [x] Agent Git publication relay, clean rebase and owner-confirmed conflict resolution
 - [x] Private hosted preview routing: isolated HTTPS origins, one-time owner handshakes, session revocation, HTTP/assets/WebSocket HMR and durable never-reused origin-pool assignments; local TLS/relay/browser validation
 - [ ] Provision automatic Fly ingress pool and verify deployed acceptance; preserve one origin per workspace across restart/removal

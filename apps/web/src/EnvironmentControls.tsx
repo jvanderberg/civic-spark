@@ -4,7 +4,15 @@ import { api } from "./api.ts";
 import type { ResolutionRequest } from "./TeamUpdates.tsx";
 import "./environment.css";
 
-type Preview = { port: number; command: string[]; running: boolean; ready: boolean; logs?: string };
+type Preview = {
+  port: number;
+  command: string[];
+  running: boolean;
+  ready: boolean;
+  logs?: string;
+  phase?: "installing" | "starting" | "ready" | "stopped" | "error";
+  error?: string;
+};
 type Pending = {
   id: string;
   head: string;
@@ -28,6 +36,7 @@ export function EnvironmentControls({
   const [preview, setPreview] = useState<Preview | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
+  const [launching, setLaunching] = useState(false);
   const [details, setDetails] = useState(false);
   const [error, setError] = useState("");
   const refresh = useCallback(async () => {
@@ -43,11 +52,18 @@ export function EnvironmentControls({
   useEffect(() => {
     if (disabled) return;
     void refresh().catch(() => undefined);
-    const timer = setInterval(() => void refresh().catch(() => undefined), 10000);
+    const timer = setInterval(
+      () => void refresh().catch(() => undefined),
+      launching || preview?.phase === "installing" || preview?.phase === "starting" ? 1000 : 10000,
+    );
     return () => clearInterval(timer);
-  }, [disabled, refresh]);
+  }, [disabled, refresh, launching, preview?.phase]);
   async function action(name: "start" | "restart" | "stop" | "logs" | "open") {
-    setBusy(true);
+    const launch = name === "start" || name === "restart";
+    if (launch) {
+      setLaunching(true);
+      setDetails(true);
+    } else setBusy(true);
     setError("");
     const popup = name === "open" ? window.open("about:blank", "_blank") : null;
     if (popup) popup.opener = null;
@@ -66,8 +82,12 @@ export function EnvironmentControls({
           action: name,
         });
         setPreview(result);
-        if (name !== "stop" && !result.ready) {
-          setError("The server has not responded yet. Check its logs.");
+        if (
+          name !== "stop" &&
+          !result.ready &&
+          !["installing", "starting"].includes(result.phase ?? "")
+        ) {
+          setError(result.error ?? "The server has not responded yet. Check its logs.");
           setDetails(true);
         }
       }
@@ -76,7 +96,8 @@ export function EnvironmentControls({
       setError(e instanceof Error ? e.message : "Web server action failed");
       setDetails(true);
     } finally {
-      setBusy(false);
+      if (launch) setLaunching(false);
+      else setBusy(false);
     }
   }
   async function confirm(allow: boolean) {
@@ -104,14 +125,28 @@ export function EnvironmentControls({
       <button
         type="button"
         className="button small"
-        disabled={disabled || busy}
+        disabled={
+          disabled ||
+          busy ||
+          launching ||
+          preview?.phase === "installing" ||
+          preview?.phase === "starting"
+        }
         onClick={() => void action(preview?.running ? "restart" : "start")}
         title={preview?.command.join(" ") ?? "Launch the configured project web server"}
       >
         {preview?.running ? <RotateCw size={14} /> : <Play size={14} />}
-        {busy ? "Working…" : preview?.running ? "Restart" : "Launch"}
+        {preview?.phase === "installing"
+          ? "Installing…"
+          : launching || preview?.phase === "starting"
+            ? "Starting…"
+            : busy
+              ? "Working…"
+              : preview?.running
+                ? "Restart"
+                : "Launch"}
       </button>
-      {preview?.ready && (
+      {preview?.ready && !launching && (
         <button
           type="button"
           className="button small"
@@ -142,10 +177,10 @@ export function EnvironmentControls({
       {details && (
         <section className="environment-popover" aria-label="Web server and publishing">
           <div className="environment-heading">
-            <strong>
+            <strong role="status">
               Web server
               {preview
-                ? ` · ${preview.ready ? "Ready" : preview.running ? "Starting" : "Stopped"} · ${preview.port}`
+                ? ` · ${preview.ready ? "Ready" : preview.phase === "installing" ? "Installing" : preview.phase === "error" ? "Failed" : preview.running || launching ? "Starting" : "Stopped"} · ${preview.port}`
                 : ""}
             </strong>
             <button type="button" className="button small" onClick={() => setDetails(false)}>
@@ -157,7 +192,7 @@ export function EnvironmentControls({
             <button
               type="button"
               className="button small"
-              disabled={busy || !preview?.running}
+              disabled={busy || (!launching && !preview?.running)}
               onClick={() => void action("stop")}
             >
               <Square size={12} />
@@ -212,7 +247,7 @@ export function EnvironmentControls({
           {pending?.status === "resolving" && (
             <p>Conflict resolution approved. Continue the rebase in Agent, then publish.</p>
           )}
-          {error && <p role="alert">{error}</p>}
+          {(error || preview?.error) && <p role="alert">{error || preview?.error}</p>}
           {preview?.logs && <pre>{preview.logs}</pre>}
         </section>
       )}
