@@ -23,6 +23,7 @@ import {
 import { registerAdminRoutes } from "./admin.ts";
 import { AgentSessions } from "./agents.ts";
 import { createAuthentication } from "./auth.ts";
+import { clientAddress, storageReady, validateDeployment } from "./deployment.ts";
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
 import { prototypeSignIn } from "./prototype-auth.ts";
@@ -41,12 +42,13 @@ function send(reply: FastifyReply, result: Result<unknown>) {
     : reply.code(result.status).send({ error: result.error });
 }
 export async function createApp(
-  root = resolve(process.env.VIBEHACK_DATA_DIR ?? ".data"),
-  spritesEnabled = process.env.VIBEHACK_ENABLE_SPRITES === "1",
+  root = resolve(process.env.CIVIC_SPARK_DATA_DIR ?? ".data"),
+  spritesEnabled = process.env.CIVIC_SPARK_ENABLE_SPRITES === "1",
   baseURL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:4310",
   delivery?: EmailDelivery,
-  authMode = z.enum(["email", "prototype"]).parse(process.env.VIBEHACK_AUTH_MODE ?? "email"),
+  authMode = z.enum(["email", "prototype"]).parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
 ) {
+  const deployment = validateDeployment(root, baseURL, authMode);
   const prototype = authMode === "prototype";
   if (prototype) {
     if (!["127.0.0.1", "localhost"].includes(new URL(baseURL).hostname))
@@ -78,7 +80,14 @@ export async function createApp(
   app.decorateRequest("actor", null);
   app.addHook("onRequest", async (request) => {
     // Replace, never trust, a caller-supplied IP hint. Deployment proxy trust must be configured explicitly.
-    request.headers["x-vibehack-client-ip"] = request.ip;
+    request.headers["x-vibehack-client-ip"] = clientAddress(
+      request.ip,
+      request.headers,
+      deployment,
+    );
+    delete request.headers["x-forwarded-for"];
+    delete request.headers["x-forwarded-host"];
+    delete request.headers["x-forwarded-proto"];
   });
   app.addContentTypeParser(
     "application/x-www-form-urlencoded",
@@ -93,13 +102,22 @@ export async function createApp(
         !["127.0.0.1", "localhost"].includes(host ?? ""))
     )
       return reply.code(403).send({ error: "Prototype mode is local only" });
-    if (!["127.0.0.1", "localhost", new URL(baseURL).hostname].includes(host ?? ""))
+    if (
+      !(
+        deployment.hosted
+          ? [new URL(baseURL).hostname]
+          : ["127.0.0.1", "localhost", new URL(baseURL).hostname]
+      ).includes(host ?? "")
+    )
       return reply.code(403).send({ error: "Unrecognized host" });
     // Better Auth validates magic-link tokens and auth CSRF/origin rules.
     if (request.url.startsWith("/api/auth/")) return;
     const origin = request.headers.origin;
     if (
-      (origin && ![baseURL, `http://${request.headers.host}`].includes(origin)) ||
+      (origin &&
+        !(deployment.hosted ? [baseURL] : [baseURL, `http://${request.headers.host}`]).includes(
+          origin,
+        )) ||
       request.headers["sec-fetch-site"] === "cross-site"
     )
       return reply.code(403).send({ error: "Cross-origin requests are disabled" });
@@ -173,7 +191,16 @@ export async function createApp(
       reply.header("set-cookie", await prototypeSignIn(authentication, input.email, input.name));
       return { signedIn: true };
     });
-  app.get("/api/health", async () => ({ ok: true }));
+  app.get("/api/health", async (_request, reply) => {
+    try {
+      service.checkHealth();
+      authentication.checkHealth();
+      storageReady(root);
+      return { ok: true };
+    } catch {
+      return reply.code(503).send({ ok: false });
+    }
+  });
   app.get("/api/session", async (r) => ({
     user: r.actor,
     emailSignIn: authentication.emailSignIn,

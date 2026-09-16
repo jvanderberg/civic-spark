@@ -33,6 +33,7 @@
     "test:editor-browser": "tsx scripts/editor-syntax-browser-smoke.ts",
     "test:environment-browser": "tsx scripts/environment-browser-smoke.ts",
     "test:environment-live": "tsx scripts/environment-live-smoke.ts",
+    "test:deploy-context": "tsx scripts/deployment-context-check.ts",
     "test:mobile": "tsx scripts/mobile-browser-smoke.ts"
   },
   "dependencies": {

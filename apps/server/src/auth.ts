@@ -19,7 +19,7 @@ export async function createAuthentication(
     .int()
     .min(1)
     .max(1000)
-    .parse(process.env.VIBEHACK_AUTH_REQUESTS_PER_MINUTE ?? "120");
+    .parse(process.env.CIVIC_SPARK_AUTH_REQUESTS_PER_MINUTE ?? "120");
   mkdirSync(root, { recursive: true });
   const secretPath = join(root, "auth-secret");
   if (!process.env.BETTER_AUTH_SECRET && !existsSync(secretPath))
@@ -41,6 +41,7 @@ export async function createAuthentication(
     },
     rateLimit: { enabled: true, storage: "database" },
     advanced: {
+      useSecureCookies: new URL(baseURL).protocol === "https:",
       cookiePrefix: prototype ? "vibehack-prototype" : "better-auth",
       disableOriginCheck: false,
       disableCSRFCheck: false,
@@ -67,6 +68,11 @@ export async function createAuthentication(
   const migration = await getMigrations(config);
   await migration.runMigrations();
   const auth = betterAuth(config);
-  return { auth, emailSignIn: delivery.configured, close: () => database.close() };
+  return {
+    auth,
+    emailSignIn: delivery.configured,
+    checkHealth: () => database.prepare("SELECT 1").get(),
+    close: () => database.close(),
+  };
 }
 export type Authentication = Awaited<ReturnType<typeof createAuthentication>>;

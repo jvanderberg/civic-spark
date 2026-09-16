@@ -22,7 +22,7 @@ const freePort = () =>
     });
   });
 const port = await freePort();
-const devPort = process.env.VIBEHACK_EDITOR_DEV === "1" ? await freePort() : undefined;
+const devPort = process.env.CIVIC_SPARK_EDITOR_DEV === "1" ? await freePort() : undefined;
 const address = `http://127.0.0.1:${devPort ?? port}`;
 const vite = devPort
   ? await (await import("vite")).createServer({
@@ -42,7 +42,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors: string[] = [];
 const blockedHtmlRequests = new Set<string>();
-const blockHtml = process.env.VIBEHACK_EDITOR_BLOCK_HTML === "1";
+const blockHtml = process.env.CIVIC_SPARK_EDITOR_BLOCK_HTML === "1";
 page.on("pageerror", (e) => errors.push(e.message));
 if (blockHtml) {
   // Reproduce the stale/lost lazy grammar request that otherwise leaves a live

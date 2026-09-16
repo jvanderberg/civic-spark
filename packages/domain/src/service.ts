@@ -55,6 +55,13 @@ export class EventService {
       ? accessStateSchema.parse(JSON.parse(String(row.body)))
       : { version: 1, users: [], eventMembers: [], memberships: [] };
   }
+  checkHealth() {
+    this.db.prepare("SELECT 1").get();
+  }
+  // Internal operator state; never returned by an API or used to authorize a user.
+  provisioningRecords() {
+    return this.engine.snapshot().participants;
+  }
   close() {
     this.engine.close();
     this.db.close();

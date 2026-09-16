@@ -87,7 +87,7 @@ export class AgentSessions {
     if (!/^vibehack-[a-z0-9-]{1,45}$/.test(sprite)) throw new Error("Invalid Sprite");
     let session = this.sessions.get(id);
     if (!session) {
-      const org = process.env.VIBEHACK_SPRITE_ORG;
+      const org = process.env.CIVIC_SPARK_SPRITE_ORG;
       const runner = fileURLToPath(
         new URL("../../../packages/agents/src/runner.ts", import.meta.url),
       );

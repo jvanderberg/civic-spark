@@ -1,0 +1,63 @@
+{
+  "name": "sprite",
+  "version": "2026-09-02",
+  "commit": "6390abfeeb94c63cf3118c60de7cae4240b816c4",
+  "released_at": "2026-09-02T03:19:03Z",
+  "platforms": {
+    "linux-aarch64": {
+      "size": 16187554,
+      "hash": "sha256",
+      "digest": "c200b87ec90ad81e97dea7285d72439952509bc414ec08b1a2fd03edccb46126",
+      "path": "sprite",
+      "providers": [
+        {
+          "url": "https://sprites-binaries.t3.storage.dev/client/2026-09-02/sprite-linux-aarch64"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 17440930,
+      "hash": "sha256",
+      "digest": "3f1d14a2a4886e98993c70c9b69270223cfb636e2a143afe4f8dfb67bedbb6c7",
+      "path": "sprite",
+      "providers": [
+        {
+          "url": "https://sprites-binaries.t3.storage.dev/client/2026-09-02/sprite-linux-x86_64"
+        }
+      ]
+    },
+    "macos-aarch64": {
+      "size": 16125264,
+      "hash": "sha256",
+      "digest": "292e87b240e635099f56a581e26ab0a512632a8ae5411bdfa02dd9d016b57865",
+      "path": "sprite",
+      "providers": [
+        {
+          "url": "https://sprites-binaries.t3.storage.dev/client/2026-09-02/sprite-macos-aarch64"
+        }
+      ]
+    },
+    "windows-aarch64": {
+      "size": 15054336,
+      "hash": "sha256",
+      "digest": "ead3943229b08b638df789e6b99c9f5a87e8fbf41ff29e2d6db7a1402c7a0664",
+      "path": "sprite.exe",
+      "providers": [
+        {
+          "url": "https://sprites-binaries.t3.storage.dev/client/2026-09-02/sprite-windows-aarch64.exe"
+        }
+      ]
+    },
+    "windows-x86_64": {
+      "size": 16513536,
+      "hash": "sha256",
+      "digest": "6a2cd5e7838fa91f6e624a939100818c0526b64433fdbcfb084b2ab1b0478f97",
+      "path": "sprite.exe",
+      "providers": [
+        {
+          "url": "https://sprites-binaries.t3.storage.dev/client/2026-09-02/sprite-windows-x86_64.exe"
+        }
+      ]
+    }
+  }
+}

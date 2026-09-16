@@ -26,7 +26,7 @@ export async function spritePreviewTransport(
   const child = spawn(
     "sprite",
     [
-      ...(process.env.VIBEHACK_SPRITE_ORG ? ["-o", process.env.VIBEHACK_SPRITE_ORG] : []),
+      ...(process.env.CIVIC_SPARK_SPRITE_ORG ? ["-o", process.env.CIVIC_SPARK_SPRITE_ORG] : []),
       "-s",
       sprite,
       "proxy",

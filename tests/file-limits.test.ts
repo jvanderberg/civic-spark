@@ -160,7 +160,7 @@ it("round-trips 25 MiB through SpriteClient and the real Python adapters, includ
   git(dir, ["add", "sprite"]);
   git(dir, ["commit", "-m", "Test fixture"]);
   const client = new SpriteClient();
-  const name = "vibehack-file-limit-test";
+  const name = "civic-spark-file-limit-test";
   const data = Buffer.alloc(FILE_LIMIT, "a");
   const created = unwrap(
     await client.mutateBlob(name, {

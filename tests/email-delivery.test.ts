@@ -15,11 +15,11 @@ it("requires explicit provider selection and complete configuration", async () =
   const disabled = createEmailDelivery({});
   expect(disabled.configured).toBe(false);
   await expect(disabled.send(message)).rejects.toThrow("not configured");
-  expect(() => createEmailDelivery({ VIBEHACK_EMAIL_PROVIDER: "unknown" })).toThrow();
+  expect(() => createEmailDelivery({ CIVIC_SPARK_EMAIL_PROVIDER: "unknown" })).toThrow();
   expect(() =>
     createEmailDelivery({
-      VIBEHACK_EMAIL_PROVIDER: "resend",
-      VIBEHACK_EMAIL_FROM: "Event <hello@example.test>",
+      CIVIC_SPARK_EMAIL_PROVIDER: "resend",
+      CIVIC_SPARK_EMAIL_FROM: "Event <hello@example.test>",
     }),
   ).toThrow("RESEND_API_KEY is required");
 });
@@ -31,8 +31,8 @@ it("sends through Resend and reports provider failures without leaking their res
     .mockResolvedValueOnce(new Response("sensitive provider diagnostic", { status: 429 }));
   vi.stubGlobal("fetch", fetch);
   const delivery = createEmailDelivery({
-    VIBEHACK_EMAIL_PROVIDER: "resend",
-    VIBEHACK_EMAIL_FROM: "hello@example.test",
+    CIVIC_SPARK_EMAIL_PROVIDER: "resend",
+    CIVIC_SPARK_EMAIL_FROM: "hello@example.test",
     RESEND_API_KEY: "test-only",
   });
   await delivery.send(message);
@@ -54,8 +54,8 @@ it.each([587, 465])(
       .spyOn(nodemailer, "createTransport")
       .mockReturnValue({ sendMail } as unknown as ReturnType<typeof nodemailer.createTransport>);
     const delivery = createEmailDelivery({
-      VIBEHACK_EMAIL_PROVIDER: "smtp",
-      VIBEHACK_EMAIL_FROM: "hello@example.test",
+      CIVIC_SPARK_EMAIL_PROVIDER: "smtp",
+      CIVIC_SPARK_EMAIL_FROM: "hello@example.test",
       SMTP_HOST: "smtp.example.test",
       SMTP_PORT: String(port),
       SMTP_USER: "test-user",

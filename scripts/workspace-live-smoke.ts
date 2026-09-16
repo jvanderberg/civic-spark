@@ -210,18 +210,18 @@ try {
   terminal.socket.send(
     JSON.stringify({
       type: "input",
-      data: "VIBEHACK_PROBE=keep; printf 'VIBE%s\\n' 'HACK_TERMINAL_READY'\r",
+      data: "CIVIC_SPARK_PROBE=keep; printf 'VIBE%s\\n' 'HACK_TERMINAL_READY'\r",
     }),
   );
   await until(
-    () => terminal.received.some((e) => e.data?.includes("VIBEHACK_TERMINAL_READY")),
+    () => terminal.received.some((e) => e.data?.includes("CIVIC_SPARK_TERMINAL_READY")),
     "remote shell command",
   );
   terminal.socket.close();
   const attached = await connect("terminal");
   attached.socket.send(JSON.stringify({ type: "resize", cols: 121, rows: 35 }));
   attached.socket.send(
-    JSON.stringify({ type: "input", data: "printf 'PERSIST_%s\\n' \"$VIBEHACK_PROBE\"\r" }),
+    JSON.stringify({ type: "input", data: "printf 'PERSIST_%s\\n' \"$CIVIC_SPARK_PROBE\"\r" }),
   );
   await until(
     () =>

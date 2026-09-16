@@ -20,9 +20,9 @@ import {
 } from "../../workspace/src/types.ts";
 
 const execute = promisify(execFile);
-const spriteNamePattern = /^vibehack-[a-z0-9-]{1,45}$/;
+const spriteNamePattern = /^civic-spark-[a-z0-9-]{1,45}$/;
 export class SpriteClient {
-  constructor(private org = process.env.VIBEHACK_SPRITE_ORG) {}
+  constructor(private org = process.env.CIVIC_SPARK_SPRITE_ORG) {}
   private args(args: string[]) {
     return this.org ? ["-o", this.org, ...args] : args;
   }
@@ -49,8 +49,7 @@ export class SpriteClient {
     }
   }
   async create(name: string): Promise<Result<string>> {
-    if (!spriteNamePattern.test(name))
-      return fail("Prototype Sprite names must start with vibehack-.");
+    if (!spriteNamePattern.test(name)) return fail("Invalid Civic Spark Sprite name.");
     const result = await this.command(["create", "-skip-console", name]);
     return result.ok ? ok(name) : result;
   }
