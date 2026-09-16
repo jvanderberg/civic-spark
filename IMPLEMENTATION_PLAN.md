@@ -6,7 +6,7 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 
 - [x] Replace Sprite cards with a compact list for dozens of resources, individual Pause/Delete, elapsed runtime and one Estimated cost currency amount using an internal best-guess assumption; no cost prose, ranges, formulas, disclosures or tooltips in the UI.
 - [x] Put a single Admin parent in portal navigation with Sprites, Projects, Teams and People & roles directly beneath it; remove duplicated Overview/Admin overview entries and the prepended separate navigation.
-- [ ] Review, integrate and deploy these corrections with browser/provider-contract tests; no live participant deletion is authorized by implementation/testing.
+- [x] Review, integrate and deploy these corrections with browser/provider-contract tests and live UI/individual-pause acceptance; no live deletion performed.
 
 ## Event Sprite lifecycle
 
@@ -15,7 +15,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 - [x] Authorized event allocation inventory with provider status and timestamp provenance
 - [x] Compact one-row-per-Sprite list with elapsed runtime, one estimated cost and individual Pause/Delete confirmation; durable deletion/retry/generation gates and shared-only owner recreation retaining preview origins
 - [x] Individual-control fullcheck (270 tests/48 files), complete mobile and relevant browser verification; 32-row screenshots inspected in both themes
-- [ ] Root integration/deployment of individual controls; no live deletion by implementation agent
+- [x] Root integration/deployment of individual controls (`3cea3ec`), live eight-case UI acceptance and dedicated individual pause/reopen; no live deletion
 - [x] Durable pause-all workspace holds and event-wide execution pause; cancellation/drain, retryable partial stops, restart gates and on-demand same-Sprite wake
 - [x] Shared Git downloads remain available while paused; no private-source export or prototype fallback
 - [x] Release inactive polling and retained terminal bridges after configurable inactivity; active browser model Tasks holds, preview use and recent terminal input/output protection

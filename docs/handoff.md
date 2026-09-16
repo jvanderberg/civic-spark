@@ -1,6 +1,14 @@
-# Admin corrections integrated — deployment pending
+# Compact Sprite controls and Admin hierarchy LIVE — September 16, 2026
 
-The compact Sprite list and single Admin parent with sections directly below are now integrated. Individual Pause/Delete and one Estimated cost amount (no cost prose/ranges/formulas/tooltips/disclosures) fulfill the recovered request previously omitted during compaction. Review and local tests passed; root owns the pending deployment and live checks. No live participant deletion is authorized.
+Runtime **`3cea3ec`** is deployed at https://civic-spark.fly.dev and pushed to main. It includes the compact one-row-per-Sprite list with owner/team, status, elapsed runtime, one Estimated cost amount and individual Pause/Delete. Cost has no ranges, formulas, prose, tooltip or disclosure. The portal has one **Admin** parent with Sprites, Projects, Teams and People & roles directly beneath; the parent expands in place on mobile, and choosing a child closes Menu. No Overview/Admin overview duplicate remains.
+
+The integrated runtime/test tree is identical to reviewed controls `ed3b92f` plus its already-tested navigation parent; only root documentation differs. **270 tests / 48 files**, focused **45 / 4**, complete mobile and portal/admin/32-row matrices passed. Clean deployment context passed **142 packaged files**. Root inspected phone/desktop/list/delete screenshots. Final live acceptance passed eight viewport/theme combinations: actual hierarchy and expand-in-place, all sections, all 16 project edit controls, compact real Sprite rows/single cost, individual Pause/Delete confirmation-cancel and bulk confirmation-cancel, with zero mutation requests and console errors. Physical device keyboard/picker behavior remains unverified.
+
+Real dedicated-test acceptance: individual Pause stopped a controlled 90-second exec after **13.8 seconds** (exit 143), returned zero failures, and owner reopen retained the same Sprite. Dedicated event pause blocked wake with 423 while shared ZIP remained 200; unpause/reopen succeeded and test state was restored. **No live deletion was performed**; deletion/provider recovery is covered by isolated contract/race/API tests and UI confirmation-cancel checks. Day in Our Data and participant workloads were not paused or deleted by acceptance. No models, Share, participant source or history writes.
+
+Before deployment all three allocated workspaces were ready/idle with no active native harnesses. Deployed source hashes match, health is 200, all 16 project hashes and participant reservation remain, and original Machine/volume/receipt/preview assignments are retained. Root remains sole deployment owner. Evidence: live ignored `artifacts/sprite-controls-deploy/{acceptance,verification,provider-smoke}.json` and screenshots; `/tmp/civic-spark-controls-live-exec.log`. Root's first live UI harness needed an explicit wait for the authenticated portal before checking Menu visibility; no product change was needed.
+
+The previously lost user scope is now implemented, reviewed, integrated and deployed. Backup tooling is shipped, but first live capture/off-machine restore rehearsal still awaits a coordinated maintenance window. No live participant deletion or automatic Share is implied.
 
 # Individual Sprite controls — local implementation, September 16, 2026
 
