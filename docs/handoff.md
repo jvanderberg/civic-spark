@@ -2,6 +2,16 @@
 
 Checkpoint: September 16, 2026, America/Chicago. Rename, admin project briefs and the Fly deployment package are integrated. Hosted demo is live at https://civic-spark.fly.dev; see the live deployment record below.
 
+## Private hosted preview implementation (local, deployment pending)
+
+The preview branch based on `50c76ab` provides an automatically assigned, durable pool of separate HTTPS preview origins, plus an optional owned-domain wildcard template. Pool bindings are written and synchronized atomically inside the auth-mode data directory and never recycled across workspaces. The stateless ingress relays authenticated HTTPS/WebSockets to the existing gateway; only the gateway holds Sprite credentials. Participant apps and their processes remain in their existing Sprites.
+
+Every Open action issues a 60-second single-use handshake. Its Secure, host-only, HttpOnly preview cookie retains the originating owner session check, and revocation affects HTTP and active WebSockets. Management and preview host routing are separated before Fastify HTTP/auth and raw WebSocket handling. Both gateway and ingress strip private relay, Fly routing and hop headers; participant `fly-replay` cannot reach the Fly proxy. Existing Vite assets and HMR work without editing participant code.
+
+Validation: `npm run check` passed 158 tests in 38 files, lint, both typechecks and production build. Mobile (including site-event and keyboard regressions), hosted-preview, environment and clean deployment-context checks passed. Local validation covers real TLS ingress-to-gateway relay and Vite HMR through actual Open preview interactions at 360/390/desktop/short viewports in both themes, plus cookie/storage isolation, logout, replay, expiry, owner denial, future allocation, restart persistence and capacity exhaustion. Screenshot evidence is under ignored `artifacts/hosted-preview/`; browser consoles were clean. The environment smoke now opens the compact menu after resizing/reloading before interacting with its controls. Physical device keyboards remain unverified.
+
+The deployment helper is a separate coordinated change. It supplies the bounded Fly-managed origin pool and private relay secret, using operator credentials only. No cloud resources, participant files/processes, roles, sessions, saved model keys or shared Git history were changed by this implementation. Root owns publication and deployment, followed by dedicated live validation.
+
 ## Mobile keyboard follow-up (local, not deployed)
 
 The workspace now follows unzoomed visual-viewport height and pan offsets on resize/scroll. Phone and short-landscape workspace controls use a mounted Menu disclosure; draft, agent and terminal sessions survive menu/viewport changes. Chat composer bounds use available panel space, and Latest follows measured composer height. T3 attribution records the adaptation. Portal navigation and account roles are unchanged.
@@ -47,7 +57,7 @@ Read [AGENTS.md](../AGENTS.md), [the implementation plan](../IMPLEMENTATION_PLAN
 
 1. **Prepare verified-email production separately from the live demo.** The fresh demo below verifies Linux startup, idle redeploy persistence and dedicated Sprite/agent/terminal flows. Real email delivery, token rotation, full volume restore/resource lifecycle and production security review remain outstanding. Follow [Fly deployment](fly-deployment.md); never migrate demo identities into verified accounts.
 2. **Migrate existing installations before reconnecting them.** The complete namespace change is breaking and has no old aliases or automatic migration. Follow [migration requirements](rename-migration.md); source publication does not migrate participant data, Sprite names, saved keys, sessions, Git refs or local-folder baselines. Never treat prototype identities as verified hosted users.
-3. **Finish hosted previews.** Local Open preview uses a separate-origin gateway and authenticated Sprite tunnel. Hosted Open preview is explicitly disabled; choose participant-private versus public demo exposure before implementing isolated HTTPS routing and restart recovery. Existing Sprite URLs remain private.
+3. **Deploy and verify private hosted previews.** The preview implementation branch adds isolated HTTPS origin configuration, owner/session-bound cookies, single-use handshakes and Vite HTTP/WebSocket routing. Coordinate the automatic Fly ingress pool with the deployment operator, then validate a dedicated smoke Sprite before checking an existing participant preview without changing its files or process. Live acceptance is still pending. Existing Sprite URLs remain private; the no-domain path uses a bounded automatic pool with durable, never-reused workspace bindings.
 4. **Rehearse remaining real flows.** Confirm HTML highlighting and saved-OpenRouter reconnect in the original user browser after migration. Rehearse live Claude questions/cancellation/provider failures, native OpenCode resumed context, Chrome/Edge native folder access and physical iOS/Android keyboard/pickers. Browser/native Claude prompt refresh passes the fake-API resume check without resetting session IDs.
 5. **Complete operational recovery.** Hosted Smart HTTP/mTLS Git, integration workspaces/checks, cross-store recovery, external backups/restore, orphan cleanup and enforced spending budgets remain separate work. [Portability](portability.md) requires configurable authenticated protocols without dependence on Fly private networking.
 
@@ -74,6 +84,7 @@ CIVIC_SPARK_EDITOR_BLOCK_HTML=1 npm run test:editor-browser
 CIVIC_SPARK_EDITOR_DEV=1 CIVIC_SPARK_EDITOR_BLOCK_HTML=1 npm run test:editor-browser
 npm run test:workspace-browser
 npm run test:environment-browser
+npm run test:hosted-preview-browser
 # Browser/native Claude resume against a local fake API; no paid inference:
 npx tsx scripts/agent-prompt-smoke.ts
 ```

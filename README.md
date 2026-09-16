@@ -37,7 +37,7 @@ Authenticate the official `sprite` CLI and set `CIVIC_SPARK_ENABLE_SPRITES=1`. O
 
 The remote browser/editor supports text and CSV files, rejects stale saves and path escapes, and checks the authenticated owner before every operation. Files live at `/home/sprite/project`. Team Git uses independent clones, not cross-VM filesystem worktrees.
 
-**Current transport:** remote browsing/editing and Share use the authenticated Sprite connection. Share makes a real local commit and transfers that exact commit in a bounded Git bundle, pushing the shared branch without a separate review gate. Diverged remote history is reported instead of force-pushed. The top bar checks for incoming team updates and offers Get updates, agent-assisted conflict resolution, or a backed-up replacement with the team version. The continuous hosted Git service will use HTTPS/mTLS. Agent chat adapters and the browser terminal are implemented; GLM has passed a live request, approval, and SVG edit; The full Claude questions/cancellation/provider-failure rehearsal remains outstanding. Private personal previews now have Launch/Restart/Open controls in the local prototype. Hosted/shared previews remain future work; see docs/workspaces.md for the current owner-authorized gateway and configured web-command contract.
+**Current transport:** remote browsing/editing and Share use the authenticated Sprite connection. Share makes a real local commit and transfers that exact commit in a bounded Git bundle, pushing the shared branch without a separate review gate. Diverged remote history is reported instead of force-pushed. The top bar checks for incoming team updates and offers Get updates, agent-assisted conflict resolution, or a backed-up replacement with the team version. The continuous hosted Git service will use HTTPS/mTLS. Agent chat adapters and the browser terminal are implemented; GLM has passed a live request, approval, and SVG edit; The full Claude questions/cancellation/provider-failure rehearsal remains outstanding. Private personal previews have Launch/Restart/Open controls. Hosted Open preview requires configured, isolated HTTPS origins; shared public previews remain future work. See docs/workspaces.md for the owner-authorized gateway and configured web-command contract, and docs/fly-deployment.md for automatic Fly ingress setup and optional owned-domain routing.
 
 When Sprites are disabled, the same membership permissions apply to local checkouts. This is used by automated tests and allows local file/Git development without cloud resources.
 
@@ -62,6 +62,7 @@ npm run test:browser
 npm run test:workspace-browser
 npm run test:agent-browser
 npm run test:mobile
+npm run test:hosted-preview-browser
 ```
 
 The browser test signs up two people through the real email-link endpoints using an in-memory test mailbox. A separate test-only session fixture supplies an extra coordinator account; no live email is sent. It checks event ownership, discovery, multi-team membership, custom briefs, private file access, contribution/ZIP, admin promotion, removal/revocation, logout, mobile layout, and browser errors. Screenshots are saved in ignored `artifacts/`.

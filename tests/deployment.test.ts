@@ -435,3 +435,25 @@ it("recovers durable provisioning, sessions and Git after restart without automa
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it("configures isolated wildcard preview routing without adding runtime resources", () => {
+  const configured = setupSchema.parse({
+    ...settings,
+    previewOriginTemplate: "https://{workspace}.preview.example.test",
+  });
+  const config = flyConfig(configured);
+  expect(config).toContain(
+    'CIVIC_SPARK_PREVIEW_ORIGIN_TEMPLATE = "https://{workspace}.preview.example.test"',
+  );
+  expect(config.match(/internal_port/g)).toHaveLength(1);
+  for (const template of [
+    "https://event.example.test",
+    "http://{workspace}.preview.example.test",
+    "https://{workspace}.event.example.test",
+    "https://{workspace}.preview.example.test/path",
+  ]) {
+    expect(setupSchema.safeParse({ ...settings, previewOriginTemplate: template }).success).toBe(
+      false,
+    );
+  }
+});
