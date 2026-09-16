@@ -90,6 +90,16 @@ docker build -f deploy/fly/Dockerfile -t civic-spark-control-plane .
 
 The entrypoint requires `/data` to be an actual mount. It initializes `/data/civic-spark` as uid/gid 1000 and runs Node without root privileges. Existing imported files must already be owned by that user; it intentionally does not recursively rewrite recovery data ownership. A missing mount or unwritable data directory fails startup. The default-deny `.dockerignore` includes only source/build inputs and rejects nested `.env`, data, Git, artifacts and credential files. The two `credentials.ts` modules and `deployment-secrets.ts` are trusted **source**, explicitly included. The clean-context test runs TypeScript/Vite from only those staged inputs, attaching local dependencies afterward; it does not substitute for Linux/native/container execution.
 
+## Operator CLI identity
+
+The entrypoint precreates `/home/node/.sprites` as uid/gid 1000 with mode 0700 before dropping privileges. Sprite initializes local CLI state even when authentication comes from `SPRITE_TOKEN`. It does not recursively change ownership of existing files.
+
+Run **all operator Sprite probes as the app user**, with `HOME=/home/node`, including read-only list/status/exec checks. A root Machine console inherits the container's node HOME: running Sprite directly there can create root-owned CLI state and block subsequent app provisioning. Use `setpriv --reuid=node --regid=node --init-groups` before the probe process; when loading the secret envelope, decode it inside that process without printing values. Never put a token in argv.
+
+If provisioning fails, inspect sanitized CLI diagnostics and the reserved Sprite's API existence before retrying. Check ownership of the CLI directory and its children separately. Repair only confirmed CLI-state ownership; never recursively chown participant data, clear credentials, replace the workspace, or allocate a different name to hide the failure. Use the existing workspace's preparation retry after repair.
+
+September 16 live recovery: a root-run operator probe created an empty root-owned `.sprites` directory. The app's create command then failed before its API request with a local config permission error. Correcting only that empty directory and retrying the original reservation completed actual fresh Sprite creation, checkout and file-access verification without a management restart or participant file replacement. The CLI flag, token and provider quota were not the cause.
+
 ## Durability, recovery and limits
 
 Keep the **entire** `/data/civic-spark` tree together: `auth.sqlite`, `access.sqlite`, `state.sqlite` and WAL/SHM siblings, bare `repos/`, local `workspaces/`, `agent-integrations/` conflict tickets, provisioning seed bundles and the writer-lock database. Auth signing material comes from Fly secrets and must accompany disaster recovery. Provider session IDs, conversation journals, saved model keys and runtime configuration live privately in each person's persistent Sprite. Do not export those directories into shared Git. Restarting the management app does not stop participant turns or erase their sessions; reconnect reattaches the saved context.
