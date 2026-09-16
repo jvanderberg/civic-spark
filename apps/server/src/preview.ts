@@ -11,6 +11,7 @@ import {
 import { connect, createServer as portServer } from "node:net";
 import type { Duplex } from "node:stream";
 import { setTimeout } from "node:timers/promises";
+import { previewActivity } from "./preview-activity.ts";
 import { validatePreviewOriginTemplate } from "./preview-config.ts";
 import { relayAuthorized, stripProxyHeaders } from "./preview-ingress.ts";
 import { PreviewOriginPool } from "./preview-origins.ts";
@@ -20,6 +21,7 @@ export type PreviewTransportFactory = (sprite: string, port: number) => Promise<
 export async function spritePreviewTransport(
   sprite: string,
   port: number,
+  signal?: AbortSignal,
 ): Promise<PreviewTransport> {
   const probe = portServer();
   await new Promise<void>((resolve, reject) => {
@@ -30,6 +32,7 @@ export async function spritePreviewTransport(
   if (!address || typeof address === "string") throw new Error("Cannot allocate preview tunnel");
   const local = address.port;
   await new Promise<void>((resolve) => probe.close(() => resolve()));
+  signal?.throwIfAborted();
   const child = spawn(
     "sprite",
     [
@@ -41,11 +44,14 @@ export async function spritePreviewTransport(
     ],
     { stdio: "ignore" },
   );
+  const abort = () => child.kill();
+  signal?.addEventListener("abort", abort, { once: true });
   let alive = true;
   child.on("error", () => {
     alive = false;
   });
   child.on("exit", () => {
+    signal?.removeEventListener("abort", abort);
     alive = false;
   });
   for (let attempt = 0; attempt < 50 && alive; attempt++) {
@@ -62,11 +68,12 @@ export async function spritePreviewTransport(
         resolve(false);
       });
     });
-    if (ready)
+    if (ready && !signal?.aborted)
       return {
         port: local,
         close: () => {
           alive = false;
+          signal?.removeEventListener("abort", abort);
           child.kill();
         },
         alive: () => alive,
@@ -79,6 +86,7 @@ export async function spritePreviewTransport(
 
 type Grant = { expires: number; authorized: () => Promise<boolean> };
 type Preview = {
+  lastUse: number;
   port: number;
   sprite: string;
   url: string;
@@ -314,6 +322,7 @@ export class WorkspacePreviews {
       const url = this.pool?.assign(id) ?? this.template?.replace("{workspace}", id) ?? "";
       const transport = await this.transport(sprite, port);
       item = {
+        lastUse: Date.now(),
         port,
         sprite,
         transport,
@@ -428,6 +437,7 @@ export class WorkspacePreviews {
         reject(res, 403, "Cross-origin preview requests are disabled");
         return;
       }
+      item.lastUse = Date.now();
       const upstream = httpRequest(
         {
           host: "127.0.0.1",
@@ -478,6 +488,7 @@ export class WorkspacePreviews {
         return;
       }
       if (socket.destroyed) return;
+      item.lastUse = Date.now();
       const upstream = httpRequest({
         host: "127.0.0.1",
         port: item.transport.port,
@@ -499,7 +510,14 @@ export class WorkspacePreviews {
             .map(([key, value]) => `${key}: ${value}`)
             .join("\r\n")}\r\n\r\n`,
         );
-        if (head.length) target.write(head);
+        const activity = previewActivity(req.headers["sec-websocket-protocol"], () => {
+          item.lastUse = Date.now();
+        });
+        socket.on("data", activity);
+        if (head.length) {
+          activity(head);
+          target.write(head);
+        }
         if (extra.length) socket.write(extra);
         socket.pipe(target).pipe(socket);
         const timer = globalThis.setInterval(() => {
@@ -533,6 +551,10 @@ export class WorkspacePreviews {
     } catch {
       socket.destroy();
     }
+  }
+  inUse(id: string, idleMs: number) {
+    const item = this.previews.get(id);
+    return Boolean(item && Date.now() - item.lastUse < idleMs);
   }
   stop(id: string) {
     this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1);

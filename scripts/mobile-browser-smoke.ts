@@ -16,6 +16,7 @@ import {
 } from "./browser-project-brief.ts";
 import { verifySiteEventPortal } from "./browser-site-event.ts";
 import { verifyKeyboardViewport } from "./keyboard-browser-smoke.ts";
+import { verifyLifecyclePortal } from "./lifecycle-browser-smoke.ts";
 
 // Disposable local APIs and deterministic Sprite transports; never runs participant
 // code or contacts a paid agent. Touch emulation does not claim physical-device QA.
@@ -427,3 +428,5 @@ try {
 await verifySiteEventPortal();
 
 await verifyKeyboardViewport();
+
+await verifyLifecyclePortal();

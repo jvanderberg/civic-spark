@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { createInterface } from "node:readline";
 import { getSessionMessages, type Query, query } from "@anthropic-ai/claude-agent-sdk";
 import { createOpencodeClient, createOpencodeServer } from "@opencode-ai/sdk/v2";
+import { holdActiveTurn } from "./activity.ts";
 import {
   claudeEnvironment,
   claudeWorkspaceId,
@@ -60,6 +61,7 @@ const emit = (type: AgentEvent["type"], text: string, extra: Partial<AgentEvent>
 };
 const approvals = new Map<string, (allow: boolean, answer?: string) => void>();
 let active = false;
+let turn: AbortController | undefined;
 let runtimeReady = false;
 let working = false;
 let workingStartedAt: string | undefined;
@@ -99,17 +101,22 @@ async function ask(
     });
   });
 }
-async function claudeTurn(input: Extract<AgentInput, { type: "prompt" }>) {
+async function claudeTurn(
+  input: Extract<AgentInput, { type: "prompt" }>,
+  cancellation: AbortController,
+) {
   if (!keys.claude && !process.env.ANTHROPIC_API_KEY)
     throw new Error("Add an Anthropic API key in agent settings first");
-  claudeAbort = new AbortController();
+  const context = await contextModule();
+  cancellation.signal.throwIfAborted();
+  claudeAbort = cancellation;
   claude = query({
     prompt: input.text,
     options: {
       cwd: "/home/sprite/project",
       resume: state.claude,
       model: agentModels.claude.model,
-      systemPrompt: (await contextModule()).claudeSystemPrompt(),
+      systemPrompt: context.claudeSystemPrompt(),
       env: claudeEnvironment("/home/sprite", process.env, keys.claude),
       abortController: claudeAbort,
       settingSources: [],
@@ -216,20 +223,27 @@ async function startOpen() {
   open = client;
   return client;
 }
-async function openTurn(input: Extract<AgentInput, { type: "prompt" }>) {
+async function openTurn(
+  input: Extract<AgentInput, { type: "prompt" }>,
+  cancellation: AbortController,
+) {
   if (!keys.opencode) throw new Error("API key missing");
   const client = await startOpen();
+  cancellation.signal.throwIfAborted();
   if (!state.opencode) {
     const created = await client.session.create({ title: "Civic Spark workspace" });
     state.opencode = created.data?.id;
     save();
+    cancellation.signal.throwIfAborted();
   }
   if (!state.opencode) throw new Error("Could not create session");
   const model = agentModels.opencode.model;
   const separator = model.indexOf("/");
+  const context = await contextModule();
+  cancellation.signal.throwIfAborted();
   const result = await client.session.prompt({
     sessionID: state.opencode,
-    system: (await contextModule()).workspaceContext(),
+    system: context.workspaceContext(),
     model: {
       providerID: model.slice(0, separator),
       modelID: model.slice(separator + 1),
@@ -306,6 +320,7 @@ async function input(message: AgentInput) {
     return;
   }
   if (message.type === "stop") {
+    turn?.abort();
     for (const resolve of approvals.values()) resolve(false);
     claudeAbort?.abort();
     if (open && state.opencode) await open.session.abort({ sessionID: state.opencode });
@@ -316,21 +331,38 @@ async function input(message: AgentInput) {
     return;
   }
   active = true;
+  const cancellation = new AbortController();
+  turn = cancellation;
   emit("user", message.text);
   working = true;
   workingStartedAt = new Date().toISOString();
   emit("status", "Working", { workingStartedAt });
   emitState();
+  let releaseHold: (() => Promise<void>) | undefined;
   try {
-    if (message.provider === "claude") await claudeTurn(message);
-    else await openTurn(message);
+    releaseHold = await holdActiveTurn(() => {
+      if (turn !== cancellation) return;
+      cancellation.abort();
+      claudeAbort?.abort();
+      if (open && state.opencode) void open.session.abort({ sessionID: state.opencode });
+      emit(
+        "error",
+        "Sprite activity protection was interrupted. The turn was stopped; reconnect to retry.",
+      );
+    });
+    cancellation.signal.throwIfAborted();
+    if (message.provider === "claude") await claudeTurn(message, cancellation);
+    else await openTurn(message, cancellation);
   } catch (error) {
+    if (cancellation.signal.aborted) return;
     if (credentialFailure(error)) failedProviders.add(message.provider);
     emit("error", agentFailure(error), {
       provider: message.provider,
       credentialFailure: credentialFailure(error),
     });
   } finally {
+    await releaseHold?.();
+    if (turn === cancellation) turn = undefined;
     active = false;
     claude = undefined;
     claudeAbort = undefined;

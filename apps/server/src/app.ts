@@ -12,10 +12,15 @@ import {
   teamInputSchema,
   verifiedIdentitySchema,
 } from "../../../packages/domain/src/access-types.ts";
+import { lifecycleActionSchema } from "../../../packages/domain/src/lifecycle.ts";
 import { EventService } from "../../../packages/domain/src/service.ts";
 import { createEventSchema, type Result } from "../../../packages/domain/src/types.ts";
 import { git } from "../../../packages/git/src/repository.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
+import {
+  SpriteLifecycle,
+  type SpriteLifecycleProvider,
+} from "../../../packages/sprites/src/lifecycle.ts";
 import {
   BLOB_BODY_LIMIT,
   mutationSchema,
@@ -27,7 +32,8 @@ import { createAuthentication } from "./auth.ts";
 import { clientAddress, storageReady, validateDeployment } from "./deployment.ts";
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
-import type { PreviewTransportFactory } from "./preview.ts";
+import { WorkspaceLifecycle } from "./lifecycle.ts";
+import { type PreviewTransportFactory, spritePreviewTransport } from "./preview.ts";
 import { prototypeSignIn } from "./prototype-auth.ts";
 import { WorkspaceProvisioning } from "./provisioning.ts";
 import { registerTeamUpdateRoutes } from "./team-updates.ts";
@@ -53,6 +59,7 @@ export async function createApp(
     .parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
   siteEventId = z.uuid().optional().parse(process.env.CIVIC_SPARK_SITE_EVENT_ID),
   previewTransport?: PreviewTransportFactory,
+  lifecycleProvider?: SpriteLifecycleProvider,
 ) {
   const deployment = validateDeployment(root, baseURL, authMode);
   const prototype = authMode === "prototype";
@@ -74,21 +81,56 @@ export async function createApp(
   }
   const app = Fastify({ logger: false, bodyLimit: 1500000 });
   await app.register(websocket, { options: { maxPayload: 65536 } });
-  const terminals = new TerminalSessions();
-  const agents = new AgentSessions();
+  const allowed = (id: string) => service.executionAllowed(id).ok;
+  const client: SpriteClient = new SpriteClient(undefined, (name, passive) =>
+    lifecycle.acquire(name, passive),
+  );
+  const terminals = new TerminalSessions(allowed, client);
+  const agents = new AgentSessions(client, allowed, (id) => lifecycle.touch(id));
   const sharing = new Set<string>();
   const integrations = new WorkspaceIntegrations(
     service,
     root,
     sharing,
     baseURL,
-    undefined,
-    previewTransport,
+    client,
+    async (name, port) => {
+      const lease = lifecycle.acquire(name);
+      try {
+        const transport = await (previewTransport
+          ? previewTransport(name, port)
+          : spritePreviewTransport(name, port, lease.signal));
+        if (lease.signal.aborted) {
+          transport.close();
+          lease.signal.throwIfAborted();
+        }
+        return transport;
+      } finally {
+        lease.release();
+      }
+    },
   );
   app.addHook("onReady", async () => {
     integrations.previews.attach(app.server);
   });
-  const provisioning = new WorkspaceProvisioning(service, root);
+  const lifecycle: WorkspaceLifecycle = new WorkspaceLifecycle(
+    service,
+    lifecycleProvider ?? new SpriteLifecycle(),
+    (id) => {
+      agents.stop(id);
+      terminals.stop(id);
+      integrations.stop(id);
+    },
+    (id) => agents.isWorking(id),
+    (id) =>
+      terminals.recentlyUsed(id, lifecycle.idleMinutes * 60000) ||
+      agents.isPreparing(
+        service.provisioningRecords().find((w) => w.id === id)?.spriteName ?? "",
+      ) ||
+      integrations.previews.inUse(id, lifecycle.idleMinutes * 60000),
+    (id) => provisioning.wait(id),
+  );
+  const provisioning: WorkspaceProvisioning = new WorkspaceProvisioning(service, root, client);
   const authentication = await createAuthentication(
     root,
     baseURL,
@@ -170,6 +212,7 @@ export async function createApp(
       .send({ error: "The operation could not complete. Your saved work is preserved." });
   });
   app.addHook("onClose", async () => {
+    lifecycle.close();
     terminals.close();
     agents.close();
     integrations.close();
@@ -276,6 +319,51 @@ export async function createApp(
     if (!value) throw new Error("Missing session");
     return value;
   };
+  // Every workspace route is owner-authorized before the execution gate. Only
+  // metadata and explicit wake bypass runtime gating, never private file reads.
+  app.addHook("preHandler", async (r, reply) => {
+    const match = /^\/api\/workspaces\/([^/]+)\/([^?]+)/.exec(r.url);
+    if (!match) return;
+    // req.ws is set by Fastify only for a real upgraded socket. These two
+    // handlers enforce owner/execution access and close rejected sockets.
+    if (
+      r.ws &&
+      ["/api/workspaces/:id/agent", "/api/workspaces/:id/terminal"].includes(
+        r.routeOptions.url ?? "",
+      )
+    )
+      return;
+    const workspace = service.workspace(actor(r.actor), match[1] as string);
+    if (!workspace.ok) return send(reply, workspace);
+    if (match[2] === "sprite" || match[2] === "wake") return;
+    const access = service.executionAllowed(workspace.value.id);
+    if (!access.ok) return send(reply, access);
+  });
+  app.get<{ Params: { id: string } }>("/api/events/:id/sprites", async (r, reply) =>
+    send(reply, await lifecycle.inventory(actor(r.actor), r.params.id)),
+  );
+  app.post<{ Params: { id: string } }>("/api/events/:id/execution", async (r, reply) => {
+    const input = lifecycleActionSchema.parse(r.body);
+    return send(reply, await lifecycle.change(actor(r.actor), r.params.id, input.action));
+  });
+  app.post<{ Params: { id: string } }>("/api/workspaces/:id/wake", async (r, reply) => {
+    const workspace = service.wakeWorkspace(actor(r.actor), r.params.id);
+    if (!workspace.ok) return send(reply, workspace);
+    if (provisioning.needsRecovery(workspace.value)) {
+      const result = provisioning.start(workspace.value);
+      if (!result.ok) return send(reply, result);
+      return reply.code(result.value.preparing ? 202 : 200).send(result.value);
+    }
+    if (workspace.value.spriteName && workspace.value.spriteStatus === "ready") {
+      const awake = await client.exec(workspace.value.spriteName, ["true"]);
+      if (!awake.ok) return send(reply, awake);
+    }
+    return { awake: true };
+  });
+  app.post<{ Params: { id: string } }>("/api/workspaces/:id/activity", async (r) => {
+    lifecycle.touch(r.params.id);
+    return { recorded: true };
+  });
   registerAdminRoutes(app, service);
   app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled, siteEventId));
   app.post("/api/events", async (r, reply) =>
@@ -332,6 +420,8 @@ export async function createApp(
     if (p.value.spriteStatus !== "ready" || !p.value.spriteName)
       return reply.code(409).send({ error: "Agent execution needs a running Sprite" });
     const prepared = await agents.prepare(p.value.spriteName);
+    if (prepared && !allowed(r.params.id))
+      return send(reply, service.executionAllowed(r.params.id));
     if (prepared) {
       const owner = actor(r.actor);
       integrations.ensure(r.params.id, owner, p.value.spriteName, async () => {
@@ -339,7 +429,8 @@ export async function createApp(
         return Boolean(
           session &&
             (prototype ? session.user.email.toLowerCase() : session.user.id) === owner.id &&
-            service.workspace(owner, r.params.id, true).ok,
+            service.workspace(owner, r.params.id, true).ok &&
+            allowed(r.params.id),
         );
       });
     }
@@ -399,7 +490,8 @@ export async function createApp(
         return Boolean(
           session &&
             (prototype ? session.user.email.toLowerCase() : session.user.id) === owner.id &&
-            service.workspace(owner, r.params.id, true).ok,
+            service.workspace(owner, r.params.id, true).ok &&
+            allowed(r.params.id),
         );
       };
       if (input.action === "open")
@@ -421,6 +513,7 @@ export async function createApp(
       const p = service.workspace(actor(r.actor), r.params.id, true);
       if (
         r.headers.origin !== baseURL ||
+        !allowed(r.params.id) ||
         !p.ok ||
         !p.value.spriteName ||
         p.value.spriteStatus !== "ready"
@@ -435,7 +528,8 @@ export async function createApp(
           return Boolean(
             session &&
               (prototype ? session.user.email.toLowerCase() : session.user.id) === owner.id &&
-              service.workspace(owner, r.params.id, true).ok,
+              service.workspace(owner, r.params.id, true).ok &&
+              allowed(r.params.id),
           );
         });
       } catch {
@@ -450,6 +544,7 @@ export async function createApp(
       const p = service.workspace(actor(r.actor), r.params.id, true);
       if (
         r.headers.origin !== baseURL ||
+        !allowed(r.params.id) ||
         !p.ok ||
         !p.value.spriteName ||
         p.value.spriteStatus !== "ready"
@@ -464,7 +559,8 @@ export async function createApp(
           return Boolean(
             session &&
               (prototype ? session.user.email.toLowerCase() : session.user.id) === owner.id &&
-              service.workspace(owner, r.params.id, true).ok,
+              service.workspace(owner, r.params.id, true).ok &&
+              allowed(r.params.id),
           );
         });
       } catch {
@@ -477,7 +573,7 @@ export async function createApp(
       const p = service.workspace(actor(r.actor), r.params.id);
       if (!p.ok) return send(reply, p);
       if (p.value.spriteStatus === "ready" && p.value.spriteName)
-        return send(reply, await new SpriteClient()[operation](p.value.spriteName));
+        return send(reply, await client[operation](p.value.spriteName));
       return send(reply, service.workspaceFiles(actor(r.actor), r.params.id, operation));
     });
   }
@@ -488,7 +584,7 @@ export async function createApp(
       if (!p.ok) return send(reply, p);
       const path = z.string().parse(r.query.path);
       if (p.value.spriteStatus === "ready" && p.value.spriteName)
-        return send(reply, await new SpriteClient().readBlob(p.value.spriteName, path));
+        return send(reply, await client.readBlob(p.value.spriteName, path));
       return send(reply, service.workspaceFiles(actor(r.actor), r.params.id, "read", path));
     },
   );
@@ -500,7 +596,7 @@ export async function createApp(
       if (!p.ok) return send(reply, p);
       const input = mutationSchema.parse(r.body);
       if (p.value.spriteStatus === "ready" && p.value.spriteName)
-        return send(reply, await new SpriteClient().mutateBlob(p.value.spriteName, input));
+        return send(reply, await client.mutateBlob(p.value.spriteName, input));
       return send(reply, service.workspaceFiles(actor(r.actor), r.params.id, "mutate", input));
     },
   );
@@ -508,7 +604,7 @@ export async function createApp(
     const p = service.workspace(actor(r.actor), r.params.id);
     if (!p.ok) return send(reply, p);
     if (p.value.spriteStatus === "ready" && p.value.spriteName)
-      return send(reply, await new SpriteClient().files(p.value.spriteName));
+      return send(reply, await client.files(p.value.spriteName));
     return send(reply, service.files(actor(r.actor), r.params.id));
   });
   app.get<{ Params: { id: string }; Querystring: { path: string } }>(
@@ -518,7 +614,7 @@ export async function createApp(
       const p = service.workspace(actor(r.actor), r.params.id);
       if (!p.ok) return send(reply, p);
       if (p.value.spriteStatus === "ready" && p.value.spriteName)
-        return send(reply, await new SpriteClient().readFile(p.value.spriteName, path));
+        return send(reply, await client.readFile(p.value.spriteName, path));
       return send(reply, service.readFile(actor(r.actor), r.params.id, path));
     },
   );
@@ -532,14 +628,14 @@ export async function createApp(
       const p = service.workspace(actor(r.actor), r.params.id, true);
       if (!p.ok) return send(reply, p);
       if (p.value.spriteStatus === "ready" && p.value.spriteName)
-        return send(reply, await new SpriteClient().saveFile(p.value.spriteName, b));
+        return send(reply, await client.saveFile(p.value.spriteName, b));
       return send(
         reply,
         service.saveFile(actor(r.actor), r.params.id, b.path, b.content, b.revision),
       );
     },
   );
-  const teamUpdates = registerTeamUpdateRoutes(app, service, agents, sharing);
+  const teamUpdates = registerTeamUpdateRoutes(app, service, agents, sharing, client);
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/share", async (r, reply) => {
     const input = z
       .object({
@@ -565,11 +661,7 @@ export async function createApp(
         return reply
           .code(409)
           .send({ error: "Wait for your workspace to be ready before sharing." });
-      const result = await new SpriteClient().share(
-        p.value.spriteName,
-        input.title,
-        input.revision,
-      );
+      const result = await client.share(p.value.spriteName, input.title, input.revision);
       if (!result.ok) return send(reply, result);
       // Reauthorize after remote I/O: removed members and closed events cannot publish.
       const access = service.workspace(actor(r.actor), r.params.id, true);
@@ -596,7 +688,7 @@ export async function createApp(
         commit,
       );
       if (!published.ok) return send(reply, published);
-      const acknowledged = await new SpriteClient().acknowledgeShare(
+      const acknowledged = await client.acknowledgeShare(
         p.value.spriteName,
         input.revision,
         commit,
@@ -648,12 +740,14 @@ export async function createApp(
     return provisioning.status(workspace.value);
   });
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/sprite", async (r, reply) => {
-    const workspace = service.workspace(actor(r.actor), r.params.id, true);
+    const workspace = service.workspace(actor(r.actor), r.params.id, true, true);
     if (!workspace.ok) return send(reply, workspace);
     if (!spritesEnabled)
       return reply
         .code(409)
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
+    const waking = service.wakeWorkspace(actor(r.actor), r.params.id);
+    if (!waking.ok) return send(reply, waking);
     const result = provisioning.start(workspace.value);
     if (result.ok) return reply.code(result.value.preparing ? 202 : 200).send(result.value);
     return send(reply, result);

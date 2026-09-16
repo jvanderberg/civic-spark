@@ -138,7 +138,7 @@ async function fixture(mode: "email" | "demo" | "prototype" = "demo") {
   // Lifecycle tables must survive without schema-specific projection or rewriting.
   const db = new Database(join(active, "access.sqlite"));
   db.exec(
-    "CREATE TABLE event_execution(id TEXT PRIMARY KEY,body TEXT NOT NULL); CREATE TABLE workspace_runtime(id TEXT PRIMARY KEY,body TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS event_execution(id TEXT PRIMARY KEY,body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_runtime(id TEXT PRIMARY KEY,body TEXT NOT NULL)",
   );
   db.prepare("INSERT INTO event_execution VALUES(?,?)").run(
     event.id,

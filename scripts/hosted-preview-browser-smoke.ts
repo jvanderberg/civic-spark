@@ -107,6 +107,11 @@ const relaySecret = "browser-test-dedicated-relay-secret".repeat(2);
 process.env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL = JSON.stringify([previewOrigin]);
 process.env.CIVIC_SPARK_PREVIEW_RELAY_SECRET = relaySecret;
 const originalPreview = SpriteClient.prototype.preview;
+const originalExec = SpriteClient.prototype.exec;
+SpriteClient.prototype.exec = async (_sprite, command) => {
+  assert.deepEqual(command, ["true"], "Only the explicit owner wake is mocked");
+  return { ok: true, value: Buffer.from("") };
+};
 SpriteClient.prototype.preview = async (_sprite, operation) => {
   assert(
     ["status", "logs"].includes(operation),
@@ -324,6 +329,7 @@ try {
   edge.closeAllConnections();
   await new Promise<void>((resolve) => edge.close(() => resolve()));
   SpriteClient.prototype.preview = originalPreview;
+  SpriteClient.prototype.exec = originalExec;
   delete process.env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL;
   delete process.env.CIVIC_SPARK_PREVIEW_RELAY_SECRET;
   rmSync(root, { recursive: true, force: true });

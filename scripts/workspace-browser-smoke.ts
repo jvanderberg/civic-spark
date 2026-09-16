@@ -239,6 +239,12 @@ try {
   assert.equal(await page.getByRole("button", { name: /Apply sync/ }).count(), 0);
   await page.setViewportSize({ width: 1280, height: 480 });
   const syncRegion = page.getByRole("region", { name: "Local folder sync", exact: true });
+  await page.waitForFunction(() => {
+    const node = document.querySelector(".workspace-local-view");
+    return (
+      node && node.getBoundingClientRect().bottom <= 480 && node.scrollHeight > node.clientHeight
+    );
+  });
   const dimensions = await syncRegion.evaluate((node) => ({
     bottom: node.getBoundingClientRect().bottom,
     height: node.clientHeight,

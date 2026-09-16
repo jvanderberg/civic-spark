@@ -25,6 +25,7 @@ export function registerTeamUpdateRoutes(
   service: EventService,
   agents: AgentSessions,
   busy: Set<string>,
+  client = new SpriteClient(),
 ) {
   const cache = new Map<string, { at: number; remote: string; value: TeamStatus }>();
   const pending = new Map<string, Promise<Result<TeamStatus>>>();
@@ -46,7 +47,7 @@ export function registerTeamUpdateRoutes(
           workspace.spriteStatus === "local"
             ? Promise.resolve(service.localTeamStatus(actor(r.actor), r.params.id, remote))
             : workspace.spriteStatus === "ready" && workspace.spriteName
-              ? new SpriteClient().teamStatus(workspace.spriteName, remote)
+              ? client.teamStatus(workspace.spriteName, remote)
               : Promise.resolve({
                   ok: false,
                   error: "Wait for the workspace to be ready.",
@@ -98,7 +99,6 @@ export function registerTeamUpdateRoutes(
         return send(reply, service.localTeamUpdate(actor(r.actor), r.params.id, input, bundle));
       if (workspace.spriteStatus !== "ready" || !workspace.spriteName)
         return reply.code(409).send({ error: "Wait for the workspace to be ready." });
-      const client = new SpriteClient();
       const imported = await client.importTeam(workspace.spriteName, bundle, input.remote);
       if (!imported.ok) return send(reply, imported);
       const fresh = service.teamReference(actor(r.actor), r.params.id, true);
@@ -145,11 +145,7 @@ export function registerTeamUpdateRoutes(
         p.value.spriteStatus === "local"
           ? service.verifyLocalTeamUpdate(actor(r.actor), r.params.id, input.head, input.remote)
           : p.value.spriteStatus === "ready" && p.value.spriteName
-            ? await new SpriteClient().verifyTeamUpdate(
-                p.value.spriteName,
-                input.head,
-                input.remote,
-              )
+            ? await client.verifyTeamUpdate(p.value.spriteName, input.head, input.remote)
             : { ok: false, error: "Wait for the workspace to be ready.", status: 409 },
       );
     },

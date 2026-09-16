@@ -21,8 +21,15 @@ import {
 
 const execute = promisify(execFile);
 const spriteNamePattern = /^civic-spark-[a-z0-9-]{1,45}$/;
+export type SpriteLease = { signal: AbortSignal; release(): void };
 export class SpriteClient {
-  constructor(private org = process.env.CIVIC_SPARK_SPRITE_ORG) {}
+  constructor(
+    private org = process.env.CIVIC_SPARK_SPRITE_ORG,
+    private acquire?: (name: string, passive?: boolean) => SpriteLease,
+  ) {}
+  lease(name: string, passive = false): SpriteLease | undefined {
+    return this.acquire?.(name, passive);
+  }
   private args(args: string[]) {
     return this.org ? ["-o", this.org, ...args] : args;
   }
@@ -32,12 +39,22 @@ export class SpriteClient {
     input?: string,
     maxBuffer = 16 * 1024 * 1024,
   ): Promise<Result<Buffer>> {
+    let lease: SpriteLease | undefined;
+    let closed: Promise<void> | undefined;
     try {
+      const name = args.includes("-s")
+        ? args[args.indexOf("-s") + 1]
+        : args[0] === "create"
+          ? args.at(-1)
+          : undefined;
+      if (name) lease = this.acquire?.(name);
       const pending = execute("sprite", this.args(args), {
         timeout,
         maxBuffer,
         encoding: "buffer",
+        signal: lease?.signal,
       });
+      closed = new Promise((resolve) => pending.child.once("close", () => resolve()));
       pending.child.stdin?.end(input);
       const { stdout } = await pending;
       return ok(stdout);
@@ -46,6 +63,9 @@ export class SpriteClient {
         "Sprite command failed. Check your CLI login and connectivity; no account credentials were logged.",
         502,
       );
+    } finally {
+      await closed;
+      lease?.release();
     }
   }
   async create(name: string): Promise<Result<string>> {

@@ -22,7 +22,7 @@ import { Agent } from "./Agent.tsx";
 import { api } from "./api.ts";
 import { Changes } from "./Changes.tsx";
 import { CodeEditor } from "./CodeEditor.tsx";
-import { Badge } from "./components.tsx";
+import { Badge, Modal } from "./components.tsx";
 import { EnvironmentControls } from "./EnvironmentControls.tsx";
 import { FileExplorer } from "./FileExplorer.tsx";
 import { decode } from "./folder-sync.ts";
@@ -40,14 +40,54 @@ export function Workspace({
   onClose,
   onChanged,
   eventClosed,
+  eventPaused = false,
   spritesEnabled,
 }: {
   participant: PersonalWorkspace;
   eventClosed: boolean;
+  eventPaused?: boolean;
   spritesEnabled: boolean;
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
+  const [waking, setWaking] = useState(
+    Boolean(participant.spriteName && participant.spriteStatus === "ready" && !eventPaused),
+  );
+  const [wakeError, setWakeError] = useState("");
+  const paused = eventPaused || Boolean(participant.runtime?.held);
+  const blocked = paused || waking || Boolean(wakeError);
+  useEffect(() => {
+    if (blocked || !participant.spriteName) return;
+    let last = 0;
+    const touch = (event: Event) => {
+      if (!event.isTrusted || document.hidden || Date.now() - last < 30000) return;
+      last = Date.now();
+      void api(`/workspaces/${participant.id}/activity`, "POST").catch(() => onChanged());
+    };
+    for (const name of ["pointerdown", "keydown", "wheel"])
+      window.addEventListener(name, touch, { passive: true });
+    return () => {
+      for (const name of ["pointerdown", "keydown", "wheel"])
+        window.removeEventListener(name, touch);
+    };
+  }, [blocked, participant.id, participant.spriteName, onChanged]);
+  const initiallyPaused = useRef(eventPaused);
+  const wake = useCallback(async () => {
+    setWaking(true);
+    setWakeError("");
+    try {
+      await api(`/workspaces/${participant.id}/wake`, "POST");
+      await onChanged();
+    } catch (error) {
+      setWakeError(error instanceof Error ? error.message : "Could not resume the Sprite.");
+    } finally {
+      setWaking(false);
+    }
+  }, [participant.id, onChanged]);
+  useEffect(() => {
+    if (participant.spriteName && participant.spriteStatus === "ready" && !initiallyPaused.current)
+      void wake();
+  }, [participant.spriteName, participant.spriteStatus, wake]);
   const [view, setView] = useState<WorkspaceView>(() => {
     try {
       const saved = localStorage.getItem(`civic-spark:workspace:${participant.id}:tab`);
@@ -88,12 +128,12 @@ export function Workspace({
   const remote = participant.spriteStatus === "ready";
   const pending =
     participant.spriteStatus === "provisioning" || participant.spriteStatus === "error";
-  const readOnly = pending || eventClosed || loading || teamUpdating;
+  const readOnly = blocked || pending || eventClosed || loading || teamUpdating;
   const current = useRef({ file, text });
   current.current = { file, text };
   const updating = useRef(false);
   const refreshFiles = useCallback(async () => {
-    if (updating.current || document.hidden) return;
+    if (blocked || updating.current || document.hidden) return;
     updating.current = true;
     try {
       const [paths, diff] = await Promise.all([
@@ -132,16 +172,16 @@ export function Workspace({
     } finally {
       updating.current = false;
     }
-  }, [participant.id]);
+  }, [participant.id, blocked]);
   const updated = useCallback(() => {
     void refreshFiles();
   }, [refreshFiles]);
   useEffect(() => {
-    if (spritesEnabled && !remote) return;
+    if (blocked || (spritesEnabled && !remote)) return;
     void refreshFiles();
     const timer = setInterval(() => void refreshFiles(), 5000);
     return () => clearInterval(timer);
-  }, [refreshFiles, spritesEnabled, remote]);
+  }, [refreshFiles, spritesEnabled, remote, blocked]);
   async function open(path: string) {
     if (dirty && !window.confirm("Discard unsaved edits and open another file?")) return false;
     setLoading(true);
@@ -164,7 +204,8 @@ export function Workspace({
     }
   }
   useEffect(() => {
-    if (spritesEnabled && !remote) return;
+    if (blocked || (spritesEnabled && !remote)) return;
+    if (current.current.file) return;
     let active = true;
     setLoading(true);
     void api<string[]>(`/workspaces/${participant.id}/files`)
@@ -191,7 +232,7 @@ export function Workspace({
     return () => {
       active = false;
     };
-  }, [participant.id, spritesEnabled, remote]);
+  }, [participant.id, spritesEnabled, remote, blocked]);
   useEffect(() => {
     const listener = (e: BeforeUnloadEvent) => {
       if (dirty) e.preventDefault();
@@ -228,17 +269,56 @@ export function Workspace({
     [text],
   );
   const lines = csv.data;
-  if (spritesEnabled && !remote)
+  if (spritesEnabled && !remote && !blocked)
     return (
       <WorkspacePreparation
         participant={participant}
-        eventClosed={eventClosed}
+        eventClosed={eventClosed || eventPaused}
         onClose={onClose}
         onChanged={onChanged}
       />
     );
   return (
     <main ref={screen} className="workspace-screen">
+      {blocked && (
+        <Modal
+          title={eventPaused ? "Hackathon paused" : waking ? "Resuming workspace" : "Sprite paused"}
+          onClose={onClose}
+        >
+          <div className="modal-body">
+            <p>
+              {eventPaused
+                ? "Workspace execution is paused until an admin unpauses the hackathon. Shared team source is available to download."
+                : waking
+                  ? "Reconnecting to your existing Sprite…"
+                  : "Your saved workspace is preserved. Resume to continue."}
+            </p>
+            {wakeError && (
+              <p className="error" role="alert">
+                {wakeError}
+              </p>
+            )}
+            <div className="form-actions">
+              <a className="button" href={`/api/teams/${participant.teamId}/export`}>
+                Download shared source
+              </a>
+              {!eventPaused && (
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={waking}
+                  onClick={() => void wake()}
+                >
+                  Resume workspace
+                </button>
+              )}
+              <button type="button" className="button" onClick={onClose}>
+                Back to teams
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       <header className="workspace-header">
         <h1>{participant.teamName}</h1>
         <MobileMenu label="Workspace controls">
@@ -257,7 +337,7 @@ export function Workspace({
           </Badge>
           <TeamUpdates
             workspace={participant.id}
-            disabled={eventClosed || pending}
+            disabled={blocked || eventClosed || pending}
             dirty={dirty}
             working={agentWorking}
             refreshKey={teamRefresh}
@@ -273,7 +353,7 @@ export function Workspace({
           {remote && (
             <EnvironmentControls
               workspace={participant.id}
-              disabled={eventClosed || pending}
+              disabled={blocked || eventClosed || pending}
               dirty={dirty}
               working={agentWorking}
               onResolve={(request) => {
@@ -357,14 +437,14 @@ export function Workspace({
       >
         <LocalSync
           workspace={participant.id}
-          readOnly={eventClosed || pending || teamUpdating}
+          readOnly={blocked || eventClosed || pending || teamUpdating}
           dirty={dirty}
           onUpdated={updated}
         />
       </section>
       <Agent
         workspace={participant.id}
-        available={remote && !eventClosed}
+        available={remote && !eventClosed && !blocked}
         visible={view === "agent"}
         dirty={dirty || teamUpdating}
         request={resolutionRequest}
@@ -381,7 +461,7 @@ export function Workspace({
       />
       <Terminal
         workspace={participant.id}
-        available={remote && !eventClosed}
+        available={remote && !eventClosed && !blocked}
         visible={view === "terminal"}
       />
       <div className="workspace-files" hidden={view !== "files"}>

@@ -35,6 +35,13 @@ import {
   type Workspace,
 } from "./access-types.ts";
 import { templates, WorkspaceEngine } from "./engine.ts";
+import {
+  executionSchema,
+  HELD_MESSAGE,
+  PAUSED_MESSAGE,
+  runtimeSchema,
+  type WorkspaceRuntime,
+} from "./lifecycle.ts";
 import { type Event, type EventInput, fail, ok, type Result } from "./types.ts";
 
 export { templates } from "./engine.ts";
@@ -52,6 +59,9 @@ export class EventService {
     this.db.exec(
       "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS access_state(id INTEGER PRIMARY KEY CHECK(id=1),body TEXT NOT NULL)",
     );
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS event_execution(id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS workspace_runtime(id TEXT PRIMARY KEY, body TEXT NOT NULL)",
+    );
     const row = this.db.prepare("SELECT body FROM access_state WHERE id=1").get();
     this.state = row
       ? accessStateSchema.parse(JSON.parse(String(row.body)))
@@ -60,9 +70,106 @@ export class EventService {
   checkHealth() {
     this.db.prepare("SELECT 1").get();
   }
+  // Internal recovery source, after owner authorization and the execution gate.
+  // Only canonical shared main is eligible; never seed from a restored private checkout.
+  sharedWorkspaceRepository(id: string) {
+    const workspace = this.engine.snapshot().participants.find((w) => w.id === id);
+    if (!workspace) throw new Error("Workspace not found");
+    return this.engine.repoPath(workspace.teamId);
+  }
   // Internal operator state; never returned by an API or used to authorize a user.
   provisioningRecords() {
     return this.engine.snapshot().participants;
+  }
+  execution(eventId: string) {
+    const row = this.db.prepare("SELECT body FROM event_execution WHERE id=?").get(eventId);
+    return executionSchema.parse(row ? JSON.parse(String(row.body)) : {});
+  }
+  runtime(id: string) {
+    const row = this.db.prepare("SELECT body FROM workspace_runtime WHERE id=?").get(id);
+    return runtimeSchema.parse(row ? JSON.parse(String(row.body)) : {});
+  }
+  setRuntime(id: string, change: Partial<WorkspaceRuntime>) {
+    const next = runtimeSchema.parse({ ...this.runtime(id), ...change });
+    this.db
+      .prepare(
+        "INSERT INTO workspace_runtime(id,body) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+      )
+      .run(id, JSON.stringify(next));
+    return next;
+  }
+  setExecution(actor: Identity, eventId: string, paused: boolean) {
+    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const previous = this.execution(eventId);
+    const next = {
+      paused,
+      changedAt: new Date().toISOString(),
+      generation: previous.generation + 1,
+    };
+    this.db
+      .prepare(
+        "INSERT INTO event_execution(id,body) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+      )
+      .run(eventId, JSON.stringify(next));
+    return ok(next);
+  }
+  executionAllowed(id: string) {
+    const workspace = this.provisioningRecords().find((w) => w.id === id);
+    if (!workspace) return fail("Workspace not found", 404);
+    if (this.execution(workspace.eventId).paused) return fail(PAUSED_MESSAGE, 423);
+    if (this.runtime(id).held) return fail(HELD_MESSAGE, 423);
+    return ok(workspace);
+  }
+  spriteInventory(actor: Identity, eventId: string) {
+    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const data = this.engine.snapshot();
+    return ok(
+      data.participants
+        .filter((w) => w.eventId === eventId && w.spriteName)
+        .map((w) => {
+          const m = this.state.memberships.find((m) => m.id === w.id);
+          const team = data.teams.find((t) => t.id === w.teamId);
+          return {
+            workspaceId: w.id,
+            spriteName: w.spriteName as string,
+            owner: this.state.users.find((u) => u.id === m?.userId)?.name ?? "Former member",
+            team: team?.name ?? "Retained team",
+            membershipActive: Boolean(m?.active && !team?.deletedAt),
+            provisioningStatus: w.spriteStatus,
+            provisioningUpdatedAt: w.spriteUpdatedAt ?? null,
+            runtime: this.runtime(w.id),
+          };
+        }),
+    );
+  }
+  holdSprites(actor: Identity, eventId: string) {
+    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const workspaces = this.provisioningRecords().filter(
+      (w) => w.eventId === eventId && w.spriteName,
+    );
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const w of workspaces)
+        this.setRuntime(w.id, {
+          held: true,
+          reason: "admin",
+          stopState: "pending",
+          stopError: null,
+        });
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return ok(workspaces);
+  }
+  wakeWorkspace(actor: Identity, id: string) {
+    const workspace = this.workspace(actor, id, true, true);
+    if (!workspace.ok) return workspace;
+    if (this.runtime(id).stopState === "pending")
+      return fail("Sprite pause is still in progress. Retry shortly.", 423);
+    this.setRuntime(id, { held: false, reason: null, lastUsedAt: new Date().toISOString() });
+    return workspace;
   }
   close() {
     this.engine.close();
@@ -102,6 +209,7 @@ export class EventService {
   private canJoin(actor: Identity, eventId: string): Result<Event> {
     const event = this.engine.snapshot().events.find((e) => e.id === eventId);
     if (!event || !this.canDiscover(actor, event)) return fail("Event not found", 404);
+    if (this.execution(eventId).paused) return fail(PAUSED_MESSAGE, 423);
     if (event.status === "closed" || (event.status === "draft" && !this.isAdmin(actor, eventId)))
       return fail("This event is not open for joining", 409);
     const active = new Set(
@@ -140,6 +248,7 @@ export class EventService {
       user: actor,
       events: events.map((e) => ({
         ...e,
+        execution: this.execution(e.id),
         role:
           this.state.eventMembers.find((m) => m.eventId === e.id && m.userId === actor.id)?.role ??
           "visitor",
@@ -182,6 +291,7 @@ export class EventService {
           ? [
               {
                 ...p,
+                runtime: this.runtime(p.id),
                 name: actor.name,
                 userId: actor.id,
                 teamName: data.teams.find((t) => t.id === m.teamId)?.name ?? "Team",
@@ -322,7 +432,7 @@ export class EventService {
     this.save();
     return ok({ removed: true, workPreserved: true });
   }
-  workspace(actor: Identity, id: string, write = false): Result<Workspace> {
+  workspace(actor: Identity, id: string, write = false, waking = false): Result<Workspace> {
     const m = this.state.memberships.find((m) => m.id === id && m.userId === actor.id && m.active);
     if (!m) return fail("Workspace not found", 404);
     const data = this.engine.snapshot();
@@ -330,10 +440,13 @@ export class EventService {
       return fail("Workspace not found", 404);
     const p = data.participants.find((p) => p.id === id);
     if (!p) return fail("Workspace not found", 404);
+    if (write && this.execution(m.eventId).paused) return fail(PAUSED_MESSAGE, 423);
+    if (write && !waking && this.runtime(id).held) return fail(HELD_MESSAGE, 423);
     if (write && data.events.find((e) => e.id === m.eventId)?.status === "closed")
       return fail("This event has ended. The workspace is read-only.", 409);
     return ok({
       ...p,
+      runtime: this.runtime(p.id),
       userId: actor.id,
       name: actor.name,
       teamName: data.teams.find((t) => t.id === m.teamId)?.name ?? "Team",
@@ -427,6 +540,7 @@ export class EventService {
   accept(actor: Identity, id: string) {
     const c = this.engine.snapshot().contributions.find((c) => c.id === id);
     if (!c || !this.canReadTeam(actor, c.teamId)) return fail("Contribution not found", 404);
+    if (this.execution(c.eventId).paused) return fail(PAUSED_MESSAGE, 423);
     return this.engine.accept(id);
   }
   private canReadTeam(actor: Identity, id: string) {

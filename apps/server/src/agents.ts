@@ -42,12 +42,20 @@ type Session = {
   pendingPrompt: boolean;
 };
 export class AgentSessions {
+  constructor(
+    private client = new SpriteClient(),
+    private allowed: (id: string) => boolean = () => true,
+    private activity: (id: string) => void = () => {},
+  ) {}
   private sessions = new Map<string, Session>();
   private preparing = new Map<string, Promise<boolean>>();
   private gitUpdates = new Set<string>();
   setGitUpdating(id: string, value: boolean) {
     if (value) this.gitUpdates.add(id);
     else this.gitUpdates.delete(id);
+  }
+  isPreparing(sprite: string) {
+    return this.preparing.has(sprite);
   }
   isWorking(id: string) {
     const session = this.sessions.get(id);
@@ -56,7 +64,7 @@ export class AgentSessions {
   async prepare(sprite: string) {
     const existing = this.preparing.get(sprite);
     if (existing) return existing;
-    const work = new SpriteClient()
+    const work = this.client
       .exec(
         sprite,
         ["bash", "/home/sprite/.civic-spark-agent/setup.sh"],
@@ -85,6 +93,7 @@ export class AgentSessions {
     return work;
   }
   attach(id: string, sprite: string, socket: WebSocket, authorized: () => Promise<boolean>) {
+    if (!this.allowed(id)) throw new Error("Workspace execution is paused");
     if (!/^civic-spark-[a-z0-9-]{1,45}$/.test(sprite)) throw new Error("Invalid Sprite");
     let session = this.sessions.get(id);
     if (!session) {
@@ -95,6 +104,7 @@ export class AgentSessions {
       const protocol = fileURLToPath(
         new URL("../../../packages/agents/src/protocol.ts", import.meta.url),
       );
+      const lease = this.client.lease(sprite, true);
       const child = spawn(
         "sprite",
         [
@@ -109,10 +119,12 @@ export class AgentSessions {
           `${protocol}:/home/sprite/.civic-spark-agent/protocol.ts`,
           "--file",
           `${fileURLToPath(new URL("../../../packages/agents/src/credentials.ts", import.meta.url))}:/home/sprite/.civic-spark-agent/credentials.ts`,
-          ...["history.ts", "journal.ts", "provider.ts", "context.ts"].flatMap((name) => [
-            "--file",
-            `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
-          ]),
+          ...["history.ts", "journal.ts", "provider.ts", "context.ts", "activity.ts"].flatMap(
+            (name) => [
+              "--file",
+              `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
+            ],
+          ),
           "--",
           "node",
           "--experimental-strip-types",
@@ -120,6 +132,13 @@ export class AgentSessions {
         ],
         { stdio: "pipe" },
       );
+      const abort = () => child.kill();
+      lease?.signal.addEventListener("abort", abort, { once: true });
+      child.once("error", () => lease?.release());
+      child.once("close", () => {
+        lease?.signal.removeEventListener("abort", abort);
+        lease?.release();
+      });
       const active: Session = {
         process: child,
         replay: new AgentReplay(),
@@ -133,6 +152,8 @@ export class AgentSessions {
         try {
           const event = eventSchema.parse(JSON.parse(line));
           active.replay.accept(event);
+          if (!event.replayed && ["user", "text", "tool", "done"].includes(event.type))
+            this.activity(id);
           if (
             event.type === "done" ||
             event.type === "error" ||
@@ -149,7 +170,7 @@ export class AgentSessions {
       });
       child.stderr.resume(); // Provider diagnostics may contain secrets; never forward or log them.
       const end = () => {
-        this.sessions.delete(id);
+        if (this.sessions.get(id) === active) this.sessions.delete(id);
         for (const client of active.clients) client.close(1011, "Agent runner ended; reconnect");
       };
       child.on("error", end);
@@ -162,7 +183,7 @@ export class AgentSessions {
     socket.send(JSON.stringify(active.replay.snapshot()));
     const check = async () => {
       try {
-        if (await authorized()) return true;
+        if (this.allowed(id) && (await authorized())) return true;
       } catch {
         /* Fail closed. */
       }
@@ -200,6 +221,14 @@ export class AgentSessions {
       clearInterval(timer);
       active.clients.delete(socket);
     });
+  }
+  stop(id: string) {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    if (!session.process.stdin.destroyed) session.process.stdin.write('{"type":"stop"}\n');
+    for (const socket of session.clients) socket.close(1008, "Sprite paused; reload to resume");
+    session.process.kill();
+    this.sessions.delete(id);
   }
   close() {
     for (const session of this.sessions.values()) {

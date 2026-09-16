@@ -35,8 +35,15 @@ export const accessStateSchema = z.object({
 });
 export type AccessState = z.infer<typeof accessStateSchema>;
 export type Membership = z.infer<typeof membershipSchema>;
-export type Workspace = Participant & { userId: string; teamName: string };
-export type EventView = Event & { role: "admin" | "member" | "visitor" };
+export type Workspace = Participant & {
+  userId: string;
+  teamName: string;
+  runtime?: import("./lifecycle.ts").WorkspaceRuntime;
+};
+export type EventView = Event & {
+  execution?: import("./lifecycle.ts").EventExecution;
+  role: "admin" | "member" | "visitor";
+};
 export type MemberView = {
   userId: string;
   eventId: string;

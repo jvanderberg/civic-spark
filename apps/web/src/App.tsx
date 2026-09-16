@@ -23,6 +23,7 @@ import type {
 } from "../../../packages/domain/src/access-types.ts";
 import type { Contribution, Event } from "../../../packages/domain/src/types.ts";
 import { AdminProjects } from "./AdminProjects.tsx";
+import { AdminSprites } from "./AdminSprites.tsx";
 import { AdminTeams } from "./AdminTeams.tsx";
 import { api } from "./api.ts";
 import { Badge, Empty, Field, initials, Modal } from "./components.tsx";
@@ -148,9 +149,10 @@ export function App() {
     (w) => w.id === workspaceId && (!session?.siteEvent || w.eventId === session.siteEvent.id),
   );
   const canJoin =
-    event?.status === "registration" ||
-    event?.status === "live" ||
-    (admin && event?.status === "draft");
+    !event?.execution?.paused &&
+    (event?.status === "registration" ||
+      event?.status === "live" ||
+      (admin && event?.status === "draft"));
   const contributions =
     state?.contributions.filter(
       (c) =>
@@ -388,6 +390,9 @@ export function App() {
         key={workspace.id}
         participant={workspace}
         eventClosed={event?.status === "closed"}
+        eventPaused={
+          state?.events.find((e) => e.id === workspace.eventId)?.execution?.paused ?? false
+        }
         spritesEnabled={state?.capabilities.sprites ?? false}
         onClose={() => setWorkspaceId(null)}
         onChanged={refresh}
@@ -512,6 +517,12 @@ export function App() {
           )}
         </header>
         <main>
+          {event?.execution?.paused && (
+            <p className="pause-banner" role="status">
+              Hackathon paused. Workspace execution is unavailable. Download shared source from My
+              teams.
+            </p>
+          )}
           {error && (
             <div role="alert" className="error global-error">
               {error}
@@ -815,6 +826,7 @@ export function App() {
                     </div>
                   </section>
                   <AdminProjects key={`projects-${eventId}`} event={event} refresh={refresh} />
+                  <AdminSprites key={`sprites-${eventId}`} eventId={eventId} refresh={refresh} />
                   <AdminTeams key={eventId} teams={teams} refresh={refresh} />
                 </>
               )}

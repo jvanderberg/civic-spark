@@ -104,11 +104,14 @@ export class WorkspaceIntegrations {
     writeFileSync(this.path(id), JSON.stringify(pending), { mode: 0o600 });
   }
   ensure(id: string, owner: Identity, sprite: string, authorized: () => Promise<boolean>) {
+    const access = this.service.executionAllowed(id);
+    if (!access.ok) throw new Error(access.error);
     const old = this.relays.get(id);
     if (old) {
       old.authorized = authorized;
       return;
     }
+    const lease = this.client.lease(sprite, true);
     const child = spawn(
       "sprite",
       [
@@ -125,6 +128,13 @@ export class WorkspaceIntegrations {
       ],
       { stdio: "pipe" },
     );
+    const abort = () => child.kill();
+    lease?.signal.addEventListener("abort", abort, { once: true });
+    child.once("error", () => lease?.release());
+    child.once("close", () => {
+      lease?.signal.removeEventListener("abort", abort);
+      lease?.release();
+    });
     const relay: Relay = {
       process: child,
       owner,
@@ -213,6 +223,7 @@ export class WorkspaceIntegrations {
     operation: "start" | "restart" | "stop" | "status" | "logs",
     config?: { port: number; command: string[] },
   ) {
+    unwrap(this.service.executionAllowed(id));
     const workspace = unwrap(this.service.workspace(owner, id, true));
     if (workspace.spriteStatus !== "ready" || !workspace.spriteName)
       throw new Error("Web preview needs a running Sprite.");
@@ -222,6 +233,7 @@ export class WorkspaceIntegrations {
     return result;
   }
   async openPreview(id: string, owner: Identity, authorized: () => Promise<boolean>) {
+    unwrap(this.service.executionAllowed(id));
     const workspace = unwrap(this.service.workspace(owner, id, true));
     if (!workspace.spriteName) throw new Error("Web preview needs a running Sprite.");
     if (!this.previews.configured)

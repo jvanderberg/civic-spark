@@ -2,6 +2,17 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Event Sprite lifecycle
+
+- [x] Authorized event allocation inventory with provider status, timestamp provenance, explicit unknown usage and labeled CPU-only cost bounds
+- [x] Durable pause-all workspace holds and event-wide execution pause; cancellation/drain, retryable partial stops, restart gates and on-demand same-Sprite wake
+- [x] Shared Git downloads remain available while paused; no private-source export or prototype fallback
+- [x] Release inactive polling and retained terminal bridges after configurable inactivity; active browser model Tasks holds, preview use and recent terminal input/output protection
+- [x] Explicit post-restore owner recovery from canonical shared Git after authenticated missing-resource reconciliation, preserving names/identities/preview origins
+- [x] Isolated domain/API/provider/race/recovery tests and phone/desktop lifecycle browser coverage; see [mechanics and limits](docs/sprite-lifecycle.md)
+- [ ] Separately authorize dedicated live provider sleep/stop/wake acceptance; no live event pause or paid inference was used for this implementation
+- [ ] Automatic Tasks instrumentation for arbitrary silent native-terminal/background jobs; those remain subject to provider idle detection
+
 ## Civic Spark namespace
 
 - [x] Rename tracked display copy, configuration, runtime/CLI paths, package metadata, cookies, storage keys, Git refs, fixtures, scripts and documentation consistently; no compatibility aliases
