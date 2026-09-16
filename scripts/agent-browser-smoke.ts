@@ -7,6 +7,7 @@ import { chromium, type WebSocketRoute } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { AgentEvent, AgentInput } from "../packages/agents/src/protocol.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
+import { checkAgentImages } from "./agent-images-browser.ts";
 import { openPortalMenu } from "./browser-portal-menu.ts";
 
 // Deterministic transport fixture: exercises the shipped React UI and real local
@@ -829,6 +830,36 @@ try {
     beforeResolution + 1,
   );
   assert.equal(teamVerifications, 1);
+  await checkAgentImages(page, requests, emit, artifacts);
+  const lastImage = requests
+    .filter((request) => request.type === "prompt")
+    .findLast((request) => request.images?.length)?.images?.[0];
+  assert(lastImage);
+  await page.getByLabel("Choose images").setInputFiles({
+    name: "Reconnect.png",
+    mimeType: lastImage.mime,
+    buffer: Buffer.from(lastImage.data, "base64"),
+  });
+  await page.getByRole("button", { name: "Remove Reconnect.png" }).waitFor();
+  await composer.fill("Reconnect draft");
+  snapshot.working = false;
+  snapshot.text = "Ready";
+  const beforeImageReconnect = connections;
+  const beforeImagePrompts = requests.filter((request) => request.type === "prompt").length;
+  await activeSocket().close({ code: 1011, reason: "Image reconnect fixture" });
+  await waitFor(() => connections === beforeImageReconnect + 1, "image reconnect");
+  await page
+    .getByRole("status")
+    .filter({ hasText: /^Ready$/ })
+    .waitFor();
+  assert.equal(await composer.inputValue(), "Reconnect draft");
+  await page.getByRole("button", { name: "Remove Reconnect.png" }).waitFor();
+  assert((await page.locator(".chat-user .chat-images img").count()) > 0);
+  assert.equal(requests.filter((request) => request.type === "prompt").length, beforeImagePrompts);
+  await page.getByRole("button", { name: "Remove Reconnect.png" }).click();
+  await composer.fill("");
+  snapshot.working = true;
+  snapshot.text = "Working";
   const beforeDenied = connections;
   await activeSocket().close({ code: 1008, reason: "Workspace access revoked" });
   await page

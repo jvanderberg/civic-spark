@@ -94,6 +94,10 @@ export class TerminalSessions {
     const timer = setInterval(() => void check(), 5000);
     let queue = Promise.resolve();
     socket.on("message", (raw) => {
+      if (Buffer.byteLength(raw.toString()) > 65536) {
+        socket.close(1009, "Terminal message too large");
+        return;
+      }
       queue = queue
         .then(async () => {
           const input = inputSchema.parse(JSON.parse(raw.toString()));

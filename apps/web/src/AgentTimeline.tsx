@@ -5,6 +5,7 @@ import { Fragment } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AgentEvent } from "../../../packages/agents/src/protocol.ts";
+import { AgentImages } from "./AgentImages.tsx";
 import { MarkdownCodeBlock } from "./vendor/t3code/MarkdownCodeBlock.tsx";
 import { MessageCopyButton } from "./vendor/t3code/MessageCopyButton.tsx";
 import { SimpleWorkEntryRow } from "./vendor/t3code/SimpleWorkEntryRow.tsx";
@@ -98,12 +99,17 @@ export function AgentTimeline({
       return (
         <article className="chat-user group flex flex-col items-end gap-1" key={event.id}>
           <span className="sr-only">You</span>
-          <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
-            {event.text}
-          </div>
-          <div className="t3-user-meta flex w-full max-w-[80%] items-center justify-end pe-1 text-xs opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
-            <MessageCopyButton text={event.text} label="Copy your message" />
-          </div>
+          {!!event.images?.length && <AgentImages images={event.images} />}
+          {event.text && (
+            <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
+              {event.text}
+            </div>
+          )}
+          {event.text && (
+            <div className="t3-user-meta flex w-full max-w-[80%] items-center justify-end pe-1 text-xs opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+              <MessageCopyButton text={event.text} label="Copy your message" />
+            </div>
+          )}
         </article>
       );
     if (event.type !== "text") return null;

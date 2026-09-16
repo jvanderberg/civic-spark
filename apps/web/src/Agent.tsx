@@ -1,10 +1,17 @@
-import { ArrowDown, GitCompareArrows, LoaderCircle, Settings2, X } from "lucide-react";
+import { ArrowDown, GitCompareArrows, LoaderCircle, Paperclip, Settings2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { retainEvent } from "../../../packages/agents/src/history.ts";
+import {
+  type AgentImage,
+  agentImagesSchema,
+  imageCountLimit,
+} from "../../../packages/agents/src/images.ts";
 import {
   type AgentEvent,
   type AgentInput,
   agentModels,
 } from "../../../packages/agents/src/protocol.ts";
+import { AgentImages, readAgentImage } from "./AgentImages.tsx";
 import { AgentTimeline } from "./AgentTimeline.tsx";
 import { api } from "./api.ts";
 import { Button } from "./vendor/t3code/Button.tsx";
@@ -133,6 +140,57 @@ export function Agent({
   const configuringProvider = useRef<"claude" | "opencode" | null>(null);
   const [claudeWorkspaceId, setClaudeWorkspaceId] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [images, setImages] = useState<AgentImage[]>([]);
+  const imagesRef = useRef<AgentImage[]>([]);
+  imagesRef.current = images;
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [readingImages, setReadingImages] = useState(false);
+  const readingImagesRef = useRef(false);
+  const submittedImages = useRef<{
+    id: string;
+    text: string;
+    images: AgentImage[];
+    failed: boolean;
+    acknowledged: boolean;
+  } | null>(null);
+  const [imageSending, setImageSending] = useState(false);
+  async function addImages(files: File[]) {
+    if (readingImagesRef.current || imageSending) return;
+    if (imagesRef.current.length + files.length > imageCountLimit) {
+      setError("Attach up to 4 images per message.");
+      return;
+    }
+    readingImagesRef.current = true;
+    setReadingImages(true);
+    try {
+      const additions: AgentImage[] = [];
+      for (const file of files) additions.push(await readAgentImage(file));
+      const parsed = agentImagesSchema.safeParse([...imagesRef.current, ...additions]);
+      if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid images.");
+      if (mounted.current) {
+        setImages(parsed.data);
+        setError("");
+      }
+    } catch (error) {
+      if (mounted.current)
+        setError(error instanceof Error ? error.message : "Could not attach images.");
+    } finally {
+      readingImagesRef.current = false;
+      if (mounted.current) setReadingImages(false);
+    }
+  }
+  function finishImages(success: boolean) {
+    const sent = submittedImages.current;
+    if (!sent) return;
+    if (success && !sent.failed) {
+      setPrompt((draft) => (draft === sent.text ? "" : draft));
+      setImages((draft) =>
+        draft.filter((image) => !sent.images.some((old) => old.id === image.id)),
+      );
+    }
+    submittedImages.current = null;
+    setImageSending(false);
+  }
   const [pendingRequest, setPendingRequest] = useState<{
     id: string;
     prompt: string;
@@ -308,7 +366,20 @@ export function Agent({
       connection.onmessage = (message) => {
         if (socket.current !== connection || !mounted.current) return;
         const event = JSON.parse(message.data) as AgentEvent;
+        if (event.type === "user" && event.id === submittedImages.current?.id)
+          submittedImages.current.acknowledged = true;
+        if (
+          event.type === "error" &&
+          submittedImages.current &&
+          ((!replaying && !event.replayed) || event.requestId === submittedImages.current.id)
+        ) {
+          submittedImages.current.failed = true;
+          finishImages(false);
+        }
+        if (event.type === "done" && submittedImages.current?.acknowledged)
+          finishImages(event.outcome === undefined || event.outcome === "success");
         if (event.type === "state") {
+          if (event.runtimeReady && !event.working && submittedImages.current) finishImages(false);
           replaying = false;
           if (event.currentError !== undefined) setError(event.currentError ?? "");
           if (event.runtimeReady && event.working === false) finishRequest();
@@ -395,14 +466,9 @@ export function Agent({
         }
         if (event.type === "resolved") setResolved((ids) => [...ids, event.id]);
         setEvents((previous) => {
-          const old = previous.find((e) => e.id === event.id && e.type === event.type);
-          if (old)
-            return previous.map((e) =>
-              e === old
-                ? { ...event, text: event.type === "text" ? e.text + event.text : event.text }
-                : e,
-            );
-          return [...previous, event].slice(-500);
+          const next = [...previous];
+          retainEvent(next, event);
+          return next;
         });
       };
       connection.onclose = (closed) => {
@@ -413,6 +479,7 @@ export function Agent({
         setConnected(false);
         setPreparing(false);
         setWorking(false);
+        setImageSending(false);
         if (readySince.current && Date.now() - readySince.current > 30000) retryCount.current = 0;
         readySince.current = 0;
         const canRetry =
@@ -486,8 +553,10 @@ export function Agent({
     (text: string, requestId?: string, previousDraft?: string) => boolean
   >(() => false);
   function submitText(text: string, requestId?: string, previousDraft = "") {
+    const attached = requestId ? [] : imagesRef.current;
     if (
-      !text.trim() ||
+      (!text.trim() && !attached.length) ||
+      readingImagesRef.current ||
       !ready ||
       working ||
       checking ||
@@ -503,8 +572,26 @@ export function Agent({
     setWorkingStartedAt(new Date().toISOString());
     setError("");
     if (requestId) activeRequest.current = { id: requestId, prompt: text, started: false };
-    send({ type: "prompt", provider, text });
-    setPrompt(previousDraft);
+    const id = crypto.randomUUID();
+    try {
+      socket.current.send(
+        JSON.stringify({
+          type: "prompt",
+          provider,
+          text,
+          ...(attached.length ? { id } : {}),
+          ...(attached.length ? { images: attached } : {}),
+        }),
+      );
+    } catch {
+      setWorking(false);
+      setError("The message was not sent. Reconnect and try again.");
+      return false;
+    }
+    if (attached.length) {
+      submittedImages.current = { id, text, images: attached, failed: false, acknowledged: false };
+      setImageSending(true);
+    } else setPrompt(previousDraft);
     if (requestId) {
       setPendingRequest(null);
       requestCallbacks.current.onRequestSent?.(requestId);
@@ -521,11 +608,12 @@ export function Agent({
     seenRequests.current.add(request.id);
     // Only the explicit new request gets one immediate send attempt. If gated,
     // connection or navigation changes never turn it into a delayed paid request.
-    if (!prompt.trim() && submitLatest.current(request.prompt, request.id)) return;
-    const staged = !prompt.trim();
+    if (!prompt.trim() && !images.length && submitLatest.current(request.prompt, request.id))
+      return;
+    const staged = !prompt.trim() && !images.length;
     setPendingRequest({ ...request, staged, previousDraft: prompt });
     if (staged) setPrompt(request.prompt);
-  }, [request, prompt]);
+  }, [request, prompt, images.length]);
   function cancelRequest() {
     if (!pendingRequest) return;
     if (pendingRequest.staged) setPrompt(pendingRequest.previousDraft);
@@ -820,7 +908,27 @@ export function Agent({
                   data-chat-composer-body="true"
                   className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4"
                 >
+                  {images.length > 0 && (
+                    <AgentImages
+                      images={images}
+                      disabled={imageSending || readingImages}
+                      onRemove={(id) =>
+                        setImages((previous) => previous.filter((image) => image.id !== id))
+                      }
+                    />
+                  )}
                   <textarea
+                    disabled={imageSending}
+                    onPaste={(event) => {
+                      const files = [...event.clipboardData.items]
+                        .filter((item) => item.kind === "file")
+                        .map((item) => item.getAsFile())
+                        .filter((file): file is File => file !== null);
+                      if (!files.length) return;
+                      // Leave native text insertion/selection intact for mixed clipboards.
+                      if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+                      void addImages(files);
+                    }}
                     ref={composer}
                     aria-label="Message to agent"
                     rows={3}
@@ -848,6 +956,29 @@ export function Agent({
                   className="chat-composer-toolbar flex min-w-0 flex-nowrap items-center justify-between gap-2 overflow-visible px-3 pb-3 sm:px-4 sm:pb-4"
                 >
                   <div className="chat-model">
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      multiple
+                      hidden
+                      aria-label="Choose images"
+                      onChange={(event) => {
+                        const files = [...(event.target.files ?? [])];
+                        event.target.value = "";
+                        void addImages(files);
+                      }}
+                    />
+                    <button
+                      className="chat-attach"
+                      type="button"
+                      aria-label="Attach images"
+                      title="Attach images"
+                      disabled={imageSending || readingImages}
+                      onClick={() => fileInput.current?.click()}
+                    >
+                      <Paperclip size={18} />
+                    </button>
                     <select
                       aria-label="Agent model"
                       value={provider}
@@ -868,9 +999,9 @@ export function Agent({
                   </span>
                   <ComposerPrimaryActions
                     isRunning={working}
-                    hasSendableContent={!!prompt.trim()}
+                    hasSendableContent={!!prompt.trim() || images.length > 0}
                     isConnecting={preparing || checking}
-                    isSendBusy={false}
+                    isSendBusy={readingImages}
                     isEnvironmentUnavailable={!ready}
                     sendDisabledReason={dirty ? "Save file edits first" : null}
                     onInterrupt={() => send({ type: "stop" })}

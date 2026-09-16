@@ -155,6 +155,26 @@ export async function verifyKeyboardViewport(engine: "chromium" | "webkit" = "ch
       .waitFor();
     await composer.fill("Keep this draft");
     const initialConnections = connections;
+    const image = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 240;
+      canvas.height = 120;
+      const context = canvas.getContext("2d");
+      if (!context) throw Error();
+      context.fillStyle = "#4298bc";
+      context.fillRect(0, 0, 240, 120);
+      context.fillStyle = "white";
+      context.font = "22px sans-serif";
+      context.fillText("Screenshot", 20, 65);
+      return canvas.toDataURL("image/png").split(",")[1] ?? "";
+    });
+    await page.getByLabel("Choose images").setInputFiles({
+      name: "Keyboard.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(image, "base64"),
+    });
+    const removeImage = page.getByRole("button", { name: "Remove Keyboard.png" });
+    await removeImage.waitFor();
     for (const theme of ["light", "dark"] as const) {
       for (const width of [360, 390]) {
         await page.setViewportSize({ width, height: 844 });
@@ -173,6 +193,14 @@ export async function verifyKeyboardViewport(engine: "chromium" | "webkit" = "ch
           await composer.pressSequentially(".");
           await inside(composer, height, offset);
           await inside(send, height, offset);
+          await inside(removeImage, height, offset);
+          const inputBox = await composer.boundingBox();
+          const sendBox = await send.boundingBox();
+          assert(
+            inputBox && sendBox && inputBox.y + inputBox.height <= sendBox.y,
+            "Focused image prompt must stay above Send with layout844/visual300",
+          );
+          assert.equal(await page.evaluate(() => innerHeight), 844);
           const transcript = await page.getByRole("log").boundingBox();
           assert(
             transcript && transcript.height >= 24,
@@ -222,6 +250,7 @@ export async function verifyKeyboardViewport(engine: "chromium" | "webkit" = "ch
         await viewport(844, 0);
       }
     }
+    await removeImage.click();
     await page.setViewportSize({ width: 740, height: 390 });
     await viewport(300, 40);
     await inside(composer, 300, 40);
@@ -269,7 +298,7 @@ export async function verifyKeyboardViewport(engine: "chromium" | "webkit" = "ch
     assert.equal(await page.getByRole("button", { name: "Workspace controls" }).isVisible(), false);
     assert.deepEqual(errors, []);
     console.log(
-      `PASS ${engine}: independent visual viewport height/offset, resize/scroll, focused typing + Send + transcript at 300/350px, multiline/keyboard hide/rotation/native zoom, menu draft/socket preservation, terminal resize bounds, desktop; clean console. Simulated keyboard metrics, not physical iOS verification.`,
+      `PASS ${engine}: independent visual viewport height/offset, resize/scroll, focused image draft + remove + Send + transcript at 300/350px with layout844, multiline/keyboard hide/rotation/native zoom, menu draft/socket preservation, terminal resize bounds, desktop; clean console. Simulated keyboard metrics, not physical iOS verification.`,
     );
   } catch (error) {
     await page.screenshot({ path: join(artifacts, "failure.png") });

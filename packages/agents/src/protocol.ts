@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type AgentImage, agentImagesSchema } from "./images.ts";
 export const agentModels = {
   opencode: {
     label: "GLM",
@@ -7,6 +8,17 @@ export const agentModels = {
   },
   claude: { label: "Opus 5", model: "claude-opus-5", credential: "Anthropic API key" },
 } as const;
+
+function messageForImage(error: unknown) {
+  const value = error as { name?: string; message?: string; data?: { message?: string } } | null;
+  const text = `${value?.message ?? ""} ${value?.data?.message ?? ""}`;
+  return value?.name === "ImageCapabilityError" ||
+    /(?:image|vision|multimodal).*(?:unsupported|not support|cannot|invalid)|(?:not support|unsupported).*(?:image|vision|multimodal)/i.test(
+      text,
+    )
+    ? "image"
+    : "";
+}
 
 // Never expose SDK request objects, headers, or provider response bodies.
 export function agentFailure(error: unknown): string {
@@ -18,6 +30,8 @@ export function agentFailure(error: unknown): string {
     data?: { statusCode?: number; message?: string };
     cause?: { code?: string };
   } | null;
+  if (/image|vision|multimodal/i.test(messageForImage(error)))
+    return "The selected model or provider could not accept these images. Remove the images to send text, or choose another configured model.";
   if (value?.name === "CredentialConfigurationError")
     return "Could not save the agent settings in this Sprite. Check home-directory permissions and JSON configuration, then reconnect.";
   const status = value?.status ?? value?.statusCode ?? value?.data?.statusCode;
@@ -57,7 +71,7 @@ export function credentialFailure(error: unknown): boolean {
   );
 }
 export const agentInputSchema = z.discriminatedUnion("type", [
-  z.object({
+  z.strictObject({
     type: z.literal("configure"),
     provider: z.enum(["claude", "opencode"]),
     key: z.string().trim().min(1).max(1000),
@@ -68,20 +82,26 @@ export const agentInputSchema = z.discriminatedUnion("type", [
       .max(128)
       .optional(),
   }),
-  z.object({
-    type: z.literal("prompt"),
-    provider: z.enum(["claude", "opencode"]),
-    text: z.string().trim().min(1).max(20000),
-    model: z.string().max(160).optional(),
-  }),
-  z.object({
+  z
+    .strictObject({
+      type: z.literal("prompt"),
+      provider: z.enum(["claude", "opencode"]),
+      text: z.string().trim().max(20000),
+      id: z.uuid().optional(),
+      images: agentImagesSchema.optional(),
+      model: z.string().max(160).optional(),
+    })
+    .refine((input) => input.text.length > 0 || Boolean(input.images?.length), {
+      message: "Write a message or attach an image.",
+    }),
+  z.strictObject({
     type: z.literal("approval"),
-    id: z.string(),
+    id: z.string().max(160),
     allow: z.boolean(),
     answer: z.string().max(10000).optional(),
   }),
-  z.object({ type: z.literal("reconnect"), provider: z.enum(["claude", "opencode"]) }),
-  z.object({ type: z.literal("stop") }),
+  z.strictObject({ type: z.literal("reconnect"), provider: z.enum(["claude", "opencode"]) }),
+  z.strictObject({ type: z.literal("stop") }),
 ]);
 export type AgentInput = z.infer<typeof agentInputSchema>;
 export type AgentEvent = {
@@ -100,6 +120,9 @@ export type AgentEvent = {
   id: string;
   text: string;
   details?: string;
+  images?: AgentImage[];
+  requestId?: string;
+  outcome?: "success" | "failed" | "stopped";
   cost?: number;
   runtimeReady?: boolean;
   working?: boolean;

@@ -26,6 +26,7 @@
     "test:workspace-browser": "tsx scripts/workspace-browser-smoke.ts",
     "test:workspace-live": "tsx scripts/workspace-live-smoke.ts",
     "setup:sprite": "tsx scripts/setup-sprite-runtime.ts",
+    "test:agent-images": "tsx scripts/agent-images-smoke.ts",
     "test:agent-browser": "tsx scripts/agent-browser-smoke.ts",
     "test:terminal-browser": "tsx scripts/terminal-browser-smoke.ts",
     "test:provisioning-browser": "tsx scripts/provisioning-browser-smoke.ts",

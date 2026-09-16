@@ -12,6 +12,7 @@ import {
   saveCredential,
 } from "./credentials.ts";
 import { AgentJournal } from "./journal.ts";
+import { claudePrompt, openCodeParts, requireImageCapability } from "./multimodal.ts";
 import {
   type AgentEvent,
   type AgentInput,
@@ -111,7 +112,7 @@ async function claudeTurn(
   cancellation.signal.throwIfAborted();
   claudeAbort = cancellation;
   claude = query({
-    prompt: input.text,
+    prompt: claudePrompt(input),
     options: {
       cwd: "/home/sprite/project",
       resume: state.claude,
@@ -159,11 +160,7 @@ async function claudeTurn(
         const error = {
           message: event.subtype === "success" ? event.result : event.errors.join("\n"),
         };
-        if (credentialFailure(error)) failedProviders.add("claude");
-        emit("error", agentFailure(error), {
-          provider: "claude",
-          credentialFailure: credentialFailure(error),
-        });
+        throw error;
       }
       emit("status", "Claude turn finished", { cost: event.total_cost_usd });
     }
@@ -238,6 +235,13 @@ async function openTurn(
   }
   if (!state.opencode) throw new Error("Could not create session");
   const model = agentModels.opencode.model;
+  if (input.images?.length) {
+    const providers = await client.provider.list();
+    const registered = providers.data?.all.find((provider) => provider.id === "openrouter")?.models[
+      model.slice("openrouter/".length)
+    ];
+    requireImageCapability(registered?.capabilities?.input?.image === true);
+  }
   const separator = model.indexOf("/");
   const context = await contextModule();
   cancellation.signal.throwIfAborted();
@@ -248,7 +252,7 @@ async function openTurn(
       providerID: model.slice(0, separator),
       modelID: model.slice(separator + 1),
     },
-    parts: [{ type: "text", text: input.text }],
+    parts: openCodeParts(input),
   });
   if (result.data?.info.error) throw result.data.info.error;
   if (result.data?.info.cost !== undefined)
@@ -330,15 +334,27 @@ async function input(message: AgentInput) {
     emit("error", "A turn is already running. Stop it before sending another message.");
     return;
   }
+  if (
+    message.id &&
+    journal.events.some((event) => event.type === "user" && event.id === message.id)
+  ) {
+    emit(
+      "error",
+      "This message was already received. Check the conversation before sending again.",
+      { requestId: message.id },
+    );
+    return;
+  }
   active = true;
   const cancellation = new AbortController();
   turn = cancellation;
-  emit("user", message.text);
+  emit("user", message.text, { ...(message.id ? { id: message.id } : {}), images: message.images });
   working = true;
   workingStartedAt = new Date().toISOString();
   emit("status", "Working", { workingStartedAt });
   emitState();
   let releaseHold: (() => Promise<void>) | undefined;
+  let outcome: AgentEvent["outcome"] = "success";
   try {
     releaseHold = await holdActiveTurn(() => {
       if (turn !== cancellation) return;
@@ -354,13 +370,16 @@ async function input(message: AgentInput) {
     if (message.provider === "claude") await claudeTurn(message, cancellation);
     else await openTurn(message, cancellation);
   } catch (error) {
+    outcome = cancellation.signal.aborted ? "stopped" : "failed";
     if (cancellation.signal.aborted) return;
     if (credentialFailure(error)) failedProviders.add(message.provider);
     emit("error", agentFailure(error), {
       provider: message.provider,
+      requestId: message.id,
       credentialFailure: credentialFailure(error),
     });
   } finally {
+    if (cancellation.signal.aborted) outcome = "stopped";
     await releaseHold?.();
     if (turn === cancellation) turn = undefined;
     active = false;
@@ -369,7 +388,7 @@ async function input(message: AgentInput) {
     for (const resolve of approvals.values()) resolve(false);
     working = false;
     workingStartedAt = undefined;
-    emit("done", "Ready");
+    emit("done", "Ready", { outcome, requestId: message.id });
     emitState();
   }
 }
@@ -432,7 +451,7 @@ const initialized = (async () => {
       "status",
       "The previous turn was interrupted when the runtime restarted. Your conversation and model context were retained; send a message to continue.",
     );
-    emit("done", "Ready");
+    emit("done", "Ready", { outcome: "stopped" });
   }
   emitState();
   for (const [provider, key] of Object.entries(savedKeys)) {

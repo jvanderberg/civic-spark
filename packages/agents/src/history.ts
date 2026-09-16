@@ -1,7 +1,7 @@
 import type { AgentEvent } from "./protocol.ts";
 
 export const historyLimit = 500;
-export const historyByteLimit = 1024 * 1024;
+export const historyByteLimit = 10 * 1024 * 1024;
 const retainedTypes = new Set([
   "user",
   "text",
@@ -23,6 +23,9 @@ export function retainEvent(events: AgentEvent[], event: AgentEvent) {
     text: event.text.slice(-200000),
     details: event.details?.slice(-20000),
     cost: event.cost,
+    images: event.type === "user" ? event.images : undefined,
+    requestId: event.requestId,
+    outcome: event.outcome,
     workingStartedAt: event.workingStartedAt,
   };
   if (existing >= 0) {
@@ -32,7 +35,7 @@ export function retainEvent(events: AgentEvent[], event: AgentEvent) {
   } else events.push(next);
   while (
     events.length > historyLimit ||
-    Buffer.byteLength(JSON.stringify(events)) > historyByteLimit
+    new TextEncoder().encode(JSON.stringify(events)).byteLength > historyByteLimit
   )
     events.shift();
 }

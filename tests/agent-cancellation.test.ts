@@ -69,7 +69,7 @@ it.each(["claude", "opencode"] as const)(
         .replaceAll('"@anthropic-ai/claude-agent-sdk"', JSON.stringify(pathToFileURL(mocks).href))
         .replaceAll('"@opencode-ai/sdk/v2"', JSON.stringify(pathToFileURL(mocks).href))
         .replaceAll('"./provider.ts"', JSON.stringify(pathToFileURL(mocks).href))
-        .replace(/"\.\/(credentials|journal|protocol)\.ts"/g, (_, name: string) =>
+        .replace(/"\.\/(credentials|journal|protocol|multimodal)\.ts"/g, (_, name: string) =>
           JSON.stringify(pathToFileURL(resolve(`packages/agents/src/${name}.ts`)).href),
         ),
     );
@@ -96,6 +96,7 @@ it.each(["claude", "opencode"] as const)(
       );
       pending?.end("{}");
       await wait(() => events.some((e) => e.type === "done"));
+      expect(events.find((event) => event.type === "done")?.outcome).toBe("stopped");
       expect(deletes).toBe(1);
       expect(() => readFileSync(invoked)).toThrow();
       send({ type: "prompt", provider, text: "Next explicit turn" });

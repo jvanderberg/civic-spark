@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { WebSocket } from "ws";
 import { z } from "zod";
 import { AgentReplay } from "../../../packages/agents/src/history.ts";
+import { agentImagesSchema, agentWireByteLimit } from "../../../packages/agents/src/images.ts";
 import { agentInputSchema } from "../../../packages/agents/src/protocol.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 
@@ -24,6 +25,9 @@ const eventSchema = z.object({
   id: z.string(),
   text: z.string().max(200000),
   details: z.string().max(20000).optional(),
+  images: agentImagesSchema.optional(),
+  requestId: z.uuid().optional(),
+  outcome: z.enum(["success", "failed", "stopped"]).optional(),
   cost: z.number().optional(),
   runtimeReady: z.boolean().optional(),
   working: z.boolean().optional(),
@@ -79,6 +83,7 @@ export class AgentSessions {
             "cli-config.ts",
             "credentials.ts",
             "protocol.ts",
+            "images.ts",
             "context.ts",
             "integration-cli.ts",
           ].map(
@@ -119,12 +124,18 @@ export class AgentSessions {
           `${protocol}:/home/sprite/.civic-spark-agent/protocol.ts`,
           "--file",
           `${fileURLToPath(new URL("../../../packages/agents/src/credentials.ts", import.meta.url))}:/home/sprite/.civic-spark-agent/credentials.ts`,
-          ...["history.ts", "journal.ts", "provider.ts", "context.ts", "activity.ts"].flatMap(
-            (name) => [
-              "--file",
-              `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
-            ],
-          ),
+          ...[
+            "history.ts",
+            "journal.ts",
+            "provider.ts",
+            "context.ts",
+            "activity.ts",
+            "images.ts",
+            "multimodal.ts",
+          ].flatMap((name) => [
+            "--file",
+            `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
+          ]),
           "--",
           "node",
           "--experimental-strip-types",
@@ -148,7 +159,7 @@ export class AgentSessions {
       session = active;
       this.sessions.set(id, active);
       createInterface({ input: child.stdout }).on("line", (line) => {
-        if (line.length > 250000) return;
+        if (line.length > agentWireByteLimit) return;
         try {
           const event = eventSchema.parse(JSON.parse(line));
           active.replay.accept(event);
@@ -161,7 +172,8 @@ export class AgentSessions {
           )
             active.pendingPrompt = false;
           for (const client of active.clients) {
-            if (client.bufferedAmount > 1024 * 1024) client.close(1013, "Reconnect to catch up");
+            if (client.bufferedAmount > 2 * agentWireByteLimit)
+              client.close(1013, "Reconnect to catch up");
             else if (client.readyState === 1) client.send(JSON.stringify(event));
           }
         } catch {
@@ -192,10 +204,28 @@ export class AgentSessions {
     };
     const timer = setInterval(() => void check(), 5000);
     let queue = Promise.resolve();
+    let queuedBytes = 0;
     socket.on("message", (raw) => {
+      const bytes = Buffer.byteLength(raw.toString());
+      if (bytes > agentWireByteLimit || queuedBytes + bytes > agentWireByteLimit) {
+        socket.close(1009, "Agent request too large");
+        return;
+      }
+      queuedBytes += bytes;
       queue = queue
         .then(async () => {
-          const message = agentInputSchema.parse(JSON.parse(raw.toString()));
+          const parsed = agentInputSchema.safeParse(JSON.parse(raw.toString()));
+          if (!parsed.success) {
+            socket.send(
+              JSON.stringify({
+                type: "error",
+                id: crypto.randomUUID(),
+                text: "Invalid message or images. Attach up to 4 PNG, JPEG or WebP images, at most 2 MiB each and 4 MiB total.",
+              }),
+            );
+            return;
+          }
+          const message = parsed.data;
           if (await check()) {
             if (message.type === "prompt" && this.gitUpdates.has(id)) {
               socket.send(
@@ -207,11 +237,27 @@ export class AgentSessions {
               );
               return;
             }
-            if (message.type === "prompt") active.pendingPrompt = true;
+            if (message.type === "prompt") {
+              if (active.pendingPrompt || active.replay.snapshot().working) {
+                socket.send(
+                  JSON.stringify({
+                    type: "error",
+                    id: crypto.randomUUID(),
+                    requestId: message.id,
+                    text: "A turn is already running. Wait or stop it before sending another message.",
+                  }),
+                );
+                return;
+              }
+              active.pendingPrompt = true;
+            }
             active.process.stdin.write(`${JSON.stringify(message)}\n`);
           }
         })
-        .catch(() => socket.close(1008, "Invalid agent request"));
+        .catch(() => socket.close(1008, "Invalid agent request"))
+        .finally(() => {
+          queuedBytes -= bytes;
+        });
     });
     socket.on("close", () => {
       clearInterval(timer);

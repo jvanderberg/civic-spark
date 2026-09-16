@@ -11,6 +11,7 @@ Copyright (c) 2026 T3 Tools Inc. MIT license is included in `LICENSE.txt`.
 | Local code | Upstream source | Adaptation |
 | --- | --- | --- |
 | `Button.tsx` | `apps/web/src/components/ui/button.tsx` | Original button variants/sizes/classes; native React button replaces Base UI polymorphic rendering. |
+| `../../AgentImages.tsx`, `../../agent-images.css` | `apps/web/src/components/chat/ChatComposer.tsx` at the pinned commit | Compact image thumbnails, native picker and named remove actions; 44px touch controls, bounded private agent transport. |
 | `ComposerSurface.tsx` | `apps/web/src/components/chat/ComposerSurface.tsx` | Original surfaces, 22px corners, glass/outline/attachment geometry and classes. Import paths changed. |
 | `ComposerBanner.tsx` | `apps/web/src/components/chat/ComposerBanner.tsx` | Original `Surface`, `Attachment`, `Root` and color definitions. Unused disclosure helpers omitted. |
 | `ComposerPrimaryActions.tsx` | `apps/web/src/components/chat/ComposerPrimaryActions.tsx` | Original send/stop markup, sizes, colors and interactions. Civic Spark state props replace T3 session state; unsupported queue/plan actions omitted. |
