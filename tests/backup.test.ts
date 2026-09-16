@@ -479,7 +479,7 @@ it("explicitly reconciles missing Sprites using authenticated metadata only, pre
   };
   const request = vi.fn<typeof fetch>(async (url) =>
     String(url).includes("?")
-      ? Response.json({ name: "test-org", sprites: [] })
+      ? Response.json({ sprites: [], has_more: false, next_continuation_token: null })
       : new Response(null, { status: 404 }),
   );
   const wrong = {
@@ -552,7 +552,7 @@ it.each([401, 403, 429, 500])(
     };
     const request = vi.fn<typeof fetch>(async (url) =>
       String(url).includes("?")
-        ? Response.json({ name: "test-org", sprites: [] })
+        ? Response.json({ sprites: [], has_more: false, next_continuation_token: null })
         : new Response(null, { status }),
     );
     await expect(resumeRestore(options, "test-org/id/token/value", request)).rejects.toThrow(
@@ -565,12 +565,96 @@ it.each([401, 403, 429, 500])(
   },
 );
 
+it.each([
+  { sprites: [], has_more: false, next_continuation_token: null },
+  {
+    sprites: [{ name: "example", org_slug: "test-org", updated_at: "2026-01-13T10:30:00Z" }],
+    has_more: true,
+    next_continuation_token: "next-page",
+  },
+  { name: "test-org", sprites: [{ name: "example", organization: "test-org" }] },
+])("authenticates recovery organization using the documented list response %j", async (body) => {
+  const { verifyRecoveryOrganization } = await import("../packages/backup/src/recovery.ts");
+  const request = vi.fn<typeof fetch>(async () => Response.json(body));
+  await expect(
+    verifyRecoveryOrganization(
+      "test-org",
+      "https://api.sprites.dev",
+      "test-org/id/token/value",
+      request,
+    ),
+  ).resolves.toBeUndefined();
+  expect(request).toHaveBeenCalledExactlyOnceWith(
+    "https://api.sprites.dev/v1/sprites?max_results=1",
+    expect.objectContaining({
+      method: "GET",
+      headers: { Authorization: "Bearer test-org/id/token/value" },
+      redirect: "error",
+    }),
+  );
+});
+
+it.each([
+  { name: "wrong-org", sprites: [] },
+  { sprites: [{ name: "example", org_slug: "wrong-org" }] },
+  { sprites: [{ name: "example", org_slug: "test-org", organization: "wrong-org" }] },
+  { sprites: [{ name: "example", org_slug: null }] },
+  { sprites: [null] },
+  { sprites: {} },
+  {},
+])("rejects conflicting or malformed recovery organization responses %j", async (body) => {
+  const { inspectRecoverySprite } = await import("../packages/backup/src/recovery.ts");
+  const request = vi.fn<typeof fetch>(async () => Response.json(body));
+  await expect(
+    inspectRecoverySprite(
+      "civic-spark-example",
+      "test-org",
+      "https://api.sprites.dev",
+      "test-org/id/token/value",
+      request,
+    ),
+  ).rejects.toThrow();
+  expect(request).toHaveBeenCalledTimes(1);
+});
+
+it("rejects a mismatched org token before requesting provider metadata", async () => {
+  const { verifyRecoveryOrganization } = await import("../packages/backup/src/recovery.ts");
+  const request = vi.fn<typeof fetch>();
+  await expect(
+    verifyRecoveryOrganization(
+      "test-org",
+      "https://api.sprites.dev",
+      "wrong-org/id/token/value",
+      request,
+    ),
+  ).rejects.toThrow("selected Sprite organization");
+  expect(request).not.toHaveBeenCalled();
+});
+
+it.each([401, 403, 404, 429, 500])(
+  "does not authenticate recovery organization after HTTP %s",
+  async (status) => {
+    const { inspectRecoverySprite } = await import("../packages/backup/src/recovery.ts");
+    const request = vi.fn<typeof fetch>(async () => new Response(null, { status }));
+    await expect(
+      inspectRecoverySprite(
+        "civic-spark-example",
+        "test-org",
+        "https://api.sprites.dev",
+        "test-org/id/token/value",
+        request,
+      ),
+    ).rejects.toThrow("cannot be authenticated");
+    expect(request).toHaveBeenCalledTimes(1);
+  },
+);
+
 it("provider helper accepts only authenticated matching identities and distinguishes missing from errors", async () => {
   const { inspectRecoverySprite } = await import("../packages/backup/src/recovery.ts");
   const name = "civic-spark-00000000-0000-4000-8000-000000000001";
   const present = vi.fn<typeof fetch>(async (url) =>
     String(url).includes("?")
-      ? Response.json({ name: "test-org", sprites: [] })
+      ? Response.json({ sprites: [], has_more: false, next_continuation_token: null })
       : Response.json({ id: "opaque-provider-id", name, organization: "test-org" }),
   );
   await expect(

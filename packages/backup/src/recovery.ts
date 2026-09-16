@@ -106,10 +106,29 @@ export async function verifyRecoveryOrganization(
 ) {
   const response = await providerGet("/sprites?max_results=1", org, apiOrigin, token, request);
   if (response.status !== 200) throw new Error("Provider organization cannot be authenticated");
+  // The authenticated org-bearing token binds even an empty list. The documented
+  // rc48 response has no top-level name; check any additional ownership claims.
   const result = z
-    .object({ name: z.string(), sprites: z.array(z.unknown()) })
+    .object({
+      name: z.string().optional(),
+      sprites: z.array(
+        z.object({
+          name: z.string().min(1),
+          org_slug: z.string().optional(),
+          organization: z.string().optional(),
+        }),
+      ),
+    })
     .parse(await response.json());
-  if (result.name !== org) throw new Error("Provider organization mismatch");
+  if (
+    (result.name !== undefined && result.name !== org) ||
+    result.sprites.some(
+      (sprite) =>
+        (sprite.org_slug !== undefined && sprite.org_slug !== org) ||
+        (sprite.organization !== undefined && sprite.organization !== org),
+    )
+  )
+    throw new Error("Provider organization mismatch");
 }
 export async function inspectRecoverySprite(
   name: string,
