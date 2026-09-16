@@ -10,7 +10,7 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Release inactive polling and retained terminal bridges after configurable inactivity; active browser model Tasks holds, preview use and recent terminal input/output protection
 - [x] Explicit post-restore owner recovery from canonical shared Git after authenticated missing-resource reconciliation, preserving names/identities/preview origins
 - [x] Isolated domain/API/provider/race/recovery tests and phone/desktop lifecycle browser coverage; see [mechanics and limits](docs/sprite-lifecycle.md)
-- [ ] Separately authorize dedicated live provider sleep/stop/wake acceptance; no live event pause or paid inference was used for this implementation
+- [x] Dedicated live provider exec-stop/pause-all/owner-wake and event-pause/shared-download/unpause acceptance; same Sprite retained, no participant-event pause or paid inference. VM sleep remains provider-controlled; see current handoff.
 - [ ] Automatic Tasks instrumentation for arbitrary silent native-terminal/background jobs; those remain subject to provider idle detection
 
 ## Civic Spark namespace
