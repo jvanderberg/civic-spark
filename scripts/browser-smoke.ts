@@ -153,6 +153,155 @@ try {
   await adminPage.getByRole("button", { name: "Give admin access", exact: true }).click();
   await adminPage.getByText("Jamie Coordinator", { exact: true }).waitFor();
   await adminPage.screenshot({ path: join(artifacts, "admin-overview.png"), fullPage: true });
+
+  // Admin tools stay scoped to one shared repository; all mutations use disposable fixtures.
+  const teamCard = adminPage
+    .getByRole("article")
+    .filter({ has: adminPage.getByRole("heading", { name: "Data neighbors", exact: true }) });
+  await teamCard.getByRole("button", { name: "Repository", exact: true }).click();
+  const repository = adminPage.getByRole("dialog", {
+    name: "Data neighbors · Repository",
+    exact: true,
+  });
+  await repository.getByRole("heading", { name: "Share our first finding", exact: true }).waitFor();
+  await repository
+    .getByRole("region", { name: "File preview", exact: true })
+    .getByText("+A contribution from my private workspace.", { exact: false })
+    .waitFor();
+  assert(
+    await repository.locator(".repository-code > span").evaluateAll((lines) => {
+      const first = lines[0]?.getBoundingClientRect();
+      const second = lines[1]?.getBoundingClientRect();
+      return first && second && second.top >= first.bottom;
+    }),
+    "Diff lines must stack vertically",
+  );
+  await adminPage.screenshot({
+    path: join(artifacts, "admin-repository-light.png"),
+    animations: "disabled",
+  });
+  await adminPage.emulateMedia({ colorScheme: "dark" });
+  await adminPage.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  await adminPage.screenshot({
+    path: join(artifacts, "admin-repository-dark.png"),
+    animations: "disabled",
+  });
+  await repository.getByRole("button", { name: "Files at this commit", exact: true }).click();
+  await repository
+    .getByRole("navigation", { name: "Commit files", exact: true })
+    .getByRole("button", { name: "PROJECT.md", exact: true })
+    .click();
+  await repository
+    .getByRole("region", { name: "File preview", exact: true })
+    .getByText("# Where is business activity changing?", { exact: false })
+    .waitFor();
+  await repository.getByRole("button", { name: "Commit changes", exact: true }).click();
+  await repository
+    .getByRole("navigation", { name: "Repository commits", exact: true })
+    .getByRole("button", { name: /Start the team project/ })
+    .click();
+  await repository.getByRole("heading", { name: "Start the team project", exact: true }).waitFor();
+  adminPage.once("dialog", (dialog) => void dialog.dismiss());
+  await repository.getByRole("button", { name: "Restore this version", exact: true }).click();
+  assert.equal(await repository.getByRole("status").count(), 0, "Cancel must not restore");
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await repository.getByRole("button", { name: "Restore this version", exact: true }).click();
+  await repository.getByRole("status").filter({ hasText: "with a new shared commit" }).waitFor();
+  await repository.getByRole("heading", { name: /Restore project to/ }).waitFor();
+  assert.equal(
+    await repository
+      .getByRole("navigation", { name: "Repository commits", exact: true })
+      .getByRole("button")
+      .count(),
+    3,
+  );
+  await adminPage.setViewportSize({ width: 390, height: 844 });
+  await repository
+    .getByRole("navigation", { name: "Repository commits", exact: true })
+    .getByRole("button", { name: /Share our first finding/ })
+    .click();
+  await repository
+    .getByRole("region", { name: "File preview", exact: true })
+    .getByText("+A contribution from my private workspace.", { exact: false })
+    .waitFor();
+  adminPage.once("dialog", (dialog) => void dialog.dismiss());
+  await repository.getByRole("button", { name: "Restore this file", exact: true }).click();
+  assert.equal(
+    await repository
+      .getByRole("navigation", { name: "Repository commits", exact: true })
+      .getByRole("button")
+      .count(),
+    3,
+  );
+  await repository
+    .getByRole("button", { name: "Restore this file", exact: true })
+    .scrollIntoViewIfNeeded();
+  await adminPage.screenshot({
+    path: join(artifacts, "admin-restore-file-mobile.png"),
+    animations: "disabled",
+  });
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await repository.getByRole("button", { name: "Restore this file", exact: true }).click();
+  await repository.getByRole("status").filter({ hasText: "Restored only README.md" }).waitFor();
+  await repository.getByRole("heading", { name: /Restore README.md from/ }).waitFor();
+  assert.equal(
+    await repository
+      .getByRole("navigation", { name: "Repository commits", exact: true })
+      .getByRole("button")
+      .count(),
+    4,
+  );
+  await adminPage.screenshot({
+    path: join(artifacts, "admin-repository-mobile.png"),
+    animations: "disabled",
+  });
+  assert(
+    await repository.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    "Repository dialog must fit mobile",
+  );
+  assert(
+    await adminPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    "Admin mobile overflow",
+  );
+  await repository.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await adminPage.setViewportSize({ width: 1440, height: 1050 });
+  await adminPage.emulateMedia({ colorScheme: "light" });
+  await teamCard.getByRole("button", { name: "Copy team", exact: true }).click();
+  await adminPage.getByLabel("New team name", { exact: true }).fill("Data neighbors fork");
+  await adminPage.getByRole("button", { name: "Create copy", exact: true }).click();
+  const copiedCard = adminPage
+    .getByRole("article")
+    .filter({ has: adminPage.getByRole("heading", { name: "Data neighbors fork", exact: true }) });
+  await copiedCard.getByText("0 members", { exact: true }).waitFor();
+  await copiedCard.getByRole("button", { name: "Repository", exact: true }).click();
+  const copiedRepo = adminPage.getByRole("dialog", {
+    name: "Data neighbors fork · Repository",
+    exact: true,
+  });
+  await copiedRepo.getByRole("heading", { name: /Restore README.md from/ }).waitFor();
+  assert.equal(
+    await copiedRepo
+      .getByRole("navigation", { name: "Repository commits", exact: true })
+      .getByRole("button")
+      .count(),
+    4,
+  );
+  await copiedRepo.getByRole("button", { name: "Close dialog", exact: true }).click();
+  adminPage.once("dialog", (dialog) => void dialog.dismiss());
+  await copiedCard.getByRole("button", { name: "Delete team", exact: true }).click();
+  assert.equal(await copiedCard.count(), 1, "Cancel must preserve the team");
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await copiedCard.getByRole("button", { name: "Delete team", exact: true }).click();
+  await copiedCard.waitFor({ state: "detached" });
+  const coordinatorRow = adminPage
+    .locator(".admin-member")
+    .filter({ hasText: "Jamie Coordinator" });
+  adminPage.once("dialog", (dialog) => void dialog.dismiss());
+  await coordinatorRow.getByRole("button", { name: "Remove from event", exact: true }).click();
+  assert.equal(await coordinatorRow.count(), 1, "Cancel must preserve event membership");
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await coordinatorRow.getByRole("button", { name: "Remove from event", exact: true }).click();
+  await coordinatorRow.waitFor({ state: "detached" });
   adminPage.once("dialog", (dialog) => void dialog.accept());
   await adminPage
     .getByRole("button", { name: "Remove Alex Participant from Data neighbors", exact: true })
@@ -179,7 +328,7 @@ try {
   assert.equal((await participant.request.get(`${address}/api/state`)).status(), 401);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: separate authenticated admin/participant browsers; event ownership, discovery, custom project, two teams, private files, sharing/ZIP, admin promotion, removal/revocation, mobile, logout, clean console. Email-link signup uses the real auth endpoints and a test-only mailbox; external email delivery requires provider credentials.",
+    "PASS: separate authenticated admin/participant browsers; event ownership, discovery, custom project, two teams, private files, sharing/ZIP, admin promotion, confirmed event removal/team deletion, shared-only team copy, per-team commits/files/diffs and history-preserving restore, light/dark/mobile, logout, clean console. Email-link signup uses the real auth endpoints and a test-only mailbox; external email delivery requires provider credentials.",
   );
 } catch (error) {
   console.error({

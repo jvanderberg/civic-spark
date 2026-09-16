@@ -382,14 +382,24 @@ try {
   await page.screenshot({ path: join(artifacts, "workspace-terminal.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Files", exact: true }).click();
-  await page.waitForFunction(
-    () => document.querySelector(".file-explorer")?.getBoundingClientRect().width === 170,
-  );
+  await page.getByRole("button", { name: "Show file explorer" }).waitFor();
+  assert.equal((await explorer.boundingBox())?.width, 44);
+  await page.getByRole("button", { name: "Show file explorer" }).click();
   await page.screenshot({ path: join(artifacts, "workspace-explorer-mobile.png"), fullPage: true });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.getByRole("button", { name: "Local folder", exact: true }).click();
   await page.screenshot({ path: join(artifacts, "workspace-mobile.png"), fullPage: true });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await page.waitForFunction(
+    (expected) =>
+      document
+        .querySelector('[aria-label="Resize file explorer"]')
+        ?.getAttribute("aria-valuenow") === String(expected),
+    resizedWidth,
+  );
+  assert.equal(await readEditor(page), "My unsaved browser work\n");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Back to teams" }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();

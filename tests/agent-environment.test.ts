@@ -105,6 +105,10 @@ it("injects current bounded project data and the same configured environment in 
   expect(JSON.parse(open.env.OPENCODE_CONFIG_CONTENT ?? "").instructions).toEqual([
     join(root, ".vibehack-agent/workspace-context.md"),
   ]);
+  const nativeGuidance = readFileSync(join(root, ".vibehack-agent/workspace-context.md"), "utf8");
+  expect(nativeGuidance).toContain("360px and 390px phone widths");
+  expect(nativeGuidance).toContain("44px touch targets");
+  expect(nativeGuidance).toContain("Viewport emulation does not prove physical-device");
   writeFileSync(join(project, "PROJECT.md"), "Updated task");
   expect(workspaceContext(project)).toContain("Updated task");
   rmSync(join(project, "PROJECT.md"));

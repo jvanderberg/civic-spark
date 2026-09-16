@@ -1,6 +1,6 @@
 # Next-session handoff
 
-Checkpoint: September 15, 2026, America/Chicago. Local prototype; deployment remains unfinished.
+Checkpoint: September 16, 2026, America/Chicago. Local prototype; deployment remains unfinished.
 
 ## Resume here
 
@@ -10,6 +10,9 @@ Read [AGENTS.md](../AGENTS.md), [the implementation plan](../IMPLEMENTATION_PLAN
 
 ## Current behavior
 
+- Admin cleanup and repository management: confirmed event-member removal and team deletion; copy shared project/history into a new empty team; browse each team's shared main commits/files/diffs and restore an earlier tree with a new descendant commit. Deleted team resources remain on disk/in Sprites for operator recovery. No global account deletion or in-app undelete. See [product contracts](product.md#admin-cleanup-and-repositories).
+- Single-file restore creates a new shared commit changing only the selected file, preserving other current files and private work. Confirmation copy states the action and consequence concisely; keep conversational examples out of interface text.
+- Mobile work completed in the requested separate agent stream: phone file drawer, touch controls, safe areas, short-viewport scrolling, dialogs and workspace state preservation. Codex's AGENTS.md and Claude's CLAUDE.md require mobile verification; participant harness guidance also includes mobile requirements. Physical iOS/Android keyboard and native-picker behavior still require device rehearsal.
 - Email-identity prototype login, event/admin/team flows and private per-person workspaces are implemented. Production email-link authentication has SMTP/Resend adapters but still needs actual delivery testing.
 - Sprite provisioning shows phases, elapsed time, errors and retry. Jobs remain process-local.
 - Full-screen workspace: resizable/collapsible explorer, six file-action icons, Monaco editor, themed diffs, T3-derived agent chat, persistent auto-connecting terminal and local-folder sync.
@@ -28,10 +31,11 @@ Read [AGENTS.md](../AGENTS.md), [the implementation plan](../IMPLEMENTATION_PLAN
 
 ## Validation and useful commands
 
-Latest full check: **115 tests / 28 files**, lint, application/runtime typechecks and production build passed. Build emits large-chunk warnings. This wrap-up changes docs/ignore rules only. [Prototype evidence](prototype-results.md) records earlier browser and dedicated-Sprite checks without treating historical counts as current.
+Latest full check: **124 tests / 29 files**, lint, application/runtime typechecks and production build passed. The expanded `npm run test:browser` passes confirmed cleanup, copying, repository browsing and whole-repository/single-file restore, plus existing participant/admin flows. Mobile, terminal, workspace and agent browser regressions pass. Light/dark/mobile screenshots were reviewed; console was clean. Browser tests use isolated fixtures and mocked Sprite transports, without paid inference. Build still emits large-chunk warnings. This batch includes admin management, file restore and mobile support; the user authorized committing and pushing it to continue in Paseo on m1mbp. Machine-local environment configuration and prototype data are not tracked by Git. [Prototype evidence](prototype-results.md) records earlier browser and dedicated-Sprite checks without treating historical counts as current.
 
 ```sh
 npm run check
+npm run test:mobile
 npm run test:agent-browser
 npm run test:editor-browser
 # Reproduce resilience to a failed lazy HTML grammar request:

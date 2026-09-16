@@ -77,9 +77,18 @@ export function FileExplorer({
   selected?: string;
   changes: Changes | null;
   disabled: boolean;
-  onOpen: (path: string) => void;
+  onOpen: (path: string) => Promise<boolean>;
 }) {
   const [preference, setPreference] = useState(() => initialPreference(workspace));
+  const [mobile, setMobile] = useState(() => matchMedia("(max-width: 650px)").matches);
+  const [mobileCollapsed, setMobileCollapsed] = useState(true);
+  const collapsed = mobile ? mobileCollapsed : preference.collapsed;
+  useEffect(() => {
+    const query = matchMedia("(max-width: 650px)");
+    const update = () => setMobile(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const [containerWidth, setContainerWidth] = useState(window.innerWidth);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [focused, setFocused] = useState<string>();
@@ -153,25 +162,34 @@ export function FileExplorer({
     <>
       <aside
         ref={aside}
-        className={`file-explorer${preference.collapsed ? " collapsed" : ""}`}
-        style={{ width: preference.collapsed ? 32 : width }}
+        className={`file-explorer${collapsed ? " collapsed" : ""}`}
+        style={{
+          width: collapsed
+            ? mobile
+              ? 44
+              : 32
+            : mobile
+              ? Math.min(300, containerWidth - 44)
+              : width,
+        }}
         aria-label="File explorer"
       >
         <header className="explorer-heading">
-          {!preference.collapsed && <span>EXPLORER</span>}
+          {!collapsed && <span>EXPLORER</span>}
           <button
             type="button"
-            aria-label={preference.collapsed ? "Show file explorer" : "Collapse file explorer"}
-            title={preference.collapsed ? "Show file explorer" : "Collapse file explorer"}
-            aria-expanded={!preference.collapsed}
-            onClick={() =>
-              setPreference((previous) => ({ ...previous, collapsed: !previous.collapsed }))
-            }
+            aria-label={collapsed ? "Show file explorer" : "Collapse file explorer"}
+            title={collapsed ? "Show file explorer" : "Collapse file explorer"}
+            aria-expanded={!collapsed}
+            onClick={() => {
+              if (mobile) setMobileCollapsed(!mobileCollapsed);
+              else setPreference((previous) => ({ ...previous, collapsed: !previous.collapsed }));
+            }}
           >
-            {preference.collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+            {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
           </button>
         </header>
-        {!preference.collapsed && (
+        {!collapsed && (
           <div
             id={`explorer-${workspace}`}
             className="explorer-tree"
@@ -215,7 +233,13 @@ export function FileExplorer({
                   onFocus={() => setFocused(row.path)}
                   onClick={() => {
                     if (row.directory) toggle(row.path);
-                    else if (!disabled) onOpen(row.path);
+                    else if (!disabled)
+                      void onOpen(row.path).then((opened) => {
+                        if (opened && mobile) {
+                          setMobileCollapsed(true);
+                          aside.current?.querySelector("button")?.focus();
+                        }
+                      });
                   }}
                   onKeyDown={(event) => {
                     switch (event.key) {
@@ -274,7 +298,7 @@ export function FileExplorer({
           </div>
         )}
       </aside>
-      {!preference.collapsed && (
+      {!collapsed && !mobile && (
         <hr
           className={`explorer-resizer${resizing ? " resizing" : ""}`}
           tabIndex={0}

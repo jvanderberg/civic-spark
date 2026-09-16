@@ -11,6 +11,10 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Signed-in discovery, existing teams, new teams, custom project briefs
 - [x] Multiple team memberships per account; capacity counts people once
 - [x] Admin membership removal with immediate API revocation and preserved files
+- [x] Confirmed event-scoped person removal and team deletion with retained work; last-admin protection
+- [x] Admin team copying from shared main/history/brief without copying members or private work
+- [x] Per-team repository browser with paginated commits, bounded file previews/diffs and confirmed history-preserving restore
+- [x] Confirmed per-file restore recovers deleted/overwritten data without reverting unrelated current files; retains history and private work
 - [x] Own teams view and independent personal checkout for each team
 - [x] First-open Sprite provisioning and real remote file browse/read/save
 - [x] Visible setup phases, retained errors, retry, refresh startup and interrupted-job detection
@@ -36,6 +40,9 @@ See [workspace modes and acceptance requirements](docs/product.md#required-works
 - [x] Full-screen compact workspace with fixed Opus 5/GLM choices and runtime/key readiness
 - [x] Hierarchical file explorer with collapsible, resizable sidebar and saved layout preferences
 - [x] System-following light/dark themes and syntax-highlighted Monaco editing
+- [x] Shared Codex/Claude contributor instructions require mobile support and touch/keyboard/browser verification; participant harness guidance carries the same mobile expectations
+- [x] Phone-width and short-viewport interaction regression coverage across participant, admin and workspace flows (`npm run test:mobile`), plus xterm/chat/desktop-preference regressions
+- [ ] Rehearse physical iOS/Android keyboard, rotation and native file-picker behavior; viewport emulation alone does not establish device support
 - [x] Full Monaco filename/extension detection and production-browser token/color checks across major file types, embedded HTML/CSS/JS, file switching, themes, and preserved drafts
 - [x] Copy/adapt T3 Code chat UI and verify realistic conversation/controls in the browser
 - [x] T3 active-turn elapsed header, animated Thinking/tool activity, reduced-motion behavior and restored turn clock; isolated production-browser lifecycle checks

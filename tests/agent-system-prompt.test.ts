@@ -78,6 +78,11 @@ it("sends fresh guidance and disables prompt snapshots across the real SDK resum
         "React + TypeScript + Vite + Tailwind CSS + Biome",
       );
       expect(initialized?.appendSystemPrompt).toContain("vibehack preview start");
+      expect(initialized?.appendSystemPrompt).toContain("360px and 390px phone widths");
+      expect(initialized?.appendSystemPrompt).toContain("on-screen keyboard");
+      expect(initialized?.appendSystemPrompt).toContain(
+        "actual browser screenshots and console errors",
+      );
       if (resume) expect(args).toContain(`--resume=${session}`);
     }
   } finally {

@@ -63,6 +63,18 @@ export function Workspace({
       // Preferences contain no files, messages, or credentials.
     }
   }, [participant.id, view]);
+  // Mobile keyboards resize the visual viewport even when the layout viewport stays tall.
+  const screen = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const resize = () => {
+      if (viewport?.scale === 1)
+        screen.current?.style.setProperty("--workspace-height", `${viewport.height}px`);
+    };
+    resize();
+    viewport?.addEventListener("resize", resize);
+    return () => viewport?.removeEventListener("resize", resize);
+  }, []);
   const [agentWorking, setAgentWorking] = useState(false);
   const [outgoing, setOutgoing] = useState(false);
   const [teamUpdating, setTeamUpdating] = useState(false);
@@ -140,7 +152,7 @@ export function Workspace({
     return () => clearInterval(timer);
   }, [refreshFiles, spritesEnabled, remote]);
   async function open(path: string) {
-    if (dirty && !window.confirm("Discard unsaved edits and open another file?")) return;
+    if (dirty && !window.confirm("Discard unsaved edits and open another file?")) return false;
     setLoading(true);
     try {
       const next = await api<FileContent>(
@@ -152,8 +164,10 @@ export function Workspace({
       setError("");
       setMessage("");
       setMode(path.endsWith(".csv") ? "data" : "edit");
+      return true;
     } catch (e) {
       setError(String(e));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -233,7 +247,7 @@ export function Workspace({
       />
     );
   return (
-    <main className="workspace-screen">
+    <main ref={screen} className="workspace-screen">
       <header className="workspace-header">
         <button
           type="button"
@@ -533,7 +547,7 @@ export function Workspace({
             selected={file?.path}
             changes={changes}
             disabled={busy || loading}
-            onOpen={(path) => void open(path)}
+            onOpen={open}
           />
           <section className="editor-area">
             <div className="editor-toolbar">

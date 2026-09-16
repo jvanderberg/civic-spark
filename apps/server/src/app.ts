@@ -20,6 +20,7 @@ import {
   mutationSchema,
   TEXT_BODY_LIMIT,
 } from "../../../packages/workspace/src/types.ts";
+import { registerAdminRoutes } from "./admin.ts";
 import { AgentSessions } from "./agents.ts";
 import { createAuthentication } from "./auth.ts";
 import type { EmailDelivery } from "./email.ts";
@@ -184,6 +185,7 @@ export async function createApp(
     if (!value) throw new Error("Missing session");
     return value;
   };
+  registerAdminRoutes(app, service);
   app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled));
   app.post("/api/events", async (r, reply) =>
     send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body))),

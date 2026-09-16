@@ -24,6 +24,8 @@ flowchart TD
 
 ## What each person sees
 
+Mobile is a required participant and admin interface. Navigation, event/team management, confirmation dialogs, repository history and restore, browser editing, chat, changes and preview controls should be usable on narrow touch screens and short viewports. Preserve drafts and sessions through responsive layout changes. The terminal remains available with the expected phone keyboard/screen limitations; devices without writable folder access use browser editing or upload/download. Verify phone interactions and both system themes in the browser, while identifying physical iOS/Android keyboard and native-picker checks separately.
+
 | Person | View and permissions |
 | --- | --- |
 | Signed out | Sign-in page; no event or workspace API data |
@@ -32,6 +34,18 @@ flowchart TD
 | Event admin | Event-wide people/roles/teams/shared work; lifecycle controls; admin grants; team membership removal |
 
 Admin roles do **not** open other people’s private working files. Shared changes and repositories are team-visible. Admins participate through their own team memberships and personal workspaces when they want to work on a project.
+
+### Admin cleanup and repositories
+
+The admin overview groups repository actions by team. **Repository** opens that team's shared `main` history, with paginated commits, per-file diffs and files at a selected commit. Merge commits compare against their first parent. Private workspace commits and non-main refs are not exposed. Previews exclude protected paths and symlinks and limit each text source to 1 MiB; binary and oversized files show an explicit notice.
+
+- **Remove from event** asks for confirmation, then removes the person's event role and all team memberships in this event. Their account, other events, shared history and saved private work remain. The final admin cannot be removed. This is cleanup, not a ban: the person can rejoin an open event and recover their existing workspace.
+- **Delete team** asks for confirmation, then removes the team from discovery and revokes its workspace, repository and export access. Team metadata, the bare repository, local files and Sprites are retained for operator recovery. This does not reclaim cloud resources or provide an in-app undelete flow.
+- **Copy team** creates a separately named team with the current shared repository, its history and project brief. No members, private workspace files, credentials or private refs are copied. Participants join the new team normally.
+- **Restore this version** asks for confirmation and publishes a new commit whose file tree matches the selected shared commit. Existing history remains intact. The operation rejects a stale expected team HEAD; it never resets or force-pushes shared history. Members receive the restore through normal team-update polling, with their private work preserved.
+- **Restore this file** recovers just the selected file from a commit where it existed, after confirmation. It creates a new shared commit and preserves every other current file. Large and binary files can be restored even when no text preview is available. A stale team HEAD, excluded path or file/directory collision blocks the restore without changing shared main.
+
+Repository reads require team membership or event-admin access. Copy, deletion, event-member removal and repository restore require that event's admin role. These use the existing local prototype stores and Git transport; hosted durability and coordinated metadata recovery remain separate work.
 
 ## Starting an event
 

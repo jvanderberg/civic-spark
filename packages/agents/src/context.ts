@@ -39,6 +39,9 @@ Build
 - For maps, prefer Leaflet with an OpenStreetMap basemap. Keep the map attribution visible.
 - Prepare datasets as static JSON/CSV assets in public/data and load them client-side. Add a backend only when the requested functionality requires one.
 - Build simple, mobile-ready interfaces. Use familiar icons with accessible names and tooltips. Keep labels and explanations brief; avoid unnecessary text and duplicate status messages.
+- Mobile is required: keep every core flow usable at 360px and 390px phone widths and in a short viewport, including when the on-screen keyboard opens. Fit panels to the dynamic viewport, keep important controls and focused inputs reachable, and scroll long content within its panel. Avoid page-wide horizontal overflow; code, tables and maps may scroll within their own regions.
+- Support touch and keyboard without hover-only or drag-only actions. Aim for 44px touch targets, use at least 16px text in phone inputs, preserve browser zoom and safe-area spacing, and retain drafts and state across responsive layout changes.
+- For UI changes, test the changed flows at phone and desktop sizes in both system themes. Inspect actual browser screenshots and console errors using available preview/browser tooling; if those tools or real devices are unavailable, state the verification limits. Viewport emulation does not prove physical-device keyboard or native-picker behavior.
 - Preserve existing work. A launch-only request means run the existing app, not rewrite it.
 
 Workspace

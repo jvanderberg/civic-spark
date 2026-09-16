@@ -152,6 +152,44 @@ export class WorkspaceEngine {
       return ok(team);
     });
   }
+  deleteTeam(id: string) {
+    const team = this.state.teams.find((t) => t.id === id && !t.deletedAt);
+    if (!team) return fail("Team not found", 404);
+    team.deletedAt = stamp();
+    this.record(team.eventId, `Deleted team ${team.name}. Repository and private work retained.`);
+    return ok({ deleted: true, workPreserved: true });
+  }
+  copyTeam(id: string, name: string): Result<Team> {
+    return this.boundary(() => {
+      const source = this.state.teams.find((t) => t.id === id && !t.deletedAt);
+      if (!source) return fail("Team not found", 404);
+      if (this.state.events.find((e) => e.id === source.eventId)?.status === "closed")
+        return fail("This event has ended.", 409);
+      if (name.trim().length < 2 || name.trim().length > 80)
+        return fail("Use a team name between 2 and 80 characters.");
+      const team: Team = {
+        id: randomUUID(),
+        eventId: source.eventId,
+        projectId: source.projectId,
+        number: this.state.teams.filter((t) => t.eventId === source.eventId).length + 1,
+        name: name.trim(),
+        createdAt: stamp(),
+      };
+      // Copy only shared main and its ancestry, never private checkouts or other refs.
+      git(this.root, ["init", "--bare", "--initial-branch=main", this.repoPath(team.id)]);
+      git(this.repoPath(team.id), [
+        "fetch",
+        "--no-tags",
+        this.repoPath(id),
+        "refs/heads/main:refs/heads/main",
+      ]);
+      const integration = join(this.root, "integration", team.id);
+      git(this.root, ["clone", this.repoPath(team.id), integration]);
+      this.state.teams.push(team);
+      this.record(team.eventId, `Copied ${source.name} to ${team.name}.`);
+      return ok(team);
+    });
+  }
   addParticipant(teamId: string, name: string, capacityChecked = false): Result<Participant> {
     return this.boundary(() => {
       const team = this.state.teams.find((t) => t.id === teamId);

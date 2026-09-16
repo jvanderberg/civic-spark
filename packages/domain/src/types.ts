@@ -48,6 +48,7 @@ export const teamSchema = z.object({
   name: z.string(),
   projectId: z.string(),
   createdAt: z.string(),
+  deletedAt: z.string().optional(),
 });
 export const spritePhaseSchema = z.enum(["bundling", "creating", "checkout", "verifying", "ready"]);
 export type SpritePhase = z.infer<typeof spritePhaseSchema>;

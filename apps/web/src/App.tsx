@@ -22,6 +22,7 @@ import type {
   TeamView,
 } from "../../../packages/domain/src/access-types.ts";
 import type { Contribution, Event } from "../../../packages/domain/src/types.ts";
+import { AdminTeams } from "./AdminTeams.tsx";
 import { api } from "./api.ts";
 import { Badge, Empty, Field, initials, Modal } from "./components.tsx";
 import { Workspace } from "./Workspace.tsx";
@@ -702,6 +703,31 @@ export function App() {
                             >
                               {m.role === "admin" ? "Remove admin role" : "Make admin"}
                             </button>
+                            <button
+                              type="button"
+                              className="button small danger-button"
+                              disabled={
+                                busy ||
+                                (m.role === "admin" &&
+                                  members.filter((x) => x.role === "admin").length === 1)
+                              }
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Remove ${m.name} from ${event.name}?\n\nThis removes their event role and all team memberships in this event. Shared history and private work are preserved. Their account and other events are unaffected. They may rejoin while registration is open.`,
+                                  )
+                                )
+                                  void run(async () => {
+                                    await api(
+                                      `/events/${eventId}/members/${encodeURIComponent(m.userId)}`,
+                                      "DELETE",
+                                      { confirmed: true },
+                                    );
+                                  });
+                              }}
+                            >
+                              Remove from event
+                            </button>
                           </div>
                           <div className="membership-chips">
                             {m.teamIds.length ? (
@@ -735,39 +761,7 @@ export function App() {
                       ))}
                     </div>
                   </section>
-                  <section className="section">
-                    <div className="section-heading">
-                      <div>
-                        <h2>Teams across the event</h2>
-                        <p>
-                          Shared project details and membership. Personal files stay in each
-                          member’s workspace.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="team-grid">
-                      {teams.map((t) => (
-                        <article className="team-card" key={t.id}>
-                          <div className="team-card-top">
-                            <span className="team-number">{t.number}</span>
-                            <Badge>{t.memberCount} members</Badge>
-                          </div>
-                          <h3>{t.name}</h3>
-                          <p>{t.projectName}</p>
-                          <div className="member-names">
-                            <Users size={15} />
-                            {t.memberNames.join(", ")}
-                          </div>
-                          <footer>
-                            <a className="text-link" href={`/api/teams/${t.id}/export`}>
-                              Download team ZIP
-                            </a>
-                          </footer>
-                        </article>
-                      ))}
-                    </div>
-                  </section>
-                  {reviews()}
+                  <AdminTeams key={eventId} teams={teams} refresh={refresh} />
                 </>
               )}
               {activeTab === "schedule" && (

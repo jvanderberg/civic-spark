@@ -1,0 +1,193 @@
+.admin-team-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+:root .button.danger-button {
+  color: var(--app-error-text);
+}
+.modal:has(.repository-browser) {
+  width: min(1440px, 96vw);
+  max-width: 96vw;
+  height: 90dvh;
+  max-height: 96dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.repository-browser {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+  padding: 16px;
+}
+.repository-toolbar,
+.repository-modes,
+.repository-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.repository-toolbar > span {
+  flex: 1;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+.repository-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 26%) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.repository-history {
+  overflow: auto;
+  padding: 12px;
+  border-right: 1px solid var(--app-border);
+}
+.repository-history h3 {
+  margin: 0 0 12px;
+}
+.repository-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--app-border);
+  padding: 12px 8px;
+  background: transparent;
+  color: var(--app-text);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.repository-commit span,
+.repository-commit code {
+  font-size: 12px;
+  color: var(--app-muted);
+}
+.repository-browser .selected,
+:root .repository-modes [aria-pressed="true"] {
+  background: var(--app-selected);
+  color: var(--app-text);
+}
+.repository-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.repository-version,
+.repository-modes {
+  padding: 12px;
+  border-bottom: 1px solid var(--app-border);
+}
+.repository-version > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.repository-version h3 {
+  margin: 0 0 6px;
+}
+.repository-version p,
+.repository-modes > span {
+  margin: 0;
+  font-size: 12px;
+  color: var(--app-muted);
+}
+.repository-files {
+  display: grid;
+  grid-template-columns: minmax(150px, 27%) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.repository-paths {
+  overflow: auto;
+  border-right: 1px solid var(--app-border);
+}
+.repository-paths button {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--app-border);
+  background: transparent;
+  color: var(--app-text);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.repository-paths small {
+  color: var(--app-muted);
+}
+.repository-file-view {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--app-input);
+}
+.repository-filename {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--app-border);
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+.repository-code {
+  margin: 0;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.65;
+  tab-size: 2;
+  color: var(--app-text);
+}
+.repository-code span {
+  display: block;
+  min-width: 100%;
+}
+.repo-add {
+  background: var(--app-success);
+  color: var(--app-success-text);
+}
+.repo-remove {
+  background: var(--app-error);
+  color: var(--app-error-text);
+}
+.repo-hunk {
+  background: var(--app-selected);
+}
+.repository-notice {
+  margin: 0;
+  color: var(--app-success-text);
+}
+@media (max-width: 760px) {
+  .repository-browser {
+    padding: 8px;
+  }
+  .repository-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 25% minmax(0, 1fr);
+  }
+  .repository-history {
+    border-right: 0;
+    border-bottom: 1px solid var(--app-border);
+  }
+  .repository-files {
+    grid-template-columns: minmax(100px, 30%) minmax(0, 1fr);
+  }
+  .repository-version {
+    gap: 6px;
+    padding: 8px;
+  }
+  .repository-version h3 {
+    font-size: 14px;
+  }
+}

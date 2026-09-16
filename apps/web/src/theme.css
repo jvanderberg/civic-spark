@@ -55,6 +55,7 @@
 }
 :root
   :is(
+    .metrics,
     .team-card,
     .project-card,
     .people-list,

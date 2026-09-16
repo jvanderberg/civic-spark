@@ -1,0 +1,314 @@
+/* Responsive portal and workspace adaptations; T3 chat structure stays upstream-derived. */
+.workspace-screen {
+  height: min(100dvh, var(--workspace-height, 100dvh));
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.app-shell {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  min-height: 100dvh;
+}
+.modal {
+  max-height: 94dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.modal-header {
+  flex-shrink: 0;
+  gap: 12px;
+}
+.modal-header h2,
+.workspace-header h1,
+.team-card h3,
+.person-name,
+.membership-chip,
+.project-card,
+.intro-strip > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.modal-header .icon-button {
+  flex-shrink: 0;
+}
+.button-row,
+.form-actions,
+.environment-controls,
+.environment-actions {
+  flex-wrap: wrap;
+}
+.editor-toolbar > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chat-bottom {
+  flex-shrink: 1;
+  min-height: 0;
+  max-height: 75%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 650px) {
+  .workspace-header {
+    position: relative;
+    gap: 4px 8px;
+    padding: 4px 8px;
+  }
+  .workspace-header h1 {
+    flex: 1 1 140px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .workspace-header > .badge {
+    font-size: 9px;
+  }
+  .workspace-header .team-updates,
+  .workspace-header .environment-controls {
+    position: static;
+  }
+  .environment-popover,
+  .team-updates-menu {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-height: 65dvh;
+  }
+  .workspace-screen > .workspace-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: 0 4px;
+    gap: 0;
+  }
+  .workspace-screen .workspace-tabs button {
+    flex: 0 0 auto;
+    padding: 8px;
+    font-size: 12px;
+    min-height: 44px;
+  }
+  .workspace-screen .workspace-layout {
+    position: relative;
+  }
+  .workspace-screen .file-explorer:not(.collapsed) {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 5;
+    box-shadow: 8px 0 18px #0003;
+    max-width: 85%;
+  }
+  .workspace-screen .file-explorer:not(.collapsed) + .editor-area {
+    margin-left: 44px;
+  }
+  .workspace-screen .explorer-heading {
+    min-height: 44px;
+    padding: 0;
+  }
+  .workspace-screen .explorer-heading > span {
+    padding-left: 10px;
+  }
+  .workspace-screen .explorer-heading button {
+    width: 44px;
+    height: 44px;
+  }
+  .workspace-screen .explorer-item {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .workspace-screen .file-actions {
+    padding: 0 4px;
+  }
+  .workspace-screen .file-action {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+  }
+  .workspace-screen .agent-composer textarea {
+    min-height: 48px;
+    max-height: 25dvh;
+  }
+  .chat-header {
+    gap: 4px;
+    padding: 0 8px;
+  }
+  .chat-header > div {
+    gap: 0;
+  }
+  .chat-readiness {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .chat-feedback {
+    gap: 8px;
+    overflow-wrap: anywhere;
+  }
+  .workspace-screen .agent-conversation {
+    min-height: 48px;
+  }
+  .workspace-screen .workspace-panel {
+    padding: 12px;
+  }
+  .workspace-screen .agent-panel {
+    padding: 0;
+  }
+  .workspace-status {
+    padding: 6px 10px;
+    overflow-wrap: anywhere;
+  }
+  .cloud-setup,
+  .section-heading {
+    flex-wrap: wrap;
+  }
+  .cloud-setup {
+    padding: 10px;
+  }
+  .sync-plan li {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sync-plan code,
+  .sync-plan select {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+}
+@media (max-width: 600px) {
+  .person-name {
+    flex-basis: 170px;
+  }
+  .sidebar-bottom {
+    padding-top: 0;
+    flex-wrap: wrap;
+  }
+  .sidebar-bottom .identity-card {
+    flex: 1 1 160px;
+  }
+  .sidebar-group {
+    margin-top: 12px;
+  }
+  .sidebar-group .new-event-link {
+    margin-bottom: 8px;
+  }
+  .main-nav button {
+    flex-shrink: 0;
+  }
+  .topbar {
+    height: auto;
+    min-height: 48px;
+    gap: 8px;
+    padding-block: 8px;
+    overflow-wrap: anywhere;
+  }
+  .page-heading,
+  .page-heading > div {
+    max-width: 100%;
+  }
+  .page-heading .button-row,
+  .section-heading .button-row {
+    width: 100%;
+  }
+  .modal-header,
+  .form {
+    padding: 16px;
+  }
+  .login-shell {
+    padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    min-height: 100dvh;
+  }
+  .login-card {
+    padding: 22px;
+  }
+  .membership-chips {
+    padding: 0 15px 15px;
+  }
+  .membership-chip {
+    max-width: 100%;
+  }
+  .membership-chip button {
+    flex-shrink: 0;
+  }
+  .settings-section dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .settings-section dd {
+    margin: 0 0 12px;
+    overflow-wrap: anywhere;
+  }
+  /* One vertical reading surface keeps history, version actions and diffs reachable
+     when a phone keyboard or landscape viewport leaves little vertical space. */
+  .repository-browser {
+    overflow-y: auto;
+  }
+  .repository-layout {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+  .repository-history {
+    max-height: 28dvh;
+    flex-shrink: 0;
+  }
+  .repository-detail {
+    overflow: visible;
+  }
+  .repository-files {
+    display: flex;
+    flex-direction: column;
+  }
+  .repository-paths {
+    max-height: 24dvh;
+    border-right: 0;
+    border-bottom: 1px solid var(--app-border);
+  }
+  .repository-file-view {
+    max-height: 50dvh;
+    min-height: 160px;
+  }
+}
+/* Touch controls have useful hit areas; 16px form text avoids iOS focus zoom.
+   Monaco owns the geometry of its code surface and hidden input. */
+@media (pointer: coarse), (max-width: 650px) {
+  :root
+    :is(
+      .button,
+      .button.small,
+      .text-link,
+      .new-event-link,
+      .main-nav button,
+      .chat-header button,
+      .agent-composer button,
+      .chat-approval button,
+      .chat-connection button,
+      .t3-question-option,
+      .membership-chip button,
+      .file-diff summary
+    ) {
+    min-height: 44px;
+  }
+  :root :is(.icon-button, .membership-chip button) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  :root
+    :is(
+      .field input,
+      .field select,
+      .field textarea,
+      .event-picker select,
+      .changes-commit-row input,
+      .chat-connection input,
+      .chat-workspace-id input,
+      .chat-model select,
+      .chat-approval input,
+      .agent-composer textarea,
+      .sync-plan select
+    ) {
+    font-size: 16px;
+    min-height: 44px;
+  }
+}

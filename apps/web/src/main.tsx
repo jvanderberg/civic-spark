@@ -5,6 +5,7 @@ import { App } from "./App.tsx";
 import "./styles.css";
 import "./theme.css";
 import "./theme.ts";
+import "./mobile.css";
 
 const root = document.getElementById("root");
 if (root)

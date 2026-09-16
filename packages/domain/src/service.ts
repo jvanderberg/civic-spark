@@ -1,6 +1,17 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { z } from "zod";
+import {
+  type historyQuerySchema,
+  repositoryFile,
+  repositoryHistory,
+  repositoryVersion,
+  type restoreFileInputSchema,
+  type restoreInputSchema,
+  restoreRepository,
+  restoreRepositoryFile,
+} from "../../git/src/history.ts";
 import { git } from "../../git/src/repository.ts";
 import { WorkspaceFiles } from "../../workspace/src/files.ts";
 import {
@@ -94,9 +105,13 @@ export class EventService {
   portal(actor: Identity, sprites: boolean): PortalState {
     this.remember(actor);
     const data = this.engine.snapshot();
+    data.teams = data.teams.filter((t) => !t.deletedAt);
+    const visibleTeamIds = new Set(data.teams.map((t) => t.id));
     const events = data.events.filter((e) => this.canDiscover(actor, e));
     const eventIds = new Set(events.map((e) => e.id));
-    const active = this.state.memberships.filter((m) => m.active && eventIds.has(m.eventId));
+    const active = this.state.memberships.filter(
+      (m) => m.active && eventIds.has(m.eventId) && visibleTeamIds.has(m.teamId),
+    );
     const my = active.filter((m) => m.userId === actor.id);
     const teamIds = new Set(my.map((m) => m.teamId));
     return {
@@ -153,7 +168,8 @@ export class EventService {
           : [];
       }),
       contributions: data.contributions.filter(
-        (c) => teamIds.has(c.teamId) || this.isAdmin(actor, c.eventId),
+        (c) =>
+          visibleTeamIds.has(c.teamId) && (teamIds.has(c.teamId) || this.isAdmin(actor, c.eventId)),
       ),
       activity: data.activity.filter((a) => this.isAdmin(actor, a.eventId)),
       templates,
@@ -226,7 +242,7 @@ export class EventService {
     return ok({ team: team.value, workspace: joined.value });
   }
   joinTeam(actor: Identity, teamId: string): Result<Workspace> {
-    const team = this.engine.snapshot().teams.find((t) => t.id === teamId);
+    const team = this.engine.snapshot().teams.find((t) => t.id === teamId && !t.deletedAt);
     if (!team) return fail("Team not found", 404);
     const allowed = this.canJoin(actor, team.eventId);
     if (!allowed.ok) return allowed;
@@ -236,6 +252,8 @@ export class EventService {
     );
     if (existing) {
       existing.active = true;
+      if (!this.state.eventMembers.some((m) => m.eventId === team.eventId && m.userId === actor.id))
+        this.state.eventMembers.push({ eventId: team.eventId, userId: actor.id, role: "member" });
       this.save();
       return this.workspace(actor, existing.id);
     }
@@ -268,6 +286,8 @@ export class EventService {
     const m = this.state.memberships.find((m) => m.id === id && m.userId === actor.id && m.active);
     if (!m) return fail("Workspace not found", 404);
     const data = this.engine.snapshot();
+    if (!data.teams.some((t) => t.id === m.teamId && !t.deletedAt))
+      return fail("Workspace not found", 404);
     const p = data.participants.find((p) => p.id === id);
     if (!p) return fail("Workspace not found", 404);
     if (write && data.events.find((e) => e.id === m.eventId)?.status === "closed")
@@ -370,7 +390,7 @@ export class EventService {
     return this.engine.accept(id);
   }
   private canReadTeam(actor: Identity, id: string) {
-    const team = this.engine.snapshot().teams.find((t) => t.id === id);
+    const team = this.engine.snapshot().teams.find((t) => t.id === id && !t.deletedAt);
     return Boolean(
       team &&
         (this.isAdmin(actor, team.eventId) ||
@@ -379,6 +399,95 @@ export class EventService {
   }
   exportTeam(actor: Identity, id: string) {
     return this.canReadTeam(actor, id) ? this.engine.exportTeam(id) : fail("Team not found", 404);
+  }
+  removeEventMember(actor: Identity, eventId: string, userId: string) {
+    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const member = this.state.eventMembers.find(
+      (m) => m.eventId === eventId && m.userId === userId,
+    );
+    if (!member) return fail("Event member not found", 404);
+    if (
+      member.role === "admin" &&
+      this.state.eventMembers.filter((m) => m.eventId === eventId && m.role === "admin").length ===
+        1
+    )
+      return fail("An event must retain at least one admin", 409);
+    this.state.eventMembers = this.state.eventMembers.filter((m) => m !== member);
+    for (const m of this.state.memberships)
+      if (m.eventId === eventId && m.userId === userId) m.active = false;
+    this.save();
+    return ok({ removed: true, workPreserved: true });
+  }
+  private adminTeam(actor: Identity, id: string) {
+    const team = this.engine.snapshot().teams.find((t) => t.id === id && !t.deletedAt);
+    if (!team) return fail("Team not found", 404);
+    if (!this.isAdmin(actor, team.eventId)) return fail("Event admin access required", 403);
+    return ok(team);
+  }
+  deleteTeam(actor: Identity, id: string) {
+    const team = this.adminTeam(actor, id);
+    if (!team.ok) return team;
+    const deleted = this.engine.deleteTeam(id);
+    if (!deleted.ok) return deleted;
+    for (const m of this.state.memberships) if (m.teamId === id) m.active = false;
+    this.save();
+    return deleted;
+  }
+  copyTeam(actor: Identity, id: string, name: string) {
+    const team = this.adminTeam(actor, id);
+    return team.ok ? this.engine.copyTeam(id, name) : team;
+  }
+  repositoryHistory(actor: Identity, id: string, input: z.input<typeof historyQuerySchema>) {
+    if (!this.canReadTeam(actor, id)) return fail("Team not found", 404);
+    try {
+      return ok(repositoryHistory(this.engine.repoPath(id), input));
+    } catch {
+      return fail("Repository history is unavailable. Refresh and try again.", 409);
+    }
+  }
+  repositoryVersion(actor: Identity, id: string, commit: string) {
+    if (!this.canReadTeam(actor, id)) return fail("Team not found", 404);
+    try {
+      return ok(repositoryVersion(this.engine.repoPath(id), commit));
+    } catch {
+      return fail("Shared commit not found or too large to browse.", 404);
+    }
+  }
+  repositoryFile(actor: Identity, id: string, commit: string, path: string) {
+    if (!this.canReadTeam(actor, id)) return fail("Team not found", 404);
+    try {
+      return ok(repositoryFile(this.engine.repoPath(id), commit, path));
+    } catch {
+      return fail("File preview unavailable. It may be excluded or too large.", 404);
+    }
+  }
+  restoreRepository(actor: Identity, id: string, input: z.input<typeof restoreInputSchema>) {
+    const team = this.adminTeam(actor, id);
+    if (!team.ok) return team;
+    try {
+      return ok(restoreRepository(this.engine.repoPath(id), input, actor));
+    } catch (error) {
+      return fail(
+        error instanceof Error ? error.message : "Restore failed. Refresh and try again.",
+        409,
+      );
+    }
+  }
+  restoreRepositoryFile(
+    actor: Identity,
+    id: string,
+    input: z.input<typeof restoreFileInputSchema>,
+  ) {
+    const team = this.adminTeam(actor, id);
+    if (!team.ok) return team;
+    try {
+      return ok(restoreRepositoryFile(this.engine.repoPath(id), input, actor));
+    } catch (error) {
+      return fail(
+        error instanceof Error ? error.message : "File restore failed. Refresh and try again.",
+        409,
+      );
+    }
   }
   workspaceFiles(
     actor: Identity,

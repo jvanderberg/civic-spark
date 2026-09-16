@@ -33,6 +33,13 @@ let available = true;
 const sockets: WebSocketRoute[] = [];
 page.setDefaultTimeout(10000);
 page.on("pageerror", (error) => errors.push(error.message));
+page.on("console", (message) => {
+  const expectedDenial =
+    failPreparation &&
+    message.location().url.endsWith("/agent/prepare") &&
+    message.text().includes("403 (Forbidden)");
+  if (message.type() === "error" && !expectedDenial) errors.push(message.text());
+});
 await page.route("**/api/state", async (route) => {
   const response = await route.fetch();
   const state = (await response.json()) as PortalState;
@@ -40,6 +47,11 @@ await page.route("**/api/state", async (route) => {
     workspace.spriteStatus = available ? "ready" : "local";
   await route.fulfill({ response, json: state });
 });
+await page.route("**/preview*", (route) =>
+  route.fulfill({
+    json: { port: 5173, command: ["npm", "run", "dev"], running: false, ready: false },
+  }),
+);
 await page.route("**/agent/prepare", async (route) => {
   preparations += 1;
   await preparationGate;
@@ -105,6 +117,9 @@ try {
     { width: 1280, height: 720 },
     { width: 1280, height: 480 },
     { width: 390, height: 844 },
+    { width: 360, height: 780 },
+    { width: 360, height: 430 },
+    { width: 740, height: 360 },
   ]) {
     await page.setViewportSize(viewport);
     await page.waitForFunction(() => {
@@ -128,6 +143,7 @@ try {
       path: join(artifacts, `terminal-${viewport.width}-${viewport.height}.png`),
     });
   }
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Files", exact: true }).click();
   await page.getByRole("button", { name: "Terminal", exact: true }).click();
   await page
