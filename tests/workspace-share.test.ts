@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -50,6 +58,93 @@ function setup() {
   const files = new WorkspaceFiles(dir);
   return { root, service, alice, bob, event, team, id, dir, files };
 }
+it("shares an existing native .gitignore commit unchanged and exposes it in editor, Changes and sync", () => {
+  const { service, alice, id, dir, files, root, team } = setup();
+  const before = unwrap(service.readFile(alice, id, ".gitignore"));
+  unwrap(service.saveFile(alice, id, ".gitignore", `${before.content}scratch/\n`, before.revision));
+  expect(unwrap(service.files(alice, id))).toContain(".gitignore");
+  expect(files.manifest().files[".gitignore"]).toBeDefined();
+  expect(files.changes().files).toEqual(
+    expect.arrayContaining([expect.objectContaining({ path: ".gitignore", status: "modified" })]),
+  );
+  git(dir, ["add", ".gitignore"]);
+  git(dir, ["commit", "-m", "Native ignore rules"]);
+  const head = git(dir, ["rev-parse", "HEAD"]).toString().trim();
+  const shared = unwrap(
+    service.shareLocal(alice, id, "Share existing", files.changes().revision as string),
+  );
+  expect(shared.commit).toBe(head);
+  expect(git(dir, ["rev-parse", "HEAD"]).toString().trim()).toBe(head);
+  expect(
+    git(join(root, "repos", `${team.team.id}.git`), ["rev-parse", "main"])
+      .toString()
+      .trim(),
+  ).toBe(head);
+  expect(git(dir, ["log", "-1", "--format=%s"]).toString().trim()).toBe("Native ignore rules");
+});
+it.each([null, ".env", ".civic-spark-agent/credentials.json", "private.key"])(
+  "allows reverted .gitignore history but still rejects intermediate excluded path %s",
+  (secret) => {
+    const { service, alice, id, dir, files, root, team } = setup();
+    const original = readFileSync(join(dir, ".gitignore"), "utf8");
+    const base = git(dir, ["rev-parse", "HEAD"]).toString().trim();
+    writeFileSync(join(dir, ".gitignore"), `${original}scratch/\n`);
+    if (secret) {
+      if (secret.includes("/")) mkdirSync(join(dir, ".civic-spark-agent"), { recursive: true });
+      writeFileSync(join(dir, secret), "PRIVATE TEST FIXTURE");
+      git(dir, ["add", "-f", secret]);
+    }
+    git(dir, ["add", ".gitignore"]);
+    git(dir, ["commit", "-m", "Native configuration change"]);
+    writeFileSync(join(dir, ".gitignore"), original);
+    if (secret) unlinkSync(join(dir, secret));
+    writeFileSync(join(dir, "note.txt"), "Public update\n");
+    git(dir, ["add", "--all"]);
+    git(dir, ["commit", "-m", "Restore ignore rules"]);
+    const head = git(dir, ["rev-parse", "HEAD"]).toString().trim();
+    const shared = service.shareLocal(
+      alice,
+      id,
+      "Existing native history",
+      files.changes().revision as string,
+    );
+    if (secret)
+      expect(shared).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("history includes excluded"),
+      });
+    else expect(unwrap(shared).commit).toBe(head);
+    expect(git(dir, ["rev-parse", "HEAD"]).toString().trim()).toBe(head);
+    expect(
+      git(join(root, "repos", `${team.team.id}.git`), ["rev-parse", "main"])
+        .toString()
+        .trim(),
+    ).toBe(secret ? base : head);
+  },
+);
+it.each(["symlink", "gitlink"])(
+  "rejects .gitignore %s without rewriting native history",
+  (kind) => {
+    const { service, alice, id, dir, root, team } = setup();
+    const base = git(dir, ["rev-parse", "HEAD"]).toString().trim();
+    if (kind === "symlink") {
+      unlinkSync(join(dir, ".gitignore"));
+      symlinkSync("README.md", join(dir, ".gitignore"));
+      git(dir, ["add", ".gitignore"]);
+    } else git(dir, ["update-index", "--cacheinfo", "160000", base, ".gitignore"]);
+    git(dir, ["commit", "-m", "Unsafe config mode"]);
+    const head = git(dir, ["rev-parse", "HEAD"]).toString().trim();
+    expect(
+      service.publishSnapshot(alice, id, "Reject links", "a".repeat(64), dir, head),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("history includes excluded") });
+    expect(git(dir, ["rev-parse", "HEAD"]).toString().trim()).toBe(head);
+    expect(
+      git(join(root, "repos", `${team.team.id}.git`), ["rev-parse", "main"])
+        .toString()
+        .trim(),
+    ).toBe(base);
+  },
+);
 it("large data files do not break Changes; Share commits locally and pushes that exact commit", () => {
   const { service, alice, id, dir, files, root, team } = setup();
   const content = "a,b\n".repeat(270000);

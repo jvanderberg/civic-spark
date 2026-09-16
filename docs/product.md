@@ -106,6 +106,7 @@ The browser interface remains the default. Terminal and local editing are option
 - Light/dark appearance follows the system setting, including live changes. The browser code editor uses Monaco’s full filename/extension catalog while preserving the same save and conflict safeguards. HTML, CSS, JavaScript and TypeScript grammars load with the editor so a failed secondary grammar download cannot leave those files permanently uncolored; other grammars load lazily. HTML includes embedded CSS/JavaScript; major web, data, programming, and configuration files are covered. Vue/Svelte use HTML highlighting and TOML uses the bundled INI approximation; unknown file types remain plain text.
 - Show added, modified, and deleted files and a diff against the workspace's last synchronized team version.
 - Include saved edits from the browser, local editor, terminal, and agent; refresh the view when files change.
+- Ordinary `.gitignore` files at the project root or inside visible project directories appear in the editor, Changes and sync. Other hidden paths, credentials and links remain excluded. Share checks every incoming commit and preserves the exact existing native commit when there are no additional edits; an ignore-rule change does not require rewriting history.
 - Preserve unsaved browser edits when another source changes the same file and offer reconciliation.
 - Syncing a local folder updates only that person's workspace. Sharing changes with the team remains an explicit, separate action.
 

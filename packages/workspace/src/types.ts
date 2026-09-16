@@ -21,17 +21,16 @@ export function projectPath(path: string): boolean {
     path.length <= 500 &&
     ![...path].some((c) => c.charCodeAt(0) < 32) &&
     !/[\\<>:"|?*]/.test(path) &&
-    path
-      .split("/")
-      .every(
-        (part) =>
-          Boolean(part) &&
-          !part.startsWith(".") &&
-          !/[. ]$/.test(part) &&
-          !excluded.has(part.toLowerCase()) &&
-          !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part) &&
-          !/\.(pem|key|p12|pfx|log)$/i.test(part),
-      )
+    path.split("/").every(
+      (part, index, parts) =>
+        Boolean(part) &&
+        // Git's ordinary ignore file is project data, never a hidden directory.
+        (!part.startsWith(".") || (part === ".gitignore" && index === parts.length - 1)) &&
+        !/[. ]$/.test(part) &&
+        !excluded.has(part.toLowerCase()) &&
+        !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part) &&
+        !/\.(pem|key|p12|pfx|log)$/i.test(part),
+    )
   );
 }
 export const stampSchema = z.object({ revision: z.string(), size: z.number() });

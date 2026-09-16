@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { FILE_LIMIT } from "../../workspace/src/types.ts";
+import { FILE_LIMIT, projectPath } from "../../workspace/src/types.ts";
 
 export function git(cwd: string, args: string[], environment: NodeJS.ProcessEnv = {}): Buffer {
   const result = spawnSync(
@@ -57,13 +57,7 @@ export function revision(content: string) {
   return createHash("sha256").update(content).digest("hex");
 }
 export function safePath(root: string, name: string): string | null {
-  if (
-    !name ||
-    isAbsolute(name) ||
-    name.includes("\\") ||
-    name.split("/").some((part) => !part || part.startsWith(".") || part === "node_modules")
-  )
-    return null;
+  if (isAbsolute(name) || !projectPath(name)) return null;
   const target = resolve(root, name);
   if (!target.startsWith(`${resolve(root)}${sep}`)) return null;
   let cursor = resolve(root);
@@ -80,9 +74,9 @@ export function listFiles(root: string): string[] {
   const files: string[] = [];
   function visit(dir: string) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.isSymbolicLink())
-        continue;
       const path = join(dir, entry.name);
+      if (!projectPath(relative(root, path).split(sep).join("/")) || entry.isSymbolicLink())
+        continue;
       if (entry.isDirectory()) visit(path);
       else if (entry.isFile()) files.push(relative(root, path));
     }

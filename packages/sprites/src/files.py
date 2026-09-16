@@ -4,10 +4,21 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path("/home/sprite/project")
 LIMIT = 25 * 1024 * 1024
+EXCLUDED = {'node_modules', 'dist', 'build', 'coverage', '__pycache__', 'vendor', 'credentials', 'secrets'}
+
+
+def allowed(name):
+    parts = name.split('/')
+    return bool(name) and len(name) <= 500 and not re.search(r'[\\\x00-\x1f<>:"|?*]', name) and all(
+        p and (not p.startswith('.') or (p == '.gitignore' and i == len(parts) - 1))
+        and not p.endswith(('.', ' ')) and p.lower() not in EXCLUDED
+        and not re.search(r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)', p, re.I)
+        and not re.search(r'\.(pem|key|p12|pfx|log)$', p, re.I) for i, p in enumerate(parts))
 
 
 def fail(message, status=400):
@@ -17,7 +28,7 @@ def fail(message, status=400):
 
 def safe_path(name):
     path = pathlib.PurePosixPath(name)
-    if not name or path.is_absolute() or "\\" in name or any(p.startswith(".") or p == "node_modules" for p in path.parts):
+    if not allowed(name):
         fail("File unavailable", 404)
     current = ROOT
     for part in path.parts:
@@ -34,10 +45,10 @@ try:
     if request["operation"] == "list":
         files = []
         for directory, dirs, names in os.walk(ROOT, followlinks=False):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d != "node_modules" and not pathlib.Path(directory, d).is_symlink()]
+            dirs[:] = [d for d in dirs if allowed(str(pathlib.Path(directory, d).relative_to(ROOT))) and not pathlib.Path(directory, d).is_symlink()]
             for name in names:
                 target = pathlib.Path(directory, name)
-                if not name.startswith(".") and not target.is_symlink() and target.stat().st_size <= LIMIT:
+                if allowed(str(target.relative_to(ROOT))) and not target.is_symlink() and target.is_file() and target.stat().st_size <= LIMIT:
                     files.append(str(target.relative_to(ROOT)))
                     if len(files) >= 5000:
                         fail("Too many files to browse", 413)

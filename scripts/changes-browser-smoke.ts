@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,6 +8,7 @@ import { createApp } from "../apps/server/src/app.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { git } from "../packages/git/src/repository.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
+import { waitEditorText, writeEditor } from "./browser-editor.ts";
 
 const root = mkdtempSync(join(tmpdir(), "civic-spark-changes-browser-"));
 const artifacts = resolve("artifacts");
@@ -24,9 +25,14 @@ const address = `http://127.0.0.1:${port}`;
 const { app, service, authentication } = await createApp(root, false, address, undefined, "email");
 await app.listen({ host: "127.0.0.1", port });
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, hasTouch: true });
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
+page.on("console", (message) => {
+  const expectedShareFailure =
+    message.location().url.endsWith("/share") && message.text().includes("409");
+  if (message.type() === "error" && !expectedShareFailure) errors.push(message.text());
+});
 const unwrap = <T>(r: Result<T>): T => {
   if (!r.ok) throw new Error(r.error);
   return r.value;
@@ -54,6 +60,11 @@ try {
   );
   const id = team.workspace.id;
   const dir = service.workspacePath(id);
+  const ignore = `${readFileSync(join(dir, ".gitignore"), "utf8")}scratch/\n`;
+  writeFileSync(join(dir, ".gitignore"), ignore);
+  git(dir, ["add", ".gitignore"]);
+  git(dir, ["commit", "-m", "Native ignore rules"]);
+  const nativeHead = git(dir, ["rev-parse", "HEAD"]).toString().trim();
   writeFileSync(
     join(dir, "README.md"),
     Array.from({ length: 240 }, (_, i) => `Changed project line ${i}`).join("\n"),
@@ -68,6 +79,7 @@ try {
   const region = page.getByRole("region", { name: "Changes view", exact: true });
   await page.getByRole("button", { name: "Share", exact: true }).waitFor();
   await page.locator(".file-diff").first().waitFor();
+  await page.locator(".file-diff summary").filter({ hasText: ".gitignore" }).waitFor();
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme, theme);
@@ -132,6 +144,44 @@ try {
       animations: "disabled",
     });
   }
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.getByRole("button", { name: "Files", exact: true }).tap();
+  await page.getByRole("button", { name: "Show file explorer" }).tap();
+  await page.getByRole("treeitem", { name: ".gitignore", exact: true }).tap();
+  await waitEditorText(page, ignore);
+  const editedIgnore = `${ignore}browser-scratch/\n`;
+  await writeEditor(page, editedIgnore);
+  await page.getByRole("button", { name: "Save", exact: true }).tap();
+  await page.getByRole("status").filter({ hasText: "Saved to your workspace" }).waitFor();
+  assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), editedIgnore);
+  await page.screenshot({ path: join(artifacts, "gitignore-editor-mobile.png") });
+  await page.getByRole("button", { name: /^Changes/ }).tap();
+  for (const theme of ["light", "dark"] as const) {
+    for (const [width, height] of [
+      [360, 780],
+      [390, 844],
+      [360, 430],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: theme });
+      await page.waitForFunction(
+        (scheme) => document.documentElement.dataset.theme === scheme,
+        theme,
+      );
+      await page
+        .locator(".file-diff summary")
+        .filter({ hasText: ".gitignore" })
+        .scrollIntoViewIfNeeded();
+      const share = page.getByRole("button", { name: "Share", exact: true });
+      await share.scrollIntoViewIfNeeded();
+      const bounds = await share.boundingBox();
+      assert(bounds && bounds.y >= 0 && bounds.y + bounds.height <= height);
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.screenshot({
+        path: join(artifacts, `gitignore-changes-${width}-${height}-${theme}.png`),
+      });
+    }
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel("Commit message", { exact: true }).fill("Improve the project data");
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -169,6 +219,23 @@ try {
     .filter({ hasText: "Shared with your team" })
     .waitFor();
   assert.equal(service.portal(identity.actor, false).contributions.length, 1);
+  const sharedHead = git(dir, ["rev-parse", "HEAD"]).toString().trim();
+  assert.equal(
+    git(dir, ["rev-parse", `${sharedHead}^`])
+      .toString()
+      .trim(),
+    nativeHead,
+  );
+  assert.equal(
+    git(join(root, "repos", `${team.team.id}.git`), ["rev-parse", "main"])
+      .toString()
+      .trim(),
+    sharedHead,
+  );
+  assert.equal(
+    git(join(root, "repos", `${team.team.id}.git`), ["show", "main:.gitignore"]).toString(),
+    editedIgnore,
+  );
   assert.equal(
     git(dir, ["log", "-1", "--format=%s"]).toString().trim(),
     "Improve the project data",
@@ -184,7 +251,7 @@ try {
   assert.equal(shares, 2);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: long Changes wheel/keyboard scrolling, final file access, light/dark diff surfaces, compact commit controls, mobile layout, keyboard Share, dismissible/expiring toasts and real Git commit message.",
+    "PASS: .gitignore native-history Changes, phone editor/save, exact descendant Share; long diff wheel/keyboard scrolling, light/dark 360/390/short layouts, compact commit controls, dismissible/expiring toasts, clean console and real Git commit message.",
   );
 } finally {
   await browser.close();

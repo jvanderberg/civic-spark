@@ -29,6 +29,7 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] First-open Sprite provisioning and real remote file browse/read/save
 - [x] Visible setup phases, retained errors, retry, refresh startup and interrupted-job detection
 - [x] Real local commit + exact-commit Share, conflict preservation and ZIP export
+- [x] Narrow `.gitignore` file allowance across editor/Changes/sync and native-history Share, with TypeScript/Python parity and unchanged secret/link/history guards
 - [x] Auth/session/domain tests and separate-browser participant/admin workflow
 - [x] Live Sprite file API verification; remote temporary edit restored
 - [ ] Configure email sender and verify actual inbox delivery on the deployed origin

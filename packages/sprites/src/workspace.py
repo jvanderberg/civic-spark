@@ -20,10 +20,12 @@ EXCLUDED = {'node_modules', 'dist', 'build', 'coverage', '__pycache__', 'vendor'
 
 
 def allowed(name):
+    parts = name.split('/')
     return bool(name) and len(name) <= 500 and not re.search(r'[\\\x00-\x1f<>:"|?*]', name) and all(
-        p and not p.startswith('.') and not p.endswith(('.', ' ')) and p.lower() not in EXCLUDED
+        p and (not p.startswith('.') or (p == '.gitignore' and i == len(parts) - 1))
+        and not p.endswith(('.', ' ')) and p.lower() not in EXCLUDED
         and not re.search(r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)', p, re.I)
-        and not re.search(r'\.(pem|key|p12|pfx|log)$', p, re.I) for p in name.split('/'))
+        and not re.search(r'\.(pem|key|p12|pfx|log)$', p, re.I) for i, p in enumerate(parts))
 
 
 def target(name):
