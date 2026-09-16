@@ -207,7 +207,9 @@ def prepare(config, token):
     installed = saved(MARKER)
     valid = (modules.is_dir() and installed.get('fingerprint') == fingerprint and
              installed.get('modules') == modules.stat().st_ino)
-    if valid and installed_bins(manifest) and run(['npm', 'ls', '--depth=0', '--include=dev', '--include=optional'], token)[0] == 0:
+    # Direct dependencies/bins can remain intact when a required transitive package is missing.
+    # Check the complete installed tree before reuse and before writing the success marker.
+    if valid and installed_bins(manifest) and run(['npm', 'ls', '--all', '--include=dev', '--include=optional'], token)[0] == 0:
         return
     phase('installing')
     MARKER.unlink(missing_ok=True)
@@ -222,7 +224,7 @@ def prepare(config, token):
         raise ValueError('Dependency installation failed. Check package.json, the lockfile and registry access, then retry Launch. Install scripts are disabled; packages requiring a build must be prepared in the terminal.')
     if project_inputs() != inputs:
         raise ValueError('Dependency files changed during installation. Retry Launch to use the current files.')
-    if not installed_bins(manifest) or run(['npm', 'ls', '--depth=0', '--include=dev', '--include=optional'], token)[0]:
+    if not installed_bins(manifest) or run(['npm', 'ls', '--all', '--include=dev', '--include=optional'], token)[0]:
         raise ValueError('Installed dependencies are incomplete. Check the manifest and retry Launch.')
     modules.mkdir(exist_ok=True)
     check_cancel(token)

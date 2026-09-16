@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
@@ -313,3 +314,51 @@ it("timeout and transport interruption leave no ready marker or late server; ret
     expect((await f.run("start")).value.ready).toBe(true);
   }
 }, 15000);
+
+it("Launch repairs a cached Vite install missing its transitive bundler, then reuses the repaired tree", async () => {
+  const f = await fixture(true);
+  f.write("index.html", "<!doctype html><h1>Cached shared demo</h1>");
+  await execute(
+    "npm",
+    ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"],
+    { cwd: f.project },
+  );
+  const manifest = readFileSync(join(f.project, "package.json"));
+  const lock = readFileSync(join(f.project, "package-lock.json"));
+  const source = readFileSync(join(f.project, "index.html"));
+  expect((await f.run("start")).value.ready).toBe(true);
+  await f.run("stop");
+  const marker = readFileSync(join(f.runtime, "project-installed.json"));
+  const inode = statSync(join(f.project, "node_modules")).ino;
+  // Vite 8 uses Rolldown; earlier Vite releases use Rollup. Neither is direct in this fixture.
+  const vite = JSON.parse(readFileSync(join(f.project, "node_modules/vite/package.json"), "utf8"));
+  const bundler = vite.dependencies.rolldown ? "rolldown" : "rollup";
+  const missing = join(f.project, "node_modules", bundler);
+  expect(existsSync(missing)).toBe(true);
+  rmSync(missing, { recursive: true });
+  expect(statSync(join(f.project, "node_modules")).ino).toBe(inode);
+  expect(readFileSync(join(f.runtime, "project-installed.json"))).toEqual(marker);
+  expect(existsSync(join(f.project, "node_modules/.bin/vite"))).toBe(true);
+  // Establish the old false-positive cache check with real npm, not a transport mock.
+  await execute("npm", ["ls", "--depth=0", "--include=dev", "--include=optional"], {
+    cwd: f.project,
+  });
+  await expect(
+    execute("npm", ["ls", "--all", "--include=dev", "--include=optional"], { cwd: f.project }),
+  ).rejects.toMatchObject({ code: 1 });
+  const repaired = await f.run("start");
+  expect(repaired, JSON.stringify(repaired)).toMatchObject({ ok: true, value: { ready: true } });
+  expect(existsSync(missing)).toBe(true);
+  expect(await (await fetch(`http://127.0.0.1:${f.defaults.port}`)).text()).toContain(
+    "Cached shared demo",
+  );
+  const repairedMarkerTime = statSync(join(f.runtime, "project-installed.json")).mtimeMs;
+  await f.run("stop");
+  expect((await f.run("start")).value.ready).toBe(true);
+  expect(statSync(join(f.runtime, "project-installed.json")).mtimeMs).toBe(repairedMarkerTime);
+  expect(readFileSync(join(f.project, "package.json"))).toEqual(manifest);
+  expect(readFileSync(join(f.project, "package-lock.json"))).toEqual(lock);
+  expect(readFileSync(join(f.project, "index.html"))).toEqual(source);
+  expect(existsSync(join(f.project, "source-overwrite.txt"))).toBe(false);
+  expect(existsSync(join(f.runtime, "node_modules"))).toBe(false);
+}, 60000);
