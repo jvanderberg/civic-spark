@@ -11,6 +11,7 @@ it("matches Docker directory re-inclusion and explicit descendant exclusions", (
   expect(includedInContext("scripts/backup.ts", rules)).toBe(true);
   expect(includedInContext("deploy/fly/local-token.json", rules)).toBe(false);
   expect(includedInContext("deploy/fly/Dockerfile", rules)).toBe(true);
+  expect(includedInContext("deploy/fly/prepare-backup-input.sh", rules)).toBe(true);
   expect(includedInContext("deploy/fly/preview-ingress.Dockerfile", rules)).toBe(true);
   expect(includedInContext("apps/server/.data/private-token", rules)).toBe(false);
   expect(includedInContext("packages/agents/src/credentials.ts", rules)).toBe(true);

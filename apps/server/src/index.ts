@@ -1,15 +1,19 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { createApp } from "./app.ts";
 import {
   acquireWriter,
+  assertApplicationMode,
   deploymentSettings,
   storageReady,
   validateDeployment,
 } from "./deployment.ts";
 import { loadDeploymentSecrets } from "./deployment-secrets.ts";
 
+// Check before reading local configuration, decoding the secret envelope, or importing app code.
+assertApplicationMode();
 if (existsSync(".env")) process.loadEnvFile(".env");
+// Local configuration may itself enable maintenance.
+assertApplicationMode();
 process.umask(0o077);
 loadDeploymentSecrets();
 const settings = deploymentSettings();
@@ -22,6 +26,7 @@ validateDeployment(
 const release = acquireWriter(root);
 try {
   storageReady(root);
+  const { createApp } = await import("./app.ts");
   const { app } = await createApp(root);
   await app.listen({ port: settings.port, host: settings.host });
   console.log(`Civic Spark control plane listening on port ${settings.port}`);

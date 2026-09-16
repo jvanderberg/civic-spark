@@ -21,6 +21,7 @@ deploy/fly/**
 !deploy/fly/Dockerfile
 !deploy/fly/preview-ingress.Dockerfile
 !deploy/fly/entrypoint.sh
+!deploy/fly/prepare-backup-input.sh
 !deploy/fly/install-sprite.mjs
 !deploy/fly/sprite-release.json
 # Defense in depth inside allowed source directories.

@@ -39,11 +39,11 @@ fly machine update "$CIVIC_SPARK_MACHINE" --app "$CIVIC_SPARK_APP" \
 
 This restarts that Machine, so prior server shutdown must already be coordinated. `--skip-health-checks` allows the intentional absence of an HTTP listener; it does not skip backup integrity or the exclusive writer check. Verify the same Machine is running, same volume attached, the maintenance log message appears, and public application health fails. Do not run `fly deploy` concurrently. If the update fails, inspect the actual Machine image/mode before acting; do not blindly assume either normal or maintenance operation.
 
-Create input staging on tmpfs and an encrypted-output directory on the volume. These are operator-owned task directories, outside the management source tree. Existing input staging makes this command fail, so stale keys/jobs are not overwritten silently:
+Create input staging on tmpfs and an encrypted-output directory on the volume. These are operator-owned task directories, outside the management source tree. The committed staging helper first requires maintenance mode, a real non-symlink `/dev/shm` directory with the identical canonical path, and `findmnt --mountpoint /dev/shm` reporting exactly `tmpfs`. Missing tools, unexpected filesystems, links or existing input staging cause failure **before any credential upload**; there is no plaintext disk fallback. Root must verify this check succeeds on the actual Machine, since its mount has not been tested locally. Existing input staging makes this command fail, so stale keys/jobs are not overwritten silently:
 
 ```sh
 fly ssh console --app "$CIVIC_SPARK_APP" --machine "$CIVIC_SPARK_MACHINE" -C \
-  'sh -c "umask 077; mkdir /dev/shm/civic-spark-backup-input && chown node:node /dev/shm/civic-spark-backup-input && install -d -m 0700 -o node -g node /dev/shm/civic-spark-backup-input/operator /data/civic-spark-backups"'
+  'sh /app/deploy/fly/prepare-backup-input.sh'
 ```
 
 Use the retained authoritative operator files; do not recover participant keys or read private Sprite bodies. Upload credentials as files over authenticated SFTP, never as command arguments or shell literals:
@@ -111,17 +111,17 @@ npm run backup -- restore /private/recovery/off-machine-restore-job.json
 
 ## Exit maintenance deliberately
 
-Once root has accepted the off-machine validation and rehearsal, remove only this task's tmpfs inputs. Keep the independent key and operator source package in their approved secure stores:
+Before **any approved return to service**, remove this task's tmpfs inputs and confirm the directory is absent. This cleanup is required after success and after failed upload, capture, retrieval or validation; it does not delete the source or encrypted archive. The commands below connect cleanup success to the image update with `&&`; if cleanup or its absence checks fail, the update is not run and maintenance stays active until the operator resolves it. Keep the independent key and operator source package in their approved secure stores:
 
 ```sh
 fly ssh console --app "$CIVIC_SPARK_APP" --machine "$CIVIC_SPARK_MACHINE" -C \
-  'setpriv --reuid=node --regid=node --init-groups rm -rf /dev/shm/civic-spark-backup-input'
+  'sh -c "setpriv --reuid=node --regid=node --init-groups rm -rf /dev/shm/civic-spark-backup-input && test ! -e /dev/shm/civic-spark-backup-input && test ! -L /dev/shm/civic-spark-backup-input"' &&
 fly machine update "$CIVIC_SPARK_MACHINE" --app "$CIVIC_SPARK_APP" \
   --image "$CIVIC_SPARK_ORIGINAL_IMAGE" --env CIVIC_SPARK_MAINTENANCE=off --yes
 ```
 
 Returning to the original image avoids bundling an unrelated application release with backup acceptance. Root can separately deploy a newer reviewed release afterward. Verify public health, original Machine/volume identity, sign-in, and owner workspace reattachment without a model turn. Sessions on the original live data were **not** revoked by backup; only the isolated restore revokes sessions. Update the private operator maintenance record with archive ID, image pair, timestamps, off-machine validation and rehearsal result.
 
-If retrieval/rehearsal fails, preserve the original data and finalized archive. Root can explicitly return the original Machine to serving after deciding how to close the maintenance window; that decision must not be reported as a successful backup. There is no automatic rollback, cloud deletion, volume replacement, forced Git push or model invocation in this procedure.
+If capture, retrieval or rehearsal fails, preserve the original data and any finalized encrypted archive, perform and verify the same tmpfs input cleanup above, and report the backup as **not accepted**. Do not return to serving with leftover staged credentials. Root can explicitly return the original Machine to serving after deciding how to close the maintenance window; that decision must not be reported as a successful backup. There is no automatic rollback, cloud deletion, volume replacement, forced Git push or model invocation in this procedure.
 
-Local validation (September 16, 2026): shell syntax check, `npm run check` (196 tests / 40 files, lint, both typechecks and build) and clean deployment-context build (133 inputs) passed. Entry tests cover ordinary startup, maintenance restarts without data writes or app startup, absent data refusal, unknown/empty mode rejection, direct app-start fencing and operator lock access. This is shell/source validation; first Linux Machine, uid/mount and SSH/SFTP acceptance remains an explicitly authorized root operation.
+Local validation (September 16, 2026): shell syntax check, `npm run check` (198 tests / 40 files, lint, both typechecks and build) and clean deployment-context build (134 inputs) passed. Entry tests cover ordinary startup, maintenance restarts without data writes or app startup, absent data refusal, unknown/empty mode rejection, direct app-start fencing before secret decoding, operator lock access, and fail-closed tmpfs staging checks. This is shell/source validation; first Linux Machine, uid/mount and SSH/SFTP acceptance remains an explicitly authorized root operation.

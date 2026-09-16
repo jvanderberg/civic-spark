@@ -6,6 +6,11 @@ import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { validateSpriteToken } from "../../../packages/sprites/src/credentials.ts";
 
+export function assertApplicationMode(env: NodeJS.ProcessEnv = process.env) {
+  if (env.CIVIC_SPARK_MAINTENANCE !== undefined && env.CIVIC_SPARK_MAINTENANCE !== "off")
+    throw new Error("Application startup is blocked by maintenance mode");
+}
+
 export function deploymentSettings(env: NodeJS.ProcessEnv = process.env) {
   const hosted = env.CIVIC_SPARK_DEPLOYMENT === "hosted" || env.NODE_ENV === "production";
   const host = env.CIVIC_SPARK_HOST ?? (hosted ? "0.0.0.0" : "127.0.0.1");
@@ -43,8 +48,7 @@ export function validateDeployment(
   authMode: string,
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  if (env.CIVIC_SPARK_MAINTENANCE !== undefined && env.CIVIC_SPARK_MAINTENANCE !== "off")
-    throw new Error("Application startup is blocked by maintenance mode");
+  assertApplicationMode(env);
   if (existsSync(join(root, ".civic-spark-recovery.json")))
     throw new Error("Restored installation is fenced pending operator resource reconciliation");
   const settings = deploymentSettings(env);

@@ -5,11 +5,14 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 import { acquireWriter, validateDeployment } from "../apps/server/src/deployment.ts";
 
@@ -136,6 +139,101 @@ it("also fences direct application startup in backup mode without blocking the o
     ).not.toThrow();
     const release = acquireWriter(root);
     release();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("direct server entry refuses maintenance before decoding a malformed secret envelope", () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-maintenance-envelope-"));
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ["--import", import.meta.resolve("tsx"), resolve("apps/server/src/index.ts")],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          CIVIC_SPARK_MAINTENANCE: "backup",
+          CIVIC_SPARK_DATA_DIR: join(root, "data"),
+          CIVIC_SPARK_SECRETS_B64: "invalid-test-envelope-never-decode",
+        },
+        encoding: "utf8",
+        timeout: 15000,
+      },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Application startup is blocked by maintenance mode");
+    expect(result.stderr).not.toContain("Invalid deployment secret envelope");
+    expect(result.stderr).not.toContain("invalid-test-envelope-never-decode");
+    expect(result.stdout).toBe("");
+    expect(existsSync(join(root, "data"))).toBe(false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("staging rejects disk filesystems, missing findmnt, links and wrong mode before accepting secret inputs", () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-staging-"));
+  try {
+    const shm = join(root, "shm");
+    mkdirSync(shm);
+    const input = join(shm, "civic-spark-backup-input");
+    const script = join(root, "prepare.sh");
+    writeFileSync(
+      script,
+      readFileSync("deploy/fly/prepare-backup-input.sh", "utf8")
+        .replaceAll("/dev/shm", shm)
+        .replaceAll("/data/civic-spark-backups", join(root, "output")),
+    );
+    writeFileSync(
+      join(root, "readlink"),
+      '#!/bin/sh\nprintf "%s\\n" "$CIVIC_SPARK_TEST_CANONICAL"\n',
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      join(root, "findmnt"),
+      '#!/bin/sh\nprintf "%s\\n" "$CIVIC_SPARK_TEST_FSTYPE"\nexit "$CIVIC_SPARK_TEST_FINDMNT_EXIT"\n',
+      { mode: 0o755 },
+    );
+    for (const command of ["chown", "install"])
+      writeFileSync(
+        join(root, command),
+        '#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$CIVIC_SPARK_TEST_LOG"\n',
+        { mode: 0o755 },
+      );
+    const env = {
+      ...process.env,
+      PATH: `${root}:${process.env.PATH}`,
+      CIVIC_SPARK_MAINTENANCE: "backup",
+      CIVIC_SPARK_TEST_CANONICAL: shm,
+      CIVIC_SPARK_TEST_FSTYPE: "tmpfs",
+      CIVIC_SPARK_TEST_FINDMNT_EXIT: "0",
+      CIVIC_SPARK_TEST_LOG: join(root, "calls"),
+    };
+    for (const extra of [
+      { CIVIC_SPARK_TEST_FSTYPE: "ext4" },
+      { CIVIC_SPARK_TEST_FINDMNT_EXIT: "127" },
+      { CIVIC_SPARK_TEST_CANONICAL: join(root, "different-mount") },
+      { CIVIC_SPARK_MAINTENANCE: "off" },
+    ]) {
+      const result = spawnSync("sh", [script], { env: { ...env, ...extra }, encoding: "utf8" });
+      expect(result.status).toBe(1);
+      expect(existsSync(input)).toBe(false);
+      expect(existsSync(env.CIVIC_SPARK_TEST_LOG)).toBe(false);
+    }
+    const actual = join(root, "real-shm");
+    renameSync(shm, actual);
+    symlinkSync(actual, shm);
+    expect(spawnSync("sh", [script], { env, encoding: "utf8" }).status).toBe(1);
+    expect(existsSync(join(actual, "civic-spark-backup-input"))).toBe(false);
+    rmSync(shm);
+    renameSync(actual, shm);
+    const success = spawnSync("sh", [script], { env, encoding: "utf8" });
+    expect(success.status).toBe(0);
+    expect(success.stdout).toContain("ready on tmpfs");
+    expect(statSync(input).mode & 0o777).toBe(0o700);
+    expect(spawnSync("sh", [script], { env, encoding: "utf8" }).status).toBe(1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
