@@ -2,6 +2,12 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Current participant workflow requests
+
+- [ ] Add a main-menu Teams destination for existing event teams, moving discovery out of the bottom of Projects; retain My teams and separate Admin Teams.
+- [ ] Make fresh team checkout Launch prepare project dependencies and run the shared demo without a coding agent/model/key; visible preparation and retry, all execution inside owner Sprite, lifecycle gates preserved.
+- [ ] Review, integrate, push and deploy both tested changes; no live participant code/resource mutation during development.
+
 ## Admin feedback integration — September 16, 2026
 
 - [x] Replace Sprite cards with a compact list for dozens of resources, individual Pause/Delete, elapsed runtime and one Estimated cost currency amount using an internal best-guess assumption; no cost prose, ranges, formulas, disclosures or tooltips in the UI.

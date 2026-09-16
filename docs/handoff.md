@@ -1,3 +1,9 @@
+# Pending participant Teams and no-agent demo launch
+
+User requested a separate main Teams list instead of existing-team discovery at the bottom of Projects. Paseo Astra full-access `25f73373-a00b-4324-b29b-6281022462a3` owns isolated `civic-spark-participant-teams`, based on main `be202fb`; preserve My teams and Admin Teams.
+
+User also reported a newly joined team preview failed because Vite/dependencies were absent; a model fixed it, but join → Launch must work without a model/key. Astra full-access `95c724b3-a1ef-4b29-9acb-99ec2c99c774` owns `civic-spark-preview-dependencies`. Source confirms preview.py starts the configured npm dev command without installing project dependencies; POST preview also currently invokes full agent runtime preparation to initialize environment.json. Implement deterministic project preparation inside the owner Sprite with visible progress/retry, manifest/lock invalidation, concurrent launch serialization and pause/delete gates; preserve project files and existing environment configuration. No management-host participant execution, auto Share or model calls. Both changes remain pending, root owns integration/deployment and coordinates file overlaps.
+
 # Compact Sprite controls and Admin hierarchy LIVE — September 16, 2026
 
 Runtime **`3cea3ec`** is deployed at https://civic-spark.fly.dev and pushed to main. It includes the compact one-row-per-Sprite list with owner/team, status, elapsed runtime, one Estimated cost amount and individual Pause/Delete. Cost has no ranges, formulas, prose, tooltip or disclosure. The portal has one **Admin** parent with Sprites, Projects, Teams and People & roles directly beneath; the parent expands in place on mobile, and choosing a child closes Menu. No Overview/Admin overview duplicate remains.
