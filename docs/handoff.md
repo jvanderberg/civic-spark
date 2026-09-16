@@ -1,10 +1,18 @@
+# Participant Teams LIVE — September 16, 2026
+
+Runtime `5245524` is live at https://civic-spark.fly.dev and pushed to main (source `744901a`). Teams is a separate main-menu destination; Projects no longer embeds team discovery. My teams and Admin → Teams retain their existing scopes. Implementation check passed 270 tests / 48 files plus complete mobile, portal/admin and ten-case Teams checks. The exact runtime/test tree was retained during integration; clean deployment context passed 142 inputs.
+
+Root live GET-only acceptance passed ten viewport/theme combinations: initial main-menu and Admin bounds, real event team rows, Projects separation, My teams and nested Admin Teams. Screenshots inspected; no mutation requests or console errors. Live source hashes and health passed, all 16 project hashes and the participant reservation remained unchanged, and the original Machine/volume/receipt were retained. Four allocated workspaces were ready and idle immediately before deployment. Evidence: ignored live `artifacts/teams-deploy/{acceptance,verification}.json` and screenshots. Root test selectors were corrected for existing whitespace/counts and the actual My teams heading; no product changes were needed.
+
+Dependency-ready preview Launch and screenshot paste remain unfinished below. First live backup remains pending a coordinated maintenance window.
+
 # Preview dependencies and screenshot paste pending
 
 User also reported a newly joined team preview failed because Vite/dependencies were absent; a model fixed it, but join → Launch must work without a model/key. Astra full-access `95c724b3-a1ef-4b29-9acb-99ec2c99c774` owns `civic-spark-preview-dependencies`. Source confirms preview.py starts the configured npm dev command without installing project dependencies; POST preview also currently invokes full agent runtime preparation to initialize environment.json. Implement deterministic project preparation inside the owner Sprite with visible progress/retry, manifest/lock invalidation, concurrent launch serialization and pause/delete gates; preserve project files and existing environment configuration. No management-host participant execution, auto Share or model calls. Preview preparation remains pending, root owns integration/deployment and coordinates file overlaps.
 
 Screenshot paste is also pending: full-access Astra `4514c85e-c952-4b7d-a729-2fc24813a841` owns `civic-spark-agent-image-paste`. Current composer/provider prompt is text-only; task adds image clipboard/file-picker attachments and actual supported multimodal provider delivery with private bounded storage/replay and no paid model tests. Exact configured GLM capability and pinned SDK wire are being verified. No image capability is live yet.
 
-# Participant Teams navigation — September 16, 2026 (local, integration pending)
+# Participant Teams navigation — September 16, 2026 (deployed)
 
 The main portal now places **Teams** between Explore projects and My teams. Explore projects contains the project catalog; Teams uses a compact, internally scrolling event-scoped list with project names, member counts/names and the existing join/open/shared-ZIP actions. My teams keeps personal workspace shortcuts and briefs. Admin → Teams retains its separate management scope and corrected parent/child hierarchy. The responsive main-navigation rows are 44px high so the additional destination fits the initial 360×430 and 900×390 menu; expanded admin children still scroll internally.
 
