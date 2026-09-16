@@ -1,5 +1,6 @@
 const allowed = new Set([
   "SPRITE_TOKEN",
+  "CIVIC_SPARK_PREVIEW_RELAY_SECRET",
   "BETTER_AUTH_SECRET",
   "RESEND_API_KEY",
   "SMTP_USER",

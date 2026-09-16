@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
+import { validatePreviewOriginTemplate } from "../apps/server/src/preview-config.ts";
 import { validateSpriteToken } from "../packages/sprites/src/credentials.ts";
 import {
   PreviewSetupError,
@@ -32,6 +33,7 @@ export const setupSchema = z
     authMode: z.enum(["email", "demo"]).default("email"),
     siteEventId: z.uuid().optional(),
     previewIngress: z.boolean().default(false),
+    previewOriginTemplate: z.string().min(1).optional(),
     emailProvider: z.enum(["smtp", "resend"]).optional(),
     emailFrom: z
       .string()
@@ -51,6 +53,17 @@ export const setupSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.previewOriginTemplate) {
+      try {
+        validatePreviewOriginTemplate(value.previewOriginTemplate, value.origin);
+      } catch {
+        ctx.addIssue({
+          code: "custom",
+          path: ["previewOriginTemplate"],
+          message: "Use a separate HTTPS preview origin with one {workspace} hostname label",
+        });
+      }
+    }
     if (value.authMode === "email" && (!value.emailProvider || !value.emailFrom))
       ctx.addIssue({ code: "custom", message: "Email mode requires emailProvider and emailFrom" });
     if (value.emailProvider === "smtp" && (!value.smtpHost || !value.smtpPort))
@@ -78,6 +91,8 @@ export function flyConfig(input: Setup, previewOriginPool: string[] = []) {
   if (input.siteEventId) env.CIVIC_SPARK_SITE_EVENT_ID = input.siteEventId;
   if (previewOriginPool.length)
     env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL = JSON.stringify(previewOriginPool);
+  if (input.previewOriginTemplate)
+    env.CIVIC_SPARK_PREVIEW_ORIGIN_TEMPLATE = input.previewOriginTemplate;
   if (input.authMode === "email")
     Object.assign(env, {
       CIVIC_SPARK_EMAIL_PROVIDER: input.emailProvider,

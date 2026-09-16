@@ -181,6 +181,7 @@ try {
     await page.screenshot({ path: join(artifacts, `environment-${theme}.png`) });
   }
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
   const panel = await page.getByRole("region", { name: "Web server and publishing" }).boundingBox();
   assert(panel && panel.x >= 0 && panel.x + panel.width <= 390);
   await page.screenshot({ path: join(artifacts, "environment-mobile.png") });
@@ -188,6 +189,7 @@ try {
   await page.getByRole("button", { name: "Launch", exact: true }).waitFor();
   conflict = true;
   await page.reload();
+  await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
   await page.getByRole("button", { name: "Confirm conflict resolution", exact: true }).click();
   assert.equal(approved, false);
   await page.getByRole("button", { name: "Resolve with agent", exact: true }).click();

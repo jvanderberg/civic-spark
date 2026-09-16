@@ -27,6 +27,7 @@ import { createAuthentication } from "./auth.ts";
 import { clientAddress, storageReady, validateDeployment } from "./deployment.ts";
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
+import type { PreviewTransportFactory } from "./preview.ts";
 import { prototypeSignIn } from "./prototype-auth.ts";
 import { WorkspaceProvisioning } from "./provisioning.ts";
 import { registerTeamUpdateRoutes } from "./team-updates.ts";
@@ -51,6 +52,7 @@ export async function createApp(
     .enum(["email", "prototype", "demo"])
     .parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
   siteEventId = z.uuid().optional().parse(process.env.CIVIC_SPARK_SITE_EVENT_ID),
+  previewTransport?: PreviewTransportFactory,
 ) {
   const deployment = validateDeployment(root, baseURL, authMode);
   const prototype = authMode === "prototype";
@@ -75,7 +77,17 @@ export async function createApp(
   const terminals = new TerminalSessions();
   const agents = new AgentSessions();
   const sharing = new Set<string>();
-  const integrations = new WorkspaceIntegrations(service, root, sharing, baseURL);
+  const integrations = new WorkspaceIntegrations(
+    service,
+    root,
+    sharing,
+    baseURL,
+    undefined,
+    previewTransport,
+  );
+  app.addHook("onReady", async () => {
+    integrations.previews.attach(app.server);
+  });
   const provisioning = new WorkspaceProvisioning(service, root);
   const authentication = await createAuthentication(
     root,

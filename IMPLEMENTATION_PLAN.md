@@ -85,7 +85,10 @@ A native helper for syncing while the browser is closed is a possible later exte
 - [x] Agent guidance requires current-batch publication confirmation; conflict approval remains separate
 - [x] Configured Sprite web server Launch/Restart, actual readiness, logs and private local preview
 - [x] Agent Git publication relay, clean rebase and owner-confirmed conflict resolution
-- [ ] Integration Sprite, configured checks and hosted/shared app preview
+- [x] Private hosted preview routing: isolated HTTPS origins, one-time owner handshakes, session revocation, HTTP/assets/WebSocket HMR and durable never-reused origin-pool assignments; local TLS/relay/browser validation
+- [ ] Provision automatic Fly ingress pool and verify deployed acceptance; preserve one origin per workspace across restart/removal
+- [ ] Verify deployed Open preview with a dedicated Sprite; preserve participant app/process/session state
+- [ ] Integration Sprite, configured checks and shared app preview
 - [ ] Enforced model budgets and deployment resource limits
 - [ ] GitHub publication, external backups, retention and recovery rehearsal
 - [x] Locally validated Fly control-plane deployment package: single-writer volume, canonical HTTPS/auth guards, trusted proxy boundary, pinned build, staged secret setup and restart reconciliation
@@ -97,4 +100,4 @@ A native helper for syncing while the browser is closed is a possible later exte
 
 The initial anonymous organizer rehearsal has been superseded. Its data remains on disk but is not assigned to authenticated users. The original Git bundle round-trip proof and provider-portability/mTLS design remain valid.
 
-Deployment setup, exact commands, constraints and validation gaps: [Fly deployment](docs/fly-deployment.md). Hosted preview opening remains explicitly unavailable; continuous hosted Git/mTLS, complete cross-store crash recovery and unattended-session/budget enforcement are not complete.
+Deployment setup, exact commands, constraints and validation gaps: [Fly deployment](docs/fly-deployment.md). Hosted previews require isolated HTTPS origin configuration and still await live acceptance; continuous hosted Git/mTLS, complete cross-store crash recovery and unattended-session/budget enforcement are not complete.

@@ -19,7 +19,7 @@ import type { EventService } from "../../../packages/domain/src/service.ts";
 import type { Result } from "../../../packages/domain/src/types.ts";
 import { git } from "../../../packages/git/src/repository.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
-import { WorkspacePreviews } from "./preview.ts";
+import { type PreviewTransportFactory, WorkspacePreviews } from "./preview.ts";
 
 const requestSchema = z.object({
   id: z.uuid(),
@@ -64,12 +64,28 @@ export class WorkspaceIntegrations {
     private service: EventService,
     root: string,
     private busy: Set<string>,
-    private portal: string,
+    portal: string,
     private client = new SpriteClient(),
+    previewTransport?: PreviewTransportFactory,
   ) {
     this.directory = join(root, "agent-integrations");
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-    this.previews = new WorkspacePreviews(portal);
+    this.previews = new WorkspacePreviews(
+      portal,
+      previewTransport,
+      process.env.CIVIC_SPARK_PREVIEW_ORIGIN_TEMPLATE,
+      process.env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL
+        ? {
+            pool: z
+              .array(z.string())
+              .min(1)
+              .max(10000)
+              .parse(JSON.parse(process.env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL)),
+            root,
+            relaySecret: process.env.CIVIC_SPARK_PREVIEW_RELAY_SECRET ?? "",
+          }
+        : undefined,
+    );
   }
   private path(id: string) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid workspace");
@@ -208,7 +224,7 @@ export class WorkspaceIntegrations {
   async openPreview(id: string, owner: Identity, authorized: () => Promise<boolean>) {
     const workspace = unwrap(this.service.workspace(owner, id, true));
     if (!workspace.spriteName) throw new Error("Web preview needs a running Sprite.");
-    if (!["127.0.0.1", "localhost"].includes(new URL(this.portal).hostname))
+    if (!this.previews.configured)
       throw new Error("Hosted preview is not configured for this installation.");
     const status = await this.preview(id, owner, "status");
     if (!status.ready)
