@@ -12,7 +12,10 @@ import {
   teamInputSchema,
   verifiedIdentitySchema,
 } from "../../../packages/domain/src/access-types.ts";
-import { lifecycleActionSchema } from "../../../packages/domain/src/lifecycle.ts";
+import {
+  lifecycleActionSchema,
+  spriteActionSchema,
+} from "../../../packages/domain/src/lifecycle.ts";
 import { EventService } from "../../../packages/domain/src/service.ts";
 import { createEventSchema, type Result } from "../../../packages/domain/src/types.ts";
 import { git } from "../../../packages/git/src/repository.ts";
@@ -342,18 +345,36 @@ export async function createApp(
   app.get<{ Params: { id: string } }>("/api/events/:id/sprites", async (r, reply) =>
     send(reply, await lifecycle.inventory(actor(r.actor), r.params.id)),
   );
+  app.post<{ Params: { id: string; workspaceId: string } }>(
+    "/api/events/:id/sprites/:workspaceId",
+    async (r, reply) => {
+      const input = spriteActionSchema.parse(r.body);
+      return send(
+        reply,
+        await lifecycle.changeSprite(
+          actor(r.actor),
+          r.params.id,
+          r.params.workspaceId,
+          input.action,
+          input.generation,
+        ),
+      );
+    },
+  );
   app.post<{ Params: { id: string } }>("/api/events/:id/execution", async (r, reply) => {
     const input = lifecycleActionSchema.parse(r.body);
     return send(reply, await lifecycle.change(actor(r.actor), r.params.id, input.action));
   });
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/wake", async (r, reply) => {
+    if (!spritesEnabled)
+      return reply
+        .code(409)
+        .send({ error: "Cloud workspaces are not enabled for this installation yet" });
     const workspace = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!workspace.ok) return send(reply, workspace);
-    if (provisioning.needsRecovery(workspace.value)) {
-      const result = provisioning.start(workspace.value);
-      if (!result.ok) return send(reply, result);
-      return reply.code(result.value.preparing ? 202 : 200).send(result.value);
-    }
+    const prepared = provisioning.start(workspace.value);
+    if (!prepared.ok) return send(reply, prepared);
+    if (prepared.value.preparing) return reply.code(202).send(prepared.value);
     if (workspace.value.spriteName && workspace.value.spriteStatus === "ready") {
       const awake = await client.exec(workspace.value.spriteName, ["true"]);
       if (!awake.ok) return send(reply, awake);

@@ -3,12 +3,13 @@ import { z } from "zod";
 import type { SpriteObservation } from "../../domain/src/lifecycle.ts";
 // Official rates retrieved 2026-09-16: https://fly.io/sprites/#pricing.
 // CPU is cumulative cpu.stat usage, not elapsed allocation time. Memory and
-// storage usage are not exposed by Get Sprite. Never invent a total bill.
+// storage usage are not exposed by Get Sprite; estimates use explicit setup assumptions.
 import { SPRITE_PRICING } from "../../domain/src/lifecycle.ts";
 import { SpriteClient } from "./client.ts";
 export interface SpriteLifecycleProvider {
   inspect(name: string): Promise<SpriteObservation>;
   stop(name: string): Promise<void>;
+  destroy(name: string): Promise<void>;
 }
 const nameSchema = z.string().regex(/^civic-spark-[a-z0-9-]{1,45}$/);
 const dateSchema = z.iso.datetime({ offset: true }).nullish();
@@ -84,7 +85,11 @@ export class SpriteLifecycle implements SpriteLifecycleProvider {
       },
     );
     // Provider diagnostics can contain command lines or credentials. Never relay them.
-    if (!response.ok) {
+    if (method === "DELETE" && [204, 404].includes(response.status)) {
+      await response.body?.cancel();
+      return null;
+    }
+    if (method === "DELETE" || !response.ok) {
       await response.body?.cancel();
       throw new Error(
         `Sprite lifecycle request failed (${response.status}). Retry after checking provider access.`,
@@ -144,6 +149,11 @@ export class SpriteLifecycle implements SpriteLifecycleProvider {
       };
     }
   }
+  async destroy(name: string) {
+    // Documented permanent delete: 204 complete; 404 already absent. Every other
+    // response is uncertain and must keep the durable deletion gate in place.
+    await this.api(name, "", "DELETE");
+  }
   async stop(name: string) {
     const info = await this.inspect(name);
     if (info.error) throw new Error(info.error);
@@ -179,8 +189,23 @@ export class SpriteLifecycle implements SpriteLifecycleProvider {
   }
 }
 
-export function cpuLifetimeCeiling(createdAt: string | null, now = Date.now()) {
-  if (!createdAt || !Number.isFinite(Date.parse(createdAt)) || Date.parse(createdAt) > now)
-    return null;
-  return ((now - Date.parse(createdAt)) / 3600000) * 8 * SPRITE_PRICING.cpuHour;
+// Continuously-up estimate using the official example's average coding workload.
+// Setup-wide assumptions, never per-team knobs or claims of measured consumption.
+export function spriteEstimate(createdAt: string | null, now = Date.now()) {
+  const units = (key: string, fallback: number) =>
+    z.coerce
+      .number()
+      .finite()
+      .min(0)
+      .max(10000)
+      .parse(process.env[`CIVIC_SPARK_ESTIMATE_${key}`] ?? fallback);
+  const hourly =
+    units("CPU", 0.6) * SPRITE_PRICING.cpuHour +
+    units("MEMORY_GB", 1.5) * SPRITE_PRICING.memoryGbHour +
+    units("HOT_STORAGE_GB", 5) * SPRITE_PRICING.hotStorageGbHour +
+    units("COLD_STORAGE_GB", 10) * SPRITE_PRICING.coldStorageGbHour;
+  const hours = createdAt ? (now - Date.parse(createdAt)) / 3600000 : NaN;
+  return Number.isFinite(hours) && hours >= 0
+    ? { assumedRuntimeHours: hours, estimatedUsd: hours * hourly }
+    : { assumedRuntimeHours: null, estimatedUsd: null };
 }

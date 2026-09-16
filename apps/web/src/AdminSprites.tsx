@@ -1,10 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
 import type { SpriteInventory } from "../../../packages/domain/src/lifecycle.ts";
-import { SPRITE_PRICING } from "../../../packages/domain/src/lifecycle.ts";
 import { api } from "./api.ts";
 import { Badge, Modal } from "./components.tsx";
+import "./sprite-inventory.css";
 
-const timestamp = (value: string | null) => (value ? new Date(value).toLocaleString() : "Unknown");
+type Row = SpriteInventory["sprites"][number];
+type Action =
+  | { kind: "pause-sprites" | "pause-event" | "unpause-event" }
+  | { kind: "pause" | "delete"; row: Row };
+function elapsed(hours: number | null) {
+  if (hours === null) return "—";
+  if (hours < 1) return `${Math.floor(hours * 60)}m`;
+  if (hours < 24) return `${Math.floor(hours)}h ${Math.floor(hours * 60) % 60}m`;
+  return `${Math.floor(hours / 24)}d ${Math.floor(hours) % 24}h`;
+}
+function status(row: Row) {
+  if (row.runtime.deletion?.state === "failed") return "Delete needs retry";
+  if (row.runtime.deletion?.state === "pending") return "Deleting…";
+  if (row.runtime.deletion?.state === "deleted")
+    return row.runtime.deletion.replacementReserved ? "Rebuilding" : "Deleted";
+  if (row.runtime.stopState === "failed") return "Pause needs retry";
+  if (row.runtime.stopState === "pending") return "Pausing…";
+  if (row.working) return `${row.provider.status} · Working`;
+  return row.runtime.held ? `${row.provider.status} · Paused` : row.provider.status;
+}
 export function AdminSprites({
   eventId,
   refresh,
@@ -13,55 +32,66 @@ export function AdminSprites({
   refresh: () => Promise<void>;
 }) {
   const [inventory, setInventory] = useState<SpriteInventory | null>(null);
-  const [action, setAction] = useState<"pause-sprites" | "pause-event" | "unpause-event" | null>(
-    null,
-  );
+  const [action, setAction] = useState<Action | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const load = useCallback(async () => {
-    const data = await api<SpriteInventory>(`/events/${eventId}/sprites`);
-    setInventory(data);
+    setInventory(await api<SpriteInventory>(`/events/${eventId}/sprites`));
   }, [eventId]);
   useEffect(() => {
     void load().catch((e: Error) => setError(e.message));
   }, [load]);
+  const label =
+    action?.kind === "pause"
+      ? "Pause Sprite"
+      : action?.kind === "delete"
+        ? "Delete Sprite"
+        : action?.kind === "pause-sprites"
+          ? "Pause all Sprites"
+          : action?.kind === "pause-event"
+            ? "Pause hackathon"
+            : "Unpause hackathon";
   async function confirm() {
+    if (!action) return;
     setBusy(true);
     setError("");
     try {
-      const result = await api<{ failures?: number }>(`/events/${eventId}/execution`, "POST", {
-        action,
-      });
+      const result =
+        "row" in action
+          ? await api<{ failures: number }>(
+              `/events/${eventId}/sprites/${action.row.workspaceId}`,
+              "POST",
+              {
+                action: action.kind,
+                generation: action.row.runtime.generation,
+              },
+            )
+          : await api<{ failures?: number }>(`/events/${eventId}/execution`, "POST", {
+              action: action.kind,
+            });
       setAction(null);
       setNotice(
         result.failures
-          ? `${result.failures} Sprite pauses need a retry. Access remains blocked.`
-          : action === "unpause-event"
-            ? "Workspaces can resume when their owners reload."
-            : "Workspace access paused. Provider sleep follows when runtime activity stops.",
+          ? "Some actions need a retry. Affected workspaces remain blocked."
+          : action.kind === "delete"
+            ? "Sprite deleted. Shared team Git remains."
+            : action.kind === "unpause-event"
+              ? "Owners can reopen their workspaces."
+              : "Workspace access paused.",
       );
       await refresh();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Pause could not complete. Retry.");
+      setError(e instanceof Error ? e.message : "Action could not complete. Retry.");
     } finally {
       setBusy(false);
     }
   }
-  const label =
-    action === "pause-sprites"
-      ? "Pause all Sprites"
-      : action === "pause-event"
-        ? "Pause hackathon"
-        : "Unpause hackathon";
   return (
     <section className="section sprite-inventory" aria-labelledby="sprite-title">
       <div className="section-heading">
-        <div>
-          <h2 id="sprite-title">Workspace Sprites</h2>
-          <p>Runtime status for this event’s allocated workspaces.</p>
-        </div>
+        <h2 id="sprite-title">Workspace Sprites</h2>
         <button
           type="button"
           className="button"
@@ -76,7 +106,7 @@ export function AdminSprites({
           type="button"
           className="button"
           disabled={busy}
-          onClick={() => setAction("pause-sprites")}
+          onClick={() => setAction({ kind: "pause-sprites" })}
         >
           Pause all Sprites
         </button>
@@ -84,7 +114,9 @@ export function AdminSprites({
           type="button"
           className="button"
           disabled={busy}
-          onClick={() => setAction(inventory?.event.paused ? "unpause-event" : "pause-event")}
+          onClick={() =>
+            setAction({ kind: inventory?.event.paused ? "unpause-event" : "pause-event" })
+          }
         >
           {inventory?.event.paused ? "Unpause hackathon" : "Pause hackathon"}
         </button>
@@ -100,83 +132,95 @@ export function AdminSprites({
         <p>Loading Sprite status…</p>
       ) : (
         <>
-          <p className="small-text muted">
-            {inventory.sprites.length} allocated · Status refresh does not open a workspace.
-            Background polling is not participant activity.
-          </p>
-          <div className="sprite-grid">
-            {inventory.sprites.map((row) => (
-              <article className="sprite-card" key={row.workspaceId}>
-                <h3>{row.team}</h3>
-                <p>
-                  {row.owner}
-                  {!row.membershipActive && " · Retained workspace"}
-                </p>
-                <code>{row.spriteName}</code>
-                <div className="button-row">
-                  <Badge tone={row.provider.status === "running" ? "green" : "neutral"}>
-                    {row.provider.status}
-                  </Badge>
-                  <span>{row.working ? "Model turn in progress" : "No model turn observed"}</span>
-                </div>
-                <dl>
-                  <dt>Created · provider</dt>
-                  <dd>{timestamp(row.provider.createdAt)}</dd>
-                  <dt>Updated · provider</dt>
-                  <dd>{timestamp(row.provider.updatedAt)}</dd>
-                  <dt>Status observed</dt>
-                  <dd>{timestamp(row.provider.observedAt)}</dd>
-                  <dt>Last participant use · portal</dt>
-                  <dd>{timestamp(row.runtime.lastUsedAt)}</dd>
-                  <dt>Runtime start / active hours</dt>
-                  <dd>Not supplied by provider metadata</dd>
-                  <dt>Pause</dt>
-                  <dd>
-                    {row.runtime.stopState === "failed"
-                      ? "Needs retry"
-                      : row.runtime.held
-                        ? "Access paused"
-                        : "On demand"}
-                  </dd>
-                  <dt>Cost estimate</dt>
-                  <dd>
-                    Total unknown. CPU only:{" "}
-                    {row.cpuLifetimeCeilingUsd === null
-                      ? "no allocation date available"
-                      : `$0–$${row.cpuLifetimeCeilingUsd.toFixed(2)} allocation-age ceiling`}
-                    .
-                  </dd>
-                </dl>
-                {row.provider.error && <p role="status">{row.provider.error}</p>}
-                {row.runtime.stopError && <p className="error">{row.runtime.stopError}</p>}
-              </article>
-            ))}
-          </div>
+          <p className="small-text muted sprite-list-note">{inventory.sprites.length} workspaces</p>
+          <table className="sprite-list" aria-label="Event Sprites">
+            <thead>
+              <tr>
+                <th scope="col">Owner / team</th>
+                <th scope="col">Status</th>
+                <th scope="col">Runtime</th>
+                <th scope="col">Estimated cost</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inventory.sprites.map((row) => (
+                <tr key={row.workspaceId} data-workspace={row.workspaceId}>
+                  <th
+                    scope="row"
+                    className="sprite-identity"
+                    title={`${row.spriteName}${row.membershipActive ? "" : " · Retained workspace"}`}
+                  >
+                    <span>{row.owner}</span>
+                    <small>{row.team}</small>
+                  </th>
+                  <td
+                    className="sprite-status"
+                    title={
+                      row.runtime.deletion?.error ??
+                      row.runtime.stopError ??
+                      row.provider.error ??
+                      `Provider observed ${new Date(row.provider.observedAt).toLocaleString()}`
+                    }
+                  >
+                    {status(row)}
+                  </td>
+                  <td
+                    className="sprite-time"
+                    title={
+                      row.provider.createdAt
+                        ? `Since ${new Date(row.provider.createdAt).toLocaleString()}`
+                        : "Start unavailable"
+                    }
+                  >
+                    <span className="sprite-mobile-label">Runtime </span>
+                    {elapsed(row.assumedRuntimeHours)}
+                  </td>
+                  <td className="sprite-cost">
+                    <span className="sprite-mobile-label">Est. </span>
+                    {row.estimatedUsd === null
+                      ? "—"
+                      : new Intl.NumberFormat("en-US", {
+                          style: "currency",
+                          currency: "USD",
+                        }).format(row.estimatedUsd)}
+                  </td>
+                  <td className="sprite-actions">
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={
+                        busy ||
+                        Boolean(
+                          row.runtime.deletion &&
+                            !(
+                              row.runtime.deletion.state === "deleted" &&
+                              row.runtime.deletion.replacementReserved
+                            ),
+                        )
+                      }
+                      onClick={() => setAction({ kind: "pause", row })}
+                    >
+                      {row.runtime.stopState === "failed" ? "Retry pause" : "Pause"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button danger"
+                      disabled={
+                        busy ||
+                        (row.runtime.deletion?.state === "deleted" &&
+                          !row.runtime.deletion.replacementReserved)
+                      }
+                      onClick={() => setAction({ kind: "delete", row })}
+                    >
+                      {row.runtime.deletion?.state === "failed" ? "Retry delete" : "Delete"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {!inventory.sprites.length && <p>No Sprites have been allocated for this event.</p>}
-          <details>
-            <summary>Cost and sleep estimates</summary>
-            <p>
-              CPU bounds assume between zero and eight fully used CPUs for the entire allocation
-              age, including unknown sleep time. They are not a total charge. Actual CPU seconds,
-              memory GB-hours, active history and stored bytes are unavailable here.
-            </p>
-            <p>
-              Provider sleep has no compute charges; stored data can still cost money. Rates in USD
-              as of {SPRITE_PRICING.asOf}: ${SPRITE_PRICING.cpuHour}/CPU-hour, $
-              {SPRITE_PRICING.memoryGbHour}/memory GB-hour, ${SPRITE_PRICING.hotStorageGbHour}/hot
-              storage GB-hour and ${SPRITE_PRICING.coldStorageGbHour}/cold storage GB-hour. Model
-              charges, plan allowances and other hosting costs are excluded.{" "}
-              <a href={SPRITE_PRICING.source} target="_blank" rel="noreferrer">
-                Official pricing
-              </a>
-            </p>
-            <p>
-              Sprites suspend automatically after about 30 seconds without provider activity. Civic
-              Spark releases inactive workspace polling after {inventory.idleMinutes} minutes.
-              Active model turns, recent terminal input/output and recent preview use delay idle
-              release.
-            </p>
-          </details>
         </>
       )}
       {action && (
@@ -187,14 +231,23 @@ export function AdminSprites({
           }}
         >
           <div className="modal-body">
+            {"row" in action && (
+              <p>
+                <strong>{action.row.owner}</strong> · {action.row.team}
+              </p>
+            )}
             <p>
-              {action === "pause-sprites"
-                ? "Interrupt agents, terminals and previews for this event. Saved files and conversations remain. Owners can reload their workspaces to resume."
-                : action === "pause-event"
-                  ? "Interrupt agents, terminals and previews and block workspace execution until an admin unpauses. Shared team source remains available to download. Saved files and conversations remain."
-                  : "Allow owners to resume their existing workspaces on demand. This does not start all Sprites."}
+              {action.kind === "delete"
+                ? "Permanently delete this Sprite and its unshared private files, saved keys and conversation history. Shared team Git remains. The owner can reopen a new workspace from shared Git."
+                : action.kind === "pause"
+                  ? "Interrupt this workspace’s agents, terminal and preview. Saved files and conversations remain. Its owner can reopen it unless the hackathon is paused."
+                  : action.kind === "pause-sprites"
+                    ? "Interrupt agents, terminals and previews for this event. Saved files and conversations remain. Owners can reload their workspaces to resume."
+                    : action.kind === "pause-event"
+                      ? "Interrupt agents, terminals and previews and block workspace execution until an admin unpauses. Shared team source remains available to download. Saved files and conversations remain."
+                      : "Allow owners to resume their workspaces on demand. This does not start all Sprites."}
             </p>
-            {action !== "unpause-event" && (
+            {action.kind.startsWith("pause") && (
               <p>Unsaved changes inside running programs may be lost.</p>
             )}
             {error && (
@@ -213,7 +266,7 @@ export function AdminSprites({
               </button>
               <button
                 type="button"
-                className="button primary"
+                className={`button ${action.kind === "delete" ? "danger" : "primary"}`}
                 disabled={busy}
                 onClick={() => void confirm()}
               >

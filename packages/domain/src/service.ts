@@ -119,7 +119,10 @@ export class EventService {
     const workspace = this.provisioningRecords().find((w) => w.id === id);
     if (!workspace) return fail("Workspace not found", 404);
     if (this.execution(workspace.eventId).paused) return fail(PAUSED_MESSAGE, 423);
-    if (this.runtime(id).held) return fail(HELD_MESSAGE, 423);
+    const runtime = this.runtime(id);
+    if (runtime.deletion && runtime.deletion.state !== "deleted")
+      return fail("Sprite deletion needs to finish. Ask an event admin to retry.", 423);
+    if (runtime.held) return fail(HELD_MESSAGE, 423);
     return ok(workspace);
   }
   spriteInventory(actor: Identity, eventId: string) {
@@ -144,16 +147,74 @@ export class EventService {
         }),
     );
   }
+  holdSprite(
+    actor: Identity,
+    eventId: string,
+    id: string,
+    generation: number,
+    deletion?: { org: string; apiOrigin: string },
+  ) {
+    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const workspace = this.provisioningRecords().find(
+      (w) => w.id === id && w.eventId === eventId && w.spriteName,
+    );
+    if (!workspace) return fail("Sprite not found", 404);
+    const runtime = this.runtime(id);
+    if (runtime.generation !== generation)
+      return fail("This Sprite changed. Refresh status before trying again.", 409);
+    if (
+      deletion &&
+      runtime.deletion &&
+      (runtime.deletion.org !== deletion.org || runtime.deletion.apiOrigin !== deletion.apiOrigin)
+    )
+      return fail(
+        "Deletion provider changed. Restore the original provider configuration before retrying.",
+        409,
+      );
+    if (
+      !deletion &&
+      runtime.deletion &&
+      !(runtime.deletion.state === "deleted" && runtime.deletion.replacementReserved)
+    )
+      return fail("This Sprite is deleted or awaiting deletion. Refresh status.", 409);
+    if (deletion && runtime.deletion?.state === "deleted" && !runtime.deletion.replacementReserved)
+      return fail("This Sprite is already deleted.", 409);
+    this.setRuntime(id, {
+      held: true,
+      reason: "admin",
+      generation: generation + 1,
+      stopState: deletion ? null : "pending",
+      stopError: null,
+      ...(deletion
+        ? {
+            deletion: {
+              ...deletion,
+              state: "pending",
+              replacementReserved: false,
+              error: null,
+              changedAt: new Date().toISOString(),
+            },
+          }
+        : {}),
+    });
+    return ok(workspace);
+  }
   holdSprites(actor: Identity, eventId: string) {
     if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
     const workspaces = this.provisioningRecords().filter(
-      (w) => w.eventId === eventId && w.spriteName,
+      (w) =>
+        w.eventId === eventId &&
+        w.spriteName &&
+        (!this.runtime(w.id).deletion ||
+          (this.runtime(w.id).deletion?.state === "deleted" &&
+            this.runtime(w.id).deletion?.replacementReserved)),
     );
     this.db.exec("BEGIN IMMEDIATE");
     try {
       for (const w of workspaces)
         this.setRuntime(w.id, {
           held: true,
+          generation: this.runtime(w.id).generation + 1,
           reason: "admin",
           stopState: "pending",
           stopError: null,
@@ -168,9 +229,17 @@ export class EventService {
   wakeWorkspace(actor: Identity, id: string) {
     const workspace = this.workspace(actor, id, true, true);
     if (!workspace.ok) return workspace;
-    if (this.runtime(id).stopState === "pending")
+    const runtime = this.runtime(id);
+    if (runtime.deletion && runtime.deletion.state !== "deleted")
+      return fail("Sprite deletion needs to finish. Ask an event admin to retry.", 423);
+    if (runtime.stopState === "pending")
       return fail("Sprite pause is still in progress. Retry shortly.", 423);
-    this.setRuntime(id, { held: false, reason: null, lastUsedAt: new Date().toISOString() });
+    this.setRuntime(id, {
+      held: false,
+      reason: null,
+      generation: runtime.generation + (runtime.held ? 1 : 0),
+      lastUsedAt: new Date().toISOString(),
+    });
     return workspace;
   }
   close() {

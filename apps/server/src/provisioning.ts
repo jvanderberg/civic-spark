@@ -61,6 +61,15 @@ export class WorkspaceProvisioning {
     return workspace;
   }
   needsRecovery(workspace: Workspace) {
+    const deletion = this.service.runtime(workspace.id).deletion;
+    if (deletion?.state === "deleted") {
+      if (
+        deletion.org !== (process.env.CIVIC_SPARK_SPRITE_ORG ?? "") ||
+        deletion.apiOrigin !== (process.env.CIVIC_SPARK_SPRITE_API_URL ?? "https://api.sprites.dev")
+      )
+        throw new Error("Deleted Sprite recovery provider mismatch");
+      return deletion;
+    }
     return workspace.spriteName
       ? recoveryPermission(
           this.root,
@@ -72,13 +81,30 @@ export class WorkspaceProvisioning {
       : null;
   }
   start(workspace: Workspace): Result<{ preparing: boolean }> {
+    try {
+      return this.prepare(workspace);
+    } catch {
+      if (this.service.runtime(workspace.id).deletion)
+        this.service.setRuntime(workspace.id, { held: true, reason: "admin" });
+      return fail(
+        "Workspace preparation could not start. Check installation configuration and retry.",
+        503,
+      );
+    }
+  }
+  private prepare(workspace: Workspace): Result<{ preparing: boolean }> {
     const allowed = this.service.executionAllowed(workspace.id);
     if (!allowed.ok) return allowed;
+    const denied = (error: string, status: number) => {
+      if (this.service.runtime(workspace.id).deletion)
+        this.service.setRuntime(workspace.id, { held: true, reason: "admin" });
+      return fail(error, status);
+    };
     let recovery: ReturnType<WorkspaceProvisioning["needsRecovery"]>;
     try {
       recovery = this.needsRecovery(workspace);
     } catch {
-      return fail(
+      return denied(
         "Recovery reservation does not match this installation. Ask the operator to reconcile it.",
         409,
       );
@@ -87,18 +113,22 @@ export class WorkspaceProvisioning {
     if (this.jobs.has(workspace.id)) return ok({ preparing: true });
     const limits = this.limits();
     if (this.jobs.size >= limits.concurrent)
-      return fail("Workspace preparation is busy. Retry shortly.", 429);
-    if (
-      !workspace.spriteName &&
-      this.service.provisioningRecords().filter((w) => w.spriteName).length >= limits.total
-    )
-      return fail(
+      return denied("Workspace preparation is busy. Retry shortly.", 429);
+    const deletion = this.service.runtime(workspace.id).deletion;
+    const needsCapacity =
+      !workspace.spriteName || (deletion?.state === "deleted" && !deletion.replacementReserved);
+    const allocated = this.service.provisioningRecords().filter((w) => {
+      const deleted = this.service.runtime(w.id).deletion;
+      return w.spriteName && (deleted?.state !== "deleted" || deleted.replacementReserved);
+    }).length;
+    if (needsCapacity && allocated >= limits.total)
+      return denied(
         "This installation has reached its workspace limit. Contact the event admin.",
         409,
       );
     const dir = this.service.workspacePath(workspace.id);
     if (!recovery && git(dir, ["status", "--porcelain"]).toString().trim())
-      return fail("Share saved changes before preparing your Sprite", 409);
+      return denied("Share saved changes before preparing your Sprite", 409);
     const name = workspace.spriteName ?? `civic-spark-${workspace.id}`;
     const bundle = join(this.root, `${workspace.id}.bundle`);
     const phase = (next: SpritePhase) => {
@@ -108,9 +138,13 @@ export class WorkspaceProvisioning {
       if (!result.ok) throw new Error(result.error);
     };
     try {
+      if (deletion?.state === "deleted" && !deletion.replacementReserved)
+        this.service.setRuntime(workspace.id, {
+          deletion: { ...deletion, replacementReserved: true },
+        });
       phase("bundling");
     } catch {
-      return fail(
+      return denied(
         "Could not record workspace preparation. Retry; if this continues, ask the event admin to check server storage.",
         503,
       );
@@ -178,7 +212,15 @@ export class WorkspaceProvisioning {
         phase("verifying");
         const saved = this.service.setSprite(workspace.id, name, "ready", null, "ready");
         if (!saved.ok) throw new Error(saved.error);
-        if (recovery) completeRecovery(this.root, workspace.id, name);
+        if (recovery) {
+          completeRecovery(this.root, workspace.id, name);
+          const runtime = this.service.runtime(workspace.id);
+          if (runtime.deletion?.state === "deleted")
+            this.service.setRuntime(workspace.id, {
+              deletion: null,
+              generation: runtime.generation + 1,
+            });
+        }
       } catch (error) {
         this.service.setSprite(
           workspace.id,

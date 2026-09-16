@@ -5,8 +5,8 @@ import type { EventService } from "../../../packages/domain/src/service.ts";
 import { fail, ok } from "../../../packages/domain/src/types.ts";
 import type { SpriteLease } from "../../../packages/sprites/src/client.ts";
 import {
-  cpuLifetimeCeiling,
   type SpriteLifecycleProvider,
+  spriteEstimate,
 } from "../../../packages/sprites/src/lifecycle.ts";
 
 export class WorkspaceLifecycle {
@@ -35,7 +35,18 @@ export class WorkspaceLifecycle {
     // Durable gate already prevents wake after restart. Never silently clear a
     // pending stop or contact a live provider during constructor reconciliation.
     for (const w of service.provisioningRecords()) {
-      if (service.runtime(w.id).stopState === "pending")
+      const runtime = service.runtime(w.id);
+      if (runtime.deletion?.state === "pending")
+        service.setRuntime(w.id, {
+          held: true,
+          deletion: {
+            ...runtime.deletion,
+            state: "failed",
+            error: "Deletion was interrupted. Retry delete to finish.",
+            changedAt: new Date().toISOString(),
+          },
+        });
+      if (runtime.stopState === "pending")
         service.setRuntime(w.id, {
           stopState: "failed",
           stopError: "Pause was interrupted by a server restart. Retry pause to finish.",
@@ -95,17 +106,103 @@ export class WorkspaceLifecycle {
     const sprites: SpriteInventory["sprites"] = [];
     // Bounded event allocation inventory; never list unrelated organization Sprites.
     for (const row of records.value) {
-      const provider = await this.provider.inspect(row.spriteName);
+      const provider =
+        row.runtime.deletion?.state === "deleted" && !row.runtime.deletion.replacementReserved
+          ? {
+              status: "deleted",
+              createdAt: null,
+              updatedAt: null,
+              observedAt: new Date().toISOString(),
+              error: null,
+            }
+          : await this.provider.inspect(row.spriteName);
       sprites.push({
         ...row,
         provider,
         working: this.working(row.workspaceId),
-        cpuLifetimeCeilingUsd: cpuLifetimeCeiling(provider.createdAt),
+        ...spriteEstimate(provider.createdAt),
       });
     }
     // Roles can be revoked while metadata requests are outstanding.
     if (!this.service.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
     return ok({ event: this.service.execution(eventId), idleMinutes: this.idleMinutes, sprites });
+  }
+  async changeSprite(
+    actor: Identity,
+    eventId: string,
+    id: string,
+    action: "pause" | "delete",
+    generation: number,
+  ) {
+    if (!this.service.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    if (this.changing.has(eventId))
+      return fail("A Sprite operation is in progress. Retry shortly.", 409);
+    const org = process.env.CIVIC_SPARK_SPRITE_ORG ?? "";
+    const apiOrigin = process.env.CIVIC_SPARK_SPRITE_API_URL ?? "https://api.sprites.dev";
+    if (action === "delete" && !org) return fail("Sprite organization is not configured.", 503);
+    const held = this.service.holdSprite(
+      actor,
+      eventId,
+      id,
+      generation,
+      action === "delete" ? { org, apiOrigin } : undefined,
+    );
+    if (!held.ok) return held;
+    this.changing.add(eventId);
+    try {
+      this.disconnect(id);
+      const entries = this.operations.get(held.value.spriteName as string);
+      if (entries) {
+        for (const operation of entries) operation.controller.abort();
+        await Promise.all([...entries].map((op) => op.done));
+      }
+      await this.drain(id);
+      // No await separates this authorization check and the provider action.
+      if (!this.service.isAdmin(actor, eventId)) throw new Error("Authorization changed");
+      if (action === "delete") {
+        await this.provider.destroy(held.value.spriteName as string);
+        const deletion = this.service.runtime(id).deletion;
+        if (!deletion) throw new Error("Missing deletion state");
+        this.service.setRuntime(id, {
+          held: true,
+          deletion: {
+            ...deletion,
+            state: "deleted",
+            error: null,
+            changedAt: new Date().toISOString(),
+          },
+        });
+      } else {
+        await this.provider.stop(held.value.spriteName as string);
+        this.service.setRuntime(id, {
+          stopState: "stopped",
+          stopError: null,
+          stoppedAt: new Date().toISOString(),
+        });
+      }
+      return ok({ failures: 0 });
+    } catch {
+      if (action === "delete") {
+        const deletion = this.service.runtime(id).deletion;
+        if (deletion)
+          this.service.setRuntime(id, {
+            held: true,
+            deletion: {
+              ...deletion,
+              state: "failed",
+              error: "Deletion could not be confirmed. Retry delete.",
+              changedAt: new Date().toISOString(),
+            },
+          });
+      } else
+        this.service.setRuntime(id, {
+          stopState: "failed",
+          stopError: "Some Sprite work could not be stopped. Retry pause.",
+        });
+      return ok({ failures: 1 });
+    } finally {
+      this.changing.delete(eventId);
+    }
   }
   async change(
     actor: Identity,

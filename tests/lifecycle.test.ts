@@ -33,6 +33,7 @@ const observation = {
 };
 const provider = () => ({
   inspect: vi.fn<SpriteLifecycleProvider["inspect"]>().mockResolvedValue(observation),
+  destroy: vi.fn().mockResolvedValue(undefined),
   stop: vi.fn<SpriteLifecycleProvider["stop"]>().mockResolvedValue(undefined),
 });
 afterEach(() => vi.restoreAllMocks());

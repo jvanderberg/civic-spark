@@ -89,7 +89,7 @@ it.each(["manifest", "changes"])(
       "email",
       undefined,
       undefined,
-      { inspect: vi.fn(), stop },
+      { inspect: vi.fn(), stop, destroy: vi.fn() },
     );
     const sockets: WebSocket[] = [];
     try {
@@ -172,7 +172,11 @@ it("a disconnected retained terminal releases idle polling without killing remot
   service.setSprite(w.id, sprite, "ready", null);
   let now = Date.now();
   vi.spyOn(Date, "now").mockImplementation(() => now);
-  const provider = { inspect: vi.fn(), stop: vi.fn() };
+  const provider = {
+    inspect: vi.fn(),
+    destroy: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+  };
   const client: SpriteClient = new SpriteClient(undefined, (name, passive) =>
     lifecycle.acquire(name, passive),
   );

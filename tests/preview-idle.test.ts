@@ -80,7 +80,11 @@ it("expires stale real preview sockets despite HMR/ping traffic, protects real u
   const gateway = createServer((_req, res) => res.end("portal"));
   previews.attach(gateway);
   const port = await listen(gateway);
-  const provider = { inspect: vi.fn(), stop: vi.fn() };
+  const provider = {
+    inspect: vi.fn(),
+    destroy: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+  };
   const lifecycle = new WorkspaceLifecycle(
     service,
     provider,

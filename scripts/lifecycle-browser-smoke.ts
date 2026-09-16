@@ -10,6 +10,7 @@ import { ok, type Result } from "../packages/domain/src/types.ts";
 import { SpriteClient } from "../packages/sprites/src/client.ts";
 import { waitEditorText } from "./browser-editor.ts";
 import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
+import { verifySpriteRows } from "./sprite-controls-browser-smoke.ts";
 
 const unwrap = <T>(result: Result<T>) => {
   if (!result.ok) throw new Error(result.error);
@@ -48,6 +49,9 @@ export async function verifyLifecyclePortal() {
           updatedAt: null,
           error: null,
         };
+      },
+      async destroy() {
+        throw new Error("Unexpected delete in bulk fixture");
       },
       async stop(name) {
         stops++;
@@ -255,6 +259,7 @@ export async function verifyLifecyclePortal() {
     Object.assign(SpriteClient.prototype, original);
     rmSync(root, { recursive: true, force: true });
   }
+  await verifySpriteRows();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
   await verifyLifecyclePortal();

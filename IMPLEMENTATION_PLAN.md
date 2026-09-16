@@ -2,15 +2,20 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
-## Outstanding admin feedback — September 16, 2026
+## Admin feedback integration — September 16, 2026
 
-- [ ] Replace Sprite cards with a compact list for dozens of resources, individual Pause/Delete, elapsed runtime and one Estimated cost currency amount using an internal best-guess assumption; no cost prose, ranges, formulas, disclosures or tooltips in the UI. Existing live bulk controls are insufficient.
-- [ ] Put a single Admin parent in portal navigation with Sprites, Projects, Teams and People & roles directly beneath it; remove duplicated Overview/Admin overview entries and the prepended separate navigation.
+- [x] Replace Sprite cards with a compact list for dozens of resources, individual Pause/Delete, elapsed runtime and one Estimated cost currency amount using an internal best-guess assumption; no cost prose, ranges, formulas, disclosures or tooltips in the UI.
+- [x] Put a single Admin parent in portal navigation with Sprites, Projects, Teams and People & roles directly beneath it; remove duplicated Overview/Admin overview entries and the prepended separate navigation.
 - [ ] Review, integrate and deploy these corrections with browser/provider-contract tests; no live participant deletion is authorized by implementation/testing.
 
 ## Event Sprite lifecycle
 
-- [x] Authorized event allocation inventory with provider status, timestamp provenance, explicit unknown usage and labeled CPU-only cost bounds
+Recovered user scope: a compact list for dozens of Sprites with individual Pause/Delete, elapsed runtime and one best-guess currency estimate assuming continuously running since start. No cost prose, ranges, formulas, tooltips or disclosures in the product. Assumptions remain only in operator docs/tests.
+
+- [x] Authorized event allocation inventory with provider status and timestamp provenance
+- [x] Compact one-row-per-Sprite list with elapsed runtime, one estimated cost and individual Pause/Delete confirmation; durable deletion/retry/generation gates and shared-only owner recreation retaining preview origins
+- [x] Individual-control fullcheck (270 tests/48 files), complete mobile and relevant browser verification; 32-row screenshots inspected in both themes
+- [ ] Root integration/deployment of individual controls; no live deletion by implementation agent
 - [x] Durable pause-all workspace holds and event-wide execution pause; cancellation/drain, retryable partial stops, restart gates and on-demand same-Sprite wake
 - [x] Shared Git downloads remain available while paused; no private-source export or prototype fallback
 - [x] Release inactive polling and retained terminal bridges after configurable inactivity; active browser model Tasks holds, preview use and recent terminal input/output protection

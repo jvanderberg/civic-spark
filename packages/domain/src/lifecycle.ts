@@ -7,6 +7,18 @@ export const executionSchema = z.object({
 });
 export type EventExecution = z.infer<typeof executionSchema>;
 export const runtimeSchema = z.object({
+  generation: z.number().int().nonnegative().default(0),
+  deletion: z
+    .object({
+      state: z.enum(["pending", "failed", "deleted"]),
+      changedAt: z.iso.datetime(),
+      replacementReserved: z.boolean().default(false),
+      error: z.string().nullable(),
+      org: z.string().min(1),
+      apiOrigin: z.url(),
+    })
+    .nullable()
+    .default(null),
   held: z.boolean().default(false),
   reason: z.enum(["admin", "idle"]).nullable().default(null),
   lastUsedAt: z.string().nullable().default(null),
@@ -21,6 +33,13 @@ export const HELD_MESSAGE = "This Sprite is paused. Reload your workspace to res
 export const lifecycleActionSchema = z
   .object({
     action: z.enum(["pause-sprites", "pause-event", "unpause-event"]),
+  })
+  .strict();
+
+export const spriteActionSchema = z
+  .object({
+    action: z.enum(["pause", "delete"]),
+    generation: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -45,8 +64,8 @@ export type SpriteInventory = {
     runtime: WorkspaceRuntime;
     provider: SpriteObservation;
     working: boolean;
-    // Allocation age is only a CPU ceiling, never a total bill or running time.
-    cpuLifetimeCeilingUsd: number | null;
+    estimatedUsd: number | null;
+    assumedRuntimeHours: number | null;
   }[];
 };
 

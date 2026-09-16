@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { cpuLifetimeCeiling, SpriteLifecycle } from "../packages/sprites/src/lifecycle.ts";
+import { SpriteLifecycle, spriteEstimate } from "../packages/sprites/src/lifecycle.ts";
 
 it("reads only named management metadata without exposing commands, URLs or credentials", async () => {
   const request = vi.fn<typeof fetch>().mockResolvedValue(
@@ -76,10 +76,10 @@ it("rejects unsafe API origins, malformed metadata and missing dates without inv
     status: "unknown",
     createdAt: null,
   });
-  expect(cpuLifetimeCeiling(null)).toBeNull();
+  expect(spriteEstimate(null).estimatedUsd).toBeNull();
   expect(
-    cpuLifetimeCeiling("2026-09-16T00:00:00Z", Date.parse("2026-09-16T01:00:00Z")),
-  ).toBeCloseTo(0.56);
+    spriteEstimate("2026-09-16T00:00:00Z", Date.parse("2026-09-16T01:00:00Z")).estimatedUsd,
+  ).toBeCloseTo(0.11131);
 });
 
 it.each([
