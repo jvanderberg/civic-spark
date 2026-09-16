@@ -102,3 +102,71 @@ it.each([
     ).rejects.toThrow("Some Sprite work could not be stopped");
   },
 );
+
+it.each(["array", "envelope"])(
+  "stops every validated exec session in the %s response, including is_active:false",
+  async (shape) => {
+    const sessions = [
+      { id: 123, is_active: true },
+      { id: "session-456", is_active: false, command: "PRIVATE command" },
+    ];
+    const kills: string[] = [];
+    const request = vi.fn<typeof fetch>(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/services")) return Response.json([]);
+      if (path.endsWith("/exec"))
+        return Response.json(shape === "array" ? sessions : { count: 2, sessions });
+      if (path.endsWith("/kill")) {
+        kills.push(path);
+        return new Response('{"type":"signal"}\n{"type":"complete"}\n');
+      }
+      return Response.json({ status: "running" });
+    });
+    const managed = vi.fn(async () => {});
+    await new SpriteLifecycle("fixture", "https://api.example", request, managed).stop(
+      "civic-spark-fixture",
+    );
+    expect(managed).toHaveBeenCalledOnce();
+    expect(kills).toEqual([
+      "/v1/sprites/civic-spark-fixture/exec/123/kill",
+      "/v1/sprites/civic-spark-fixture/exec/session-456/kill",
+    ]);
+  },
+);
+
+it("accepts an empty exec envelope without requesting any kills", async () => {
+  const request = vi.fn<typeof fetch>(async (url, init) => {
+    expect(init?.method).toBe("GET");
+    const path = new URL(String(url)).pathname;
+    if (path.endsWith("/services")) return Response.json([]);
+    if (path.endsWith("/exec")) return Response.json({ count: 0, sessions: [] });
+    return Response.json({ status: "running" });
+  });
+  await new SpriteLifecycle("fixture", "https://api.example", request, async () => {}).stop(
+    "civic-spark-fixture",
+  );
+  expect(request).toHaveBeenCalledTimes(3);
+});
+
+it.each([
+  { count: 2, sessions: [{ id: 123 }, { id: "../another-resource" }] },
+  { count: 1, sessions: [{ is_active: false }] },
+  { count: 1, sessions: null },
+  { count: -1, sessions: [] },
+  { count: "1", sessions: [{ id: 123 }] },
+  { count: 0 },
+])("rejects a malformed exec envelope before killing any session", async (body) => {
+  const request = vi.fn<typeof fetch>(async (url, init) => {
+    expect(init?.method).toBe("GET");
+    const path = new URL(String(url)).pathname;
+    if (path.endsWith("/services")) return Response.json([]);
+    if (path.endsWith("/exec")) return Response.json(body);
+    return Response.json({ status: "running" });
+  });
+  await expect(
+    new SpriteLifecycle("fixture", "https://api.example", request, async () => {}).stop(
+      "civic-spark-fixture",
+    ),
+  ).rejects.toThrow();
+  expect(request).toHaveBeenCalledTimes(3);
+});

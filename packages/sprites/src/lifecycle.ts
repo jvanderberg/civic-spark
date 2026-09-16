@@ -28,6 +28,19 @@ const observationSchema = z.object({
   created_at: dateSchema,
   updated_at: dateSchema,
 });
+const sessionsSchema = z.array(
+  z.object({
+    id: z.union([z.number().int().nonnegative(), z.string().regex(/^[a-zA-Z0-9-]+$/)]),
+  }),
+);
+// Public reference examples use an array; the deployed API also returns this
+// envelope. Parse every ID before issuing any kills, regardless of is_active.
+const execListSchema = z.union([
+  sessionsSchema,
+  z
+    .object({ count: z.number().int().nonnegative(), sessions: sessionsSchema })
+    .transform((value) => value.sessions),
+]);
 export function sleeping(status: string) {
   return ["warm", "cold", "suspended", "stopped", "sleeping"].includes(status);
 }
@@ -153,13 +166,7 @@ export class SpriteLifecycle implements SpriteLifecycleProvider {
         failures.push(error);
       }
     }
-    const sessions = z
-      .array(
-        z.object({
-          id: z.union([z.number().int().nonnegative(), z.string().regex(/^[a-zA-Z0-9-]+$/)]),
-        }),
-      )
-      .parse(await this.api(name, "/exec"));
+    const sessions = execListSchema.parse(await this.api(name, "/exec"));
     for (const session of sessions) {
       try {
         await this.api(name, `/exec/${encodeURIComponent(session.id)}/kill`, "POST");

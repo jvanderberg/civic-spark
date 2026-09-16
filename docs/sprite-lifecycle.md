@@ -43,3 +43,9 @@ The [backup/restore workflow](backup-restore.md) captures `event_execution` and 
 The lifecycle browser matrix covers 360/390 phones, desktop and short viewport in both themes: discoverable portal Menu, role-scoped inventory, touch/keyboard confirmation/cancel, paused shared download, unpause and same-Sprite reload. Physical iOS/Android keyboards and live provider idle transitions remain unverified.
 
 Final local checks: `npm run check` passed 237 tests / 47 files, lint, both typechecks and build; `npm run test:deploy-context` passed with 141 packaged inputs. `npm run test:mobile` and portal, workspace, agent, terminal, provisioning, environment and hosted-preview browser suites passed. The final standalone lifecycle run additionally waits for restored file content before screenshots. Actual screenshots were inspected at phone, desktop and short sizes in both themes; consoles were clean. No live resources or paid inference were used. Existing build chunk-size and experimental SQLite notices remain.
+
+### Exec-list compatibility correction
+
+September 16, 2026 dedicated live acceptance found that `GET /v1/sprites/{name}/exec` returned HTTP 200 with `{count, sessions}`, while the public API reference illustrates a bare array. The stop adapter now accepts both shapes and validates every session ID before issuing any kill requests. It does not treat `is_active: false` as proof that a process has exited. Malformed envelopes still fail closed. The dedicated probe separately confirmed an empty services array, available tmux and an empty Tasks list; kill-response and end-to-end stop acceptance remain a separate live verification after integration. This correction was developed using isolated mocks, without provider calls.
+
+Correction validation: focused provider/lifecycle tests passed 19 tests; `npm run check` passed 246 tests in 47 files, lint, both typechecks and production build. No UI behavior changed.
