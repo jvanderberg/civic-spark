@@ -1,0 +1,58 @@
+{
+  "id": "diod",
+  "label": "Day in Our Data",
+  "description": "A four-hour community data event with project tables and a closing showcase.",
+  "projects": [
+    {
+      "id": "business",
+      "name": "Where is business activity changing?",
+      "description": "Explore business starts, endings, and patterns across neighborhoods.",
+      "tags": ["SQL", "Maps"]
+    },
+    {
+      "id": "bikeways",
+      "name": "A more connected bike network",
+      "description": "Find the gaps between everyday destinations and bike routes.",
+      "tags": ["Maps", "Mobility"]
+    },
+    {
+      "id": "budget",
+      "name": "Follow the public dollars",
+      "description": "Make community budgets easier to understand and explore.",
+      "tags": ["Data", "Charts"]
+    }
+  ],
+  "schedule": [
+    {
+      "time": "10:30",
+      "title": "Organizer setup",
+      "description": "Check access, projects, and room setup."
+    },
+    {
+      "time": "11:00",
+      "title": "Welcome and team selection",
+      "description": "Introduce the projects and join a table."
+    },
+    {
+      "time": "11:15",
+      "title": "Make something together",
+      "description": "First work block. Explore, ask questions, and build."
+    },
+    {
+      "time": "12:45",
+      "title": "Food and progress check",
+      "description": "Share an early result and get help."
+    },
+    {
+      "time": "13:00",
+      "title": "Bring it together",
+      "description": "Second work block. Combine changes and prepare a demo."
+    },
+    { "time": "14:30", "title": "Team demos", "description": "Show what you learned and made." },
+    {
+      "time": "15:00",
+      "title": "Wrap up and take it home",
+      "description": "Export the work and share next steps."
+    }
+  ]
+}

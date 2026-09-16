@@ -1,0 +1,152 @@
+# Workspace prototype
+
+## Available now
+
+The workspace fills the browser viewport, with compact Files, Changes, Agent, Terminal, and Local folder tabs. It has no modal frame or bottom sharing bar. Changes provides a commit message and Share action for both local and Sprite workspaces. File editing, diffs, and local folder sync work with either the local development checkout or a ready Sprite. Agent and terminal execution require a ready Sprite and an event that is still open. Every operation checks ownership; event admins do not gain access to someone else's personal workspace.
+
+Prototype email sign-in is explicitly enabled locally with `VIBEHACK_AUTH_MODE=prototype`. This chooses an identity without verifying a mailbox. It uses separate data and cookies; see [authentication](authentication.md#local-prototype-mode).
+
+## Files and changes
+
+New files and uploads use a create-only revision check. Existing edits use content hashes to reject stale saves. File changes refresh approximately every five seconds while the page is active. Unsaved editor buffers are preserved if another editor or agent changes the same file. Reload offers the existing discard confirmation; there is no silent replacement.
+
+Changes compares the working files with `refs/vibehack/base`, initialized when the workspace is created and updated after a successful team sync. Existing workspaces fall back to their known `origin/main` or HEAD. New and deleted files are included; agent commits do not hide differences from the baseline. Binary files show a change notice. Text patches are bounded to 200,000 characters per file and 2 MB total; larger changes require terminal inspection. The local file adapter is TypeScript; the Sprite adapter runs a trusted Python script inside the VM. Neither diff path executes project hooks or external diff tools.
+
+## Local folder sync
+
+The browser requests read/write access to a selected folder. The initial transfer is previewed; existing contents are reconciled, and conflicting files require an explicit choice. After applying that preview, nonconflicting updates run every five seconds while the workspace is mounted and the page is active. Deletions and conflicts pause for review. Save unsaved browser edits before syncing.
+
+The selected folder holds `.vibehack-sync.json`, containing its workspace ID and last successful file hashes. Reconnect the same folder after reopening the page. The marker prevents accidentally reusing a folder for another workspace. No file handle or API credential is stored in it. Each completed file transfer checkpoints progress. If a checkpoint write fails, a later scan can recognize converged copies and recover. Revision checks before replacement reject changes made since the preview. Native editors do not participate in a shared filesystem lock; the browser cannot guarantee a transaction against every simultaneous native write, so avoid actively saving the same file during conflict resolution.
+
+Bounds: 25 MiB per file, 50 MiB per complete scan, 5,000 files. Larger files pause the scan rather than becoming apparent deletions. Hidden paths, dependencies, caches, build output, credential directories/key files, symlinks on the remote/local server adapter, and nonportable names are excluded or rejected. Case-only duplicate file paths reject the scan. Incomplete scans and revoked directory permissions never trigger deletions. This transfers file contents, not Git metadata, executable modes, or symlinks.
+
+Directory access is feature-detected. Desktop Chrome/Edge are the initial target; unsupported browsers retain the editor and explicit file upload/download. Browser closure or suspension stops sync; the interface reconciles when reopened/reconnected. A native background helper is outside this prototype. [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access)
+
+## Terminal
+
+xterm.js connects over an authenticated same-origin WebSocket to a server-side Sprite CLI PTY. The CLI runs a tmux shell inside `/home/sprite/project`. Browser disconnection leaves the shell available for reconnect; a bounded output buffer restores the display. Terminal capability queries are excluded from replay so reconnecting does not inject stale responses into the shell. Inputs and periodic connection checks revalidate the session and membership.
+
+Only the fixed `sprite` executable launches on the management host. Shell input goes to the remote Sprite. The prototype repairs the missing executable bit on node-pty 1.1.0's macOS prebuilt helper during `npm install`; Linux installations may need node-pty's native build prerequisites.
+
+## Agent
+
+The chat UI copies and adapts T3 Code’s composer surface, send/stop controls, approval detail component, activity row, and conversation layout. Upstream source and exact commit are documented in [vendor/t3code/README.md](../apps/web/src/vendor/t3code/README.md); the MIT license and copyright notice are retained. VibeHack connects these components to its own authenticated Sprite runtime. The full workspace remains edge-to-edge; conversation text uses T3’s readable column. Decorative sparkle icons are omitted.
+
+
+Connecting runs the deterministic setup script for Claude Agent SDK 0.3.273, Claude Code 2.1.273, OpenCode/SDK 1.18.31, and Zod 4.4.3 under `/home/sprite/.vibehack-agent`. The terminal uses command launchers in that tool directory too. Each launch reloads the native saved key and forces the fixed model and bypass mode. Setup also repoints the existing `node_modules/.bin` commands, so already-open tmux shells use the new configuration without a shell restart. The TypeScript runner executes inside the Sprite and exchanges structured events through the authenticated API. It supports Claude and OpenCode, streamed text/tool activity, interactive questions, cancellation, and browser reconnection. Connecting alone sends no prompt and makes no model call.
+
+Both coding harnesses bypass tool permission prompts, as explicitly requested. Claude uses `permissionMode: "bypassPermissions"` with `allowDangerouslySkipPermissions: true`; OpenCode uses `permission: "allow"`. Interactive questions still require a participant answer. Terminal defaults match the browser. Code executes inside the owner’s Sprite; this does not change web authentication, membership, or file access checks. The two providers maintain separate session IDs. The only model choices are **Opus 5** (`claude-opus-5`, Claude SDK, Anthropic key) and **GLM** (`openrouter/z-ai/glm-5.3-flash`, OpenCode, OpenRouter key). Model IDs are fixed in the runner, regardless of any client-provided model field. The UI waits for the runner handshake, then checks the API key and starts the chosen runtime before showing model readiness. Provider failures are classified into safe, actionable messages; raw SDK exceptions and credential payloads are never displayed. Verified keys and model defaults are written to owner-readable native provider configuration inside the Sprite home so `opencode` and `claude` in the terminal use the same account and model. They are never written into the project, sync marker, Git repository, or export. Returning agent connections can reload the native credentials. The Sprite and agent can access their own runtime environment, as with ordinary local agent tooling. Credential diagnostics are not forwarded into application logs. [Claude SDK](https://code.claude.com/docs/en/agent-sdk/overview), [OpenCode SDK](https://opencode.ai/docs/sdk/)
+
+### Refresh, reconnect, and history
+
+The workspace URL retains its ID; a refresh reopens it only if it is still present in the signed-in user’s own workspaces. Browser storage keeps only that workspace’s selected tab and model. It contains no keys or conversation text. Returning to the Agent tab automatically reconnects. Tab switches keep the same socket; component cleanup detaches without sending Stop. Transient disconnects retry after 1, 2, and 4 seconds, with an explicit retry after exhaustion; denied access is not retried automatically.
+
+Each attachment receives an authoritative runtime/credential/working-state snapshot independent of the bounded transcript, so old readiness messages being evicted cannot make a live session look disconnected. A page refresh reattaches to the existing runner and active turn. Keys reload from private native configuration after a runner restart; provider-native session IDs remain intact. Saved-key presence and verified provider readiness are separate snapshot fields. Startup and transient browser disconnection do not show an empty key field; a saved key stays hidden in connection settings until that provider fails. Retry revalidates the Sprite-stored key without returning its value to the browser, while a rejected key can be replaced. Network or rate-limit errors during a turn do not clear saved credentials.
+
+A private mode-0600 `conversation.json` journal in `/home/sprite/.vibehack-agent` retains up to 500 events/1 MB. Writes are atomic and batched for streaming deltas; credentials and configure messages are excluded and known keys redacted. If a runtime process restarts during a turn, recovery marks it interrupted instead of showing perpetual Working. The next prompt resumes the provider’s saved context. When no transcript exists, the runner imports recent user/assistant text from provider-native history without a model call. Disk failures produce a clear history-save error rather than discarding native context.
+
+GLM has passed a live request and SVG file creation; the original live test also exercised edit approval before bypass became the requested default. Automated checks do not perform Claude inference; a full live questions/cancellation/provider-failure rehearsal remains outstanding. The default live check makes zero model calls; an explicit `--model` flag adds a paid GLM turn, reads its key from stdin, and restores prior native credential files afterward. Production resource limits and unattended-runtime cleanup remain future work.
+
+## Reproducible runtime setup
+
+`packages/agents/runtime/setup.sh` is the sole installation path for the web agent, terminal, and `npm run setup:sprite -- --sprite vibehack-NAME`. It runs inside the Sprite and never invokes an agent. The committed runtime package-lock pins transitive dependencies and integrity hashes. `npm ci --ignore-scripts --include=optional` installs those exact dependencies; the script then explicitly runs the known OpenCode and Claude Code binary installers. It checks executable versions and SDK imports before writing its completion fingerprint. Type checking separately enforces erasable TypeScript syntax for files executed directly by Node in the Sprite. A lock serializes installs, repeated calls verify and reuse the installation, and missing/broken executables trigger repair. Project files and native agent session IDs are preserved.
+
+The previous directory-existence check accepted an incomplete OpenCode installation. Reproduced repair by removing only the OpenCode executable in the dedicated test Sprite: the script reinstalled it successfully, and the next run verified without reinstalling. Both tool executables were also verified in the participant's existing Sprite.
+
+## Verification
+
+- `npm run check`: lint, strict TypeScript, tests, build. Includes prototype identity isolation, sync planning, stale-write rejection, interrupted checkpoint recovery, lost permission/disconnection, file exclusions, and API ownership checks.
+- `npm run test:browser`: existing admin and participant workflow using email links with a test mailbox.
+- `npm run test:agent-browser`: T3-based conversation, connection readiness, streamed Markdown/code, tool details, question/answer, send/stop, errors, and desktop/mobile layout using deterministic WebSocket events. No model calls.
+- `npm run test:workspace-browser`: prototype email login/return, sync in both directions, conflict resolution, deletion review, unsaved buffer preservation, all workspace tabs and mobile layout. Uses real Chromium FileSystem handles in a disposable origin-private folder; only the OS picker is substituted. This does not establish native Windows/macOS folder-picker compatibility.
+- `npm run test:workspace-live -- --sprite vibehack-smoke-NAME`: only an existing dedicated test Sprite. Verifies remote manifest/hash/diff, runner startup/reconnect, interactive terminal execution, and persistent shell state across reconnects. Removes its temporary project file and test tmux session. Installs the pinned agent runtime; makes zero model calls.
+
+Share publishes to the shared team version through authenticated Sprite Git bundle transfer; local workspaces use the same action. The top bar checks for incoming team commits and can apply them through the same authenticated transport. Local folder sync does not publish changes to teammates or GitHub.
+
+### Anthropic workspace selection
+
+A key scoped to a particular Anthropic workspace can connect without an extra ID. Identity-linked keys that are not scoped to a workspace require its `wrkspc_…` ID. Enter it with the key in the connection settings; find it in Claude Console → Settings → Workspaces. Access to list organization workspaces is a separate permission, so the connector does not assume it can discover this automatically.
+
+Validation checks access to the fixed Opus model before saving. The workspace header is saved privately with the key and supplied to both the browser SDK and native Claude CLI through `ANTHROPIC_CUSTOM_HEADERS`. Replacing a key does not silently reuse an unrelated workspace, and rejected replacements preserve the working configuration. Provider error bodies are classified into fixed messages rather than shown verbatim. See [Anthropic authentication](https://platform.claude.com/docs/en/manage-claude/authentication) and [Claude Code environment variables](https://code.claude.com/docs/en/env-vars).
+
+
+### Changes and Share
+
+Changes scans Git independently of the 25 MiB file-sync limit. Large and binary files remain visible with bounded-preview notices. The diff region scrolls inside the workspace and uses the current system theme.
+
+Enter a required **Commit message** and choose **Share**. This stages all shown changes, makes a real local Git commit using the description, and pushes that exact commit to the shared team repository. There is no separate commit, push, or review/accept step in the interface. A failed push retains the local commit for retry. A remote branch that has diverged is not force-updated; the interface reports that team updates must be incorporated first. Edits made after the local commit remain uncommitted. A successful push advances the browser's diff baseline.
+
+The server checks workspace ownership and membership, rechecks access after remote transfer, validates the incoming Git history, and uses a temporary quarantine repository. Revision checks reject files changed since the preview. Excluded files are not staged by Share. Existing local history containing excluded paths blocks publication with an explicit error; Share does not rewrite or replace that history. Current transfer bounds are 50 MB of project files and 10 MB for the compressed bundle. Hosted HTTPS/mTLS Git remains separate future work.
+
+### Editor and appearance
+
+The code view uses [Monaco](https://microsoft.github.io/monaco-editor/), with language selection from the file extension, syntax highlighting, line numbers, find, undo/redo, and Ctrl/Cmd+S wired to the existing revision-checked save. Language selection uses Monaco’s registered filenames/extensions plus common aliases. HTML, CSS, JavaScript and TypeScript tokenizers load directly with the editor so a failed separate grammar request cannot leave those files permanently gray. Other grammars remain lazy; Vue/Svelte use HTML and TOML uses an INI approximation. Unknown types fall back to plain text. The editor and language workers are loaded from the application; no editor CDN or external code execution is required. Large data files still use the documented file limits and preview behavior.
+
+Appearance follows the operating system's light/dark preference at startup and when it changes. Monaco, chat, diff surfaces and xterm receive the same theme changes without restarting sessions or dropping unsaved text. The explorer remembers its width and collapsed state independently. Terminal and Changes panels size to their actual remaining space and scroll internally.
+
+## Provisioning progress and recovery
+
+Opening a cloud workspace starts setup even when reached through a refreshed workspace URL. The owner-only status endpoint reports persisted repository-bundling, Sprite-creation, checkout and file-access verification phases. The preparation view polls every two seconds, shows elapsed time in the current phase, retains startup errors, and provides retry. Repeated starts share one job; an interrupted server job is reported explicitly. Retry checks for the existing Sprite and preserves any existing project checkout. The actual second Bikes ’r Us workspace recovered to ready through the corrected lifecycle without manual file changes. These are process-local jobs with restart detection, not a durable distributed job queue.
+
+## Larger file transfers
+
+The 25 MiB per-file limit applies to text editing, binary upload/download, local-folder sync and Sprite adapters. HTTP budgets account for base64 and JSON escaping; Sprite file transfers allow 120 seconds and larger output. Complete scans remain limited to 50 MiB. Git diff previews retain an independent 1 MiB source-file bound, and compressed Git transfers remain limited to 10 MiB. Automated checks include exact-limit transfers, rejection one byte above the limit without overwriting, and two-way synchronization of a CSV larger than 1 MiB.
+
+## Incoming team updates
+
+The workspace checks shared main every 15 seconds, with a bounded server cache. The top bar highlights incoming commits based on ancestry; your own unpushed commits do not produce a false incoming alert. Opening the menu forces a fresh check, and sharing invalidates the cache.
+
+Get updates fetches the inspected team commit through a Git bundle and merges locally. Save browser buffers first. Saved but uncommitted changes must first be committed using Share; if its push cannot proceed because the team has moved, the local commit remains intact. Clean merges retain both histories, and the Changes baseline stays at the incoming team commit so your unshared edits remain visible.
+
+Conflicts are previewed without changing files. Resolve with agent starts the merge and hands a scoped prompt to the selected saved harness. It runs only after an explicit action. If the harness is not ready or a draft is already present, the prompt is staged for an explicit Send. Verification checks that both histories remain in HEAD, no unmerged index entries remain, and the merge is complete. The pending merge is recoverable after refresh. Review the result and use Share separately to publish it.
+
+Use team version requires confirmation and creates a recovery copy of commits, saved files and Git merge/index state before replacing project content. Later dismisses the choice without changing Git. Dirty browser buffers and active agent work block updates. Checks compare the expected local and team heads again during application. Participant programs and agent checks run only in the Sprite; the management host performs Git and file operations.
+
+### Local sync action and progress
+
+`Sync now` immediately transfers nonconflicting additions and edits, including the first copy into an empty folder. Conflicts and deletions stop for an explicit choice/review; connecting a folder alone still previews it. Transfers show completed/total file counts and the current path. The local-folder panel scrolls within the workspace, and its single Sync now action stays above the file list. Downloads validate the revision returned with each blob instead of redundantly rescanning the complete Sprite for every file; deletion still requires a fresh authorized manifest. Partial transfers retain per-file checkpoints and resume safely.
+
+The reported connected local folder initially contained only the three starter files in its checkpoint. After the corrected sync flow ran, all 12 yearly CSVs were present and matched the Sprite checksums, with no remaining sync differences. No local edits were overwritten during verification.
+
+### Compact actions and terminal opening
+
+The Files view groups New, Upload, Download, Reload, Save and Delete as labeled, keyboard-accessible icon buttons at the upper left. Delete asks for confirmation, uses the selected file revision to reject stale deletion, and preserves unsaved buffers. Successful deletion refreshes the explorer and Changes. Changes has sticky compact commit controls and a plain Commit message field; Share success/failure uses a dismissible toast, while actionable blockers remain next to the controls.
+
+Opening Terminal now automatically prepares the tools and attaches to the existing tmux shell. Switching tabs/themes keeps a healthy socket; refresh reconnects. A hidden/unavailable terminal does not initiate a connection. Explicit disconnect lasts until reopening; transient socket failures retry at 1/2/4 seconds, then expose manual retry. Access denial and preparation errors remain visible rather than causing retry loops.
+
+### Reconnect errors versus saved history
+
+Saved error events remain in the transcript but carry explicit replay provenance from both runtime journal startup and server reattachment. They do not set the current connection error banner or mutate current working/configuration state. The server snapshot separately carries the current unresolved error, so real current failures remain visible across reconnect. This fixes the error flash caused by old provider failures appearing before a successful reconnection.
+
+The local-folder panel has one Sync now button. Pending conflict choices are applied through that same button; unresolved choices disable it. Deletions ask for confirmation when syncing. The former separate Apply sync action has been removed.
+
+## Agent project guidance and environment commands
+
+Both browser harnesses receive a fresh preamble for each turn. Native Claude and OpenCode launchers write the same guidance to a private runtime file outside the checkout. It includes the current bounded `PROJECT.md` as explicitly marked project data, the actual saved web command/port, and the commands that are implemented in this prototype. Provider sessions and credentials stay separate from project context.
+
+Browser Claude explicitly sets `systemPrompt.snapshot: false`: the SDK otherwise reuses the conversation's original system prompt and ignores updated guidance on resume. Reading a fresh guidance file alone does not update the model's prompt. This retains the session history while allowing guidance changes; changing the prompt can invalidate provider prompt caches and earlier extended-thinking state.
+
+The default app stack is React, TypeScript, Vite, Tailwind and Biome with npm and a committed lockfile, unless the user asks for a different stack. For maps, prefer Leaflet with an OpenStreetMap basemap and visible attribution. Prepare static CSV/JSON assets and load them client-side; add a backend only when the requested functionality requires one. Interfaces should be mobile-ready, compact and accessible, using familiar icons and concise necessary text. Preserve existing work; a launch-only request runs the existing app without rewriting it.
+
+The deterministic runtime installs `vibehack` alongside the coding harnesses:
+
+- `vibehack preview start`, `restart`, `stop`, `status`, `logs` manage the configured project server inside the Sprite.
+- `vibehack preview start --port 5173 -- <command> <args>` saves a different app command/port, including a static-file server or a nested app. Stop an existing managed preview before changing its configuration.
+- `vibehack git publish` publishes a real local commit after explicit user confirmation for the current changes. The agent should stage only its task paths and write a meaningful normal Git commit first. Publication deliberately refuses uncommitted unrelated work rather than silently staging/stashing it.
+- `vibehack git status` reports a pending conflict approval or approved resolution.
+
+The host starts an authenticated Sprite exec relay; the Sprite queues bounded private requests and receives structured responses. This works without a publicly routable Mac URL or Git origin. The relay checks the initiating signed-in owner's current session and membership before each operation and stops after access ends. Refresh or another terminal preparation reattaches the integration. No host credential is copied into the project or participant Sprite.
+
+### Web app launch and preview
+
+The runtime's private `environment.json` is the single command/port configuration read by the agent, launch controls and lifecycle adapter. New runtime default: `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`. Launch does not create an app: a missing package/dev script gets an actionable error. Existing static HTML can instead use a configured Python static-file command and its actual directory. Managed launch/restart only controls its own named process; it refuses a port already held by another process. Readiness requires an actual HTTP response.
+
+The top bar provides Launch/Restart, Open preview and compact diagnostics/Stop. The current private prototype uses a Sprite TCP tunnel behind a separate loopback-hostname preview gateway. The gateway is owner-authorized, uses an expiring HttpOnly capability cookie, forwards assets and WebSockets, strips management/preview credentials before forwarding, and rechecks access. A top-level navigation uses SameSite=Lax so the initial cross-host redirect works in actual browsers; cross-origin API requests and WebSockets remain blocked. The preview origin differs from the portal origin and does not receive portal cookies. Preview content never executes on the control-plane host.
+
+This loopback gateway is for the local prototype, not a hosted preview deployment. Sprites also has a native HTTPS URL and managed HTTP services; their public/private exposure and hosted participant authorization are a separate configuration choice. The current implementation never switches a Sprite URL to public. The process/tunnel boundary is replaceable; Fly private networking is not required. [Sprites networking](https://docs.sprites.dev/concepts/networking/), [managed services](https://docs.sprites.dev/concepts/services/).
+
+### Agent publication and conflict confirmation
+
+The preamble permits local preparation and meaningful commits but requires the agent to ask about publishing at useful milestones and obtain explicit user confirmation for the current changes before pushing. A direct publish request is confirmation; silence, task completion or approval for an earlier batch is not. Manual Share remains an explicit user publication action. Publication confirmation is currently enforced through agent guidance and generated handoff instructions, not an independent server-side approval gate for every push command. The agent command fetches the current shared main through the authenticated bundle transport and rebases unpublished linear commits before publishing the exact resulting native HEAD. It refuses force-pushing, dirty worktrees, active merges/rebases and unpublished merge commits that would be flattened. Shared history and recovery refs are retained.
+
+A disposable Sprite worktree checks a potential rebase first. If it conflicts, the original checkout/index remain unchanged and a durable host-side ticket awaits the participant's explicit top-bar approval. Shell input cannot approve that ticket. Approval rechecks the local and remote commits, creates a recovery ref and begins the real rebase. The selected agent resolves, continues the rebase, checks the app, summarizes the result and asks for publication confirmation. Conflict-resolution approval alone does not authorize publishing. Declining leaves the original histories intact. A remote race during push retains the local commits for retry. No model is called while polling or previewing conflicts.

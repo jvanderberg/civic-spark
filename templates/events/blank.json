@@ -1,0 +1,14 @@
+{
+  "id": "blank",
+  "label": "Start from scratch",
+  "description": "An empty event, ready for your community.",
+  "projects": [
+    {
+      "id": "data-starter",
+      "name": "Your first project",
+      "description": "A small, editable starting point. Replace the sample data with your own.",
+      "tags": ["Data", "Starter"]
+    }
+  ],
+  "schedule": []
+}

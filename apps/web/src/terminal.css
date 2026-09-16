@@ -1,0 +1,19 @@
+.workspace-screen > .workspace-panel.terminal-panel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal-panel > .section-heading,
+.terminal-panel > [role="status"] {
+  flex-shrink: 0;
+}
+
+.workspace-screen .terminal-panel .sprite-terminal {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}

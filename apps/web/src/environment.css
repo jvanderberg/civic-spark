@@ -1,0 +1,56 @@
+.environment-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+.environment-controls .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.environment-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  width: min(480px, 90vw);
+  max-height: 70vh;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface);
+  box-shadow: 0 10px 35px #0004;
+  font-size: 12px;
+}
+.environment-heading,
+.environment-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.environment-heading {
+  justify-content: space-between;
+}
+.environment-popover code {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 10px;
+}
+.environment-popover pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  padding: 8px;
+  background: var(--app-muted-surface);
+}
+.environment-conflict {
+  border-top: 1px solid var(--app-border);
+  padding-top: 10px;
+  margin-top: 10px;
+}

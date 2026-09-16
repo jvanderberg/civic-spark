@@ -1,0 +1,275 @@
+import { FitAddon } from "@xterm/addon-fit";
+import { Terminal as Xterm } from "@xterm/xterm";
+import "@xterm/xterm/css/xterm.css";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api } from "./api.ts";
+import { useSystemTheme } from "./theme.ts";
+import "./terminal.css";
+
+export function Terminal({
+  workspace,
+  available,
+  visible,
+}: {
+  workspace: string;
+  available: boolean;
+  visible: boolean;
+}) {
+  const host = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState("Disconnected");
+  const [busy, setBusy] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const activity = useRef({ visible });
+  activity.current = { visible };
+  const controls = useRef({ open: () => {}, retry: () => {}, disconnect: () => {} });
+  const terminalRef = useRef<Xterm | null>(null);
+  const theme = useSystemTheme();
+  const palette = useMemo(
+    () =>
+      theme === "dark"
+        ? {
+            background: "#1e1e1e",
+            foreground: "#d4d4d4",
+            cursor: "#d4d4d4",
+            selectionBackground: "#264f78",
+          }
+        : {
+            background: "#ffffff",
+            foreground: "#24292e",
+            cursor: "#24292e",
+            selectionBackground: "#caddf2",
+          },
+    [theme],
+  );
+  const latestPalette = useRef(palette);
+  latestPalette.current = palette;
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = palette;
+  }, [palette]);
+  useEffect(() => {
+    if (!available || !host.current) return;
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let pending = false;
+    let blocked = false;
+    let manuallyDisconnected = false;
+    let attempts = 0;
+    let generation = 0;
+    let readySince = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let openTimer: ReturnType<typeof setTimeout> | undefined;
+    const terminal = new Xterm({
+      fontSize: 13,
+      cursorBlink: true,
+      scrollback: 2000,
+      theme: latestPalette.current,
+    });
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    terminal.open(host.current);
+    terminalRef.current = terminal;
+    setConnected(false);
+    setBusy(false);
+    setStatus("Disconnected");
+    const resize = () => {
+      if (host.current?.offsetWidth && host.current.offsetHeight) {
+        fit.fit();
+        if (socket?.readyState === WebSocket.OPEN)
+          socket.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }));
+      }
+    };
+    const fail = (message: string) => {
+      blocked = true;
+      setBusy(false);
+      setStatus(message);
+    };
+    const retry = () => {
+      if (attempts >= 3) {
+        fail("Could not reconnect to the terminal. Retry to resume your shell.");
+        return;
+      }
+      // A hidden tab resumes on its next explicit opening, without background connects.
+      if (!activity.current.visible) {
+        setBusy(false);
+        setStatus("Disconnected · reopen to resume");
+        return;
+      }
+      attempts += 1;
+      setBusy(true);
+      setStatus(`Reconnecting (${attempts}/3)`);
+      retryTimer = setTimeout(
+        () => {
+          retryTimer = undefined;
+          if (!activity.current.visible) {
+            setBusy(false);
+            setStatus("Disconnected · reopen to resume");
+            return;
+          }
+          void connect();
+        },
+        1000 * 2 ** (attempts - 1),
+      );
+    };
+    const connect = async () => {
+      if (
+        disposed ||
+        pending ||
+        blocked ||
+        manuallyDisconnected ||
+        !activity.current.visible ||
+        socket ||
+        retryTimer
+      )
+        return;
+      pending = true;
+      const attempt = ++generation;
+      setBusy(true);
+      setStatus(attempts ? `Reconnecting (${attempts}/3)` : "Preparing tools");
+      try {
+        await api(`/workspaces/${workspace}/agent/prepare`, "POST");
+        if (disposed || attempt !== generation) return;
+        pending = false;
+        if (!activity.current.visible) {
+          setBusy(false);
+          setStatus("Disconnected · reopen to resume");
+          return;
+        }
+        const url = new URL(`/api/workspaces/${workspace}/terminal`, location.href);
+        url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        const connection = new WebSocket(url);
+        socket = connection;
+        setStatus(attempts ? `Reconnecting (${attempts}/3)` : "Connecting");
+        openTimer = setTimeout(() => {
+          if (socket !== connection || disposed) return;
+          connection.onclose = null;
+          connection.close();
+          socket = null;
+          retry();
+        }, 15000);
+        connection.onopen = () => {
+          if (socket !== connection || disposed) return;
+          clearTimeout(openTimer);
+          readySince = Date.now();
+          setConnected(true);
+          setBusy(false);
+          setStatus("Connected");
+          // The server replays its shell buffer when reattaching.
+          terminal.reset();
+          resize();
+          if (activity.current.visible) terminal.focus();
+        };
+        connection.onmessage = (event) => {
+          if (socket !== connection || disposed) return;
+          const message = JSON.parse(event.data);
+          if (message.type === "output") terminal.write(message.data);
+        };
+        connection.onclose = (event) => {
+          if (socket !== connection || disposed) return;
+          clearTimeout(openTimer);
+          socket = null;
+          setConnected(false);
+          if ([1008, 4001, 4003, 4401, 4403].includes(event.code)) {
+            fail("This session no longer has workspace access. Sign in again to continue.");
+            return;
+          }
+          if (readySince && Date.now() - readySince > 30000) attempts = 0;
+          readySince = 0;
+          retry();
+        };
+        connection.onerror = () => {
+          // Close reports access failure or schedules a bounded transient retry.
+        };
+      } catch (error) {
+        if (disposed || attempt !== generation) return;
+        pending = false;
+        // Preparation can fail for auth or installation reasons; preserve the actual error.
+        fail(error instanceof Error ? error.message : "Could not prepare terminal tools.");
+      }
+    };
+    controls.current = {
+      open: () => {
+        manuallyDisconnected = false;
+        resize();
+        if (socket?.readyState === WebSocket.OPEN) terminal.focus();
+        else void connect();
+      },
+      retry: () => {
+        blocked = false;
+        manuallyDisconnected = false;
+        attempts = 0;
+        void connect();
+      },
+      disconnect: () => {
+        manuallyDisconnected = true;
+        generation += 1;
+        pending = false;
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+        clearTimeout(openTimer);
+        if (socket) {
+          socket.onclose = null;
+          socket.close();
+          socket = null;
+        }
+        setConnected(false);
+        setBusy(false);
+        setStatus("Disconnected · reopen to resume");
+      },
+    };
+    const input = terminal.onData((data) => {
+      if (socket?.readyState === WebSocket.OPEN)
+        socket.send(JSON.stringify({ type: "input", data }));
+    });
+    const observer = new ResizeObserver(resize);
+    observer.observe(host.current);
+    if (activity.current.visible) void connect();
+    return () => {
+      disposed = true;
+      generation += 1;
+      clearTimeout(retryTimer);
+      clearTimeout(openTimer);
+      controls.current = { open: () => {}, retry: () => {}, disconnect: () => {} };
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+      }
+      input.dispose();
+      observer.disconnect();
+      terminal.dispose();
+      terminalRef.current = null;
+    };
+  }, [workspace, available]);
+  useEffect(() => {
+    if (visible && available) controls.current.open();
+  }, [visible, available]);
+  return (
+    <section className="workspace-panel terminal-panel" hidden={!visible}>
+      <div className="section-heading">
+        <div>
+          <h2>Your Sprite terminal</h2>
+          <p>
+            Run Claude, OpenCode, Python, or other project tools. The shell stays in your Sprite
+            when you close this view.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="button primary"
+          disabled={!available || busy}
+          onClick={() => {
+            if (connected) controls.current.disconnect();
+            else controls.current.retry();
+          }}
+        >
+          {connected ? "Disconnect" : busy ? "Connecting…" : "Reconnect terminal"}
+        </button>
+      </div>
+      {!available ? (
+        <p role="status">A running Sprite and an open event are required for terminal access.</p>
+      ) : (
+        <p role="status">{status}</p>
+      )}
+      <div ref={host} className="sprite-terminal" />
+    </section>
+  );
+}

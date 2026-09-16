@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "erasableSyntaxOnly": true },
+  "include": ["src/**/*.ts"]
+}

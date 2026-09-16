@@ -1,0 +1,13 @@
+.workspace-local-view:not([hidden]) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.local-sync .button-row [role="status"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  flex: 1 1 180px;
+}
+.local-sync .sync-plan {
+  margin-top: 12px;
+}

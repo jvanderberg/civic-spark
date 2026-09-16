@@ -1,0 +1,161 @@
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { chromium } from "playwright";
+import { createApp } from "../apps/server/src/app.ts";
+import type { Result } from "../packages/domain/src/types.ts";
+import { testIdentity } from "../tests/auth-fixture.ts";
+
+const root = mkdtempSync(join(tmpdir(), "vibehack-changes-browser-"));
+const artifacts = resolve("artifacts");
+mkdirSync(artifacts, { recursive: true });
+const port = await new Promise<number>((resolve) => {
+  const server = createServer();
+  server.listen(0, "127.0.0.1", () => {
+    const a = server.address();
+    if (!a || typeof a === "string") throw new Error("Port");
+    server.close(() => resolve(a.port));
+  });
+});
+const address = `http://127.0.0.1:${port}`;
+const { app, service, authentication } = await createApp(root, false, address, undefined, "email");
+await app.listen({ host: "127.0.0.1", port });
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const errors: string[] = [];
+page.on("pageerror", (e) => errors.push(e.message));
+const unwrap = <T>(r: Result<T>): T => {
+  if (!r.ok) throw new Error(r.error);
+  return r.value;
+};
+try {
+  const identity = await testIdentity(authentication, "Changes Tester");
+  assert(identity.actor);
+  const event = unwrap(
+    service.createEvent(identity.actor, {
+      name: "Changes browser",
+      date: "2026-10-03",
+      timezone: "America/Chicago",
+      location: "Test",
+      capacity: 10,
+      budget: 0,
+      templateId: "blank",
+    }),
+  );
+  const team = unwrap(
+    service.createTeam(identity.actor, {
+      eventId: event.id,
+      name: "Changes team",
+      projectId: "data-starter",
+    }),
+  );
+  const id = team.workspace.id;
+  let incoming = false;
+  let outgoing = false;
+  let conflicted = false;
+  let calls = 0;
+  const head = "a".repeat(40);
+  const remote = "b".repeat(40);
+  await page.route("**/team-status*", (route) =>
+    route.fulfill({
+      json: {
+        head,
+        remote,
+        incoming,
+        outgoing,
+        dirty: false,
+        merging: false,
+        conflicts: [],
+      },
+    }),
+  );
+  await page.route("**/team-update", async (route) => {
+    calls++;
+    const input = route.request().postDataJSON();
+    assert.equal(input.head, head);
+    assert.equal(input.remote, remote);
+    if (input.mode === "replace") {
+      incoming = false;
+      await route.fulfill({
+        json: {
+          status: "updated",
+          head: remote,
+          remote,
+          conflicts: [],
+          backup: "refs/vibehack/recovery/test",
+        },
+      });
+    } else if (conflicted) {
+      await route.fulfill({ json: { status: "conflict", head, remote, conflicts: ["README.md"] } });
+    } else {
+      incoming = false;
+      await route.fulfill({ json: { status: "updated", head: remote, remote, conflicts: [] } });
+    }
+  });
+  await page.context().addCookies([identity.browserCookie]);
+  await page.goto(`${address}/#workspace=${id}`);
+  const top = page.locator(".team-updates > button");
+  await top.click();
+  await page.getByText("Your workspace includes the latest team commits.").waitFor();
+  assert.equal(calls, 0);
+  await page.getByRole("button", { name: "Later", exact: true }).click();
+  incoming = true;
+  await top.click();
+  await page.getByRole("button", { name: "Get updates", exact: true }).click();
+  await page.getByText("Team updates loaded into your workspace.").waitFor();
+  assert.equal(calls, 1);
+  await page.getByRole("button", { name: "Later", exact: true }).click();
+  incoming = true;
+  conflicted = true;
+  await top.click();
+  await page.getByRole("button", { name: "Get updates", exact: true }).click();
+  await page.getByText("Some changes overlap").waitFor();
+  assert.equal(calls, 2);
+  // Later only closes the choice; it must not change the Git state.
+  await page.getByRole("button", { name: "Later", exact: true }).click();
+  assert.equal(calls, 2);
+  await top.click();
+  for (const theme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme, theme);
+    await page.waitForFunction((theme) => {
+      const button = document.querySelector(".team-updates-menu .button.primary");
+      return (
+        button &&
+        getComputedStyle(button).backgroundColor ===
+          (theme === "dark" ? "rgb(166, 203, 183)" : "rgb(37, 78, 62)")
+      );
+    }, theme);
+    await page.screenshot({ path: join(artifacts, `team-updates-${theme}.png`) });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  const box = await page.getByRole("region", { name: "Team updates", exact: true }).boundingBox();
+  assert(box && box.x >= 0 && box.x + box.width <= 390);
+  await page.screenshot({ path: join(artifacts, "team-updates-mobile.png") });
+  page.once("dialog", (d) => void d.dismiss());
+  await page.getByRole("button", { name: "Use team version", exact: true }).click();
+  assert.equal(calls, 2);
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Use team version", exact: true }).click();
+  await page.getByText("Team version loaded.", { exact: false }).waitFor();
+  assert.equal(calls, 3);
+  await page.getByRole("button", { name: "Later", exact: true }).click();
+  outgoing = true;
+  await top.click();
+  await page.getByText("Your workspace includes the latest team commits.").waitFor();
+  await page.getByRole("button", { name: "Later", exact: true }).click();
+  await page.getByRole("button", { name: "Changes", exact: true }).click();
+  await page.getByText("Local commits are ready to push.").waitFor();
+  await page.getByLabel("Commit message", { exact: true }).fill("Share merged team work");
+  assert.equal(await page.getByRole("button", { name: "Share", exact: true }).isEnabled(), true);
+  assert.deepEqual(errors, []);
+  console.log(
+    "PASS: team update indicator, clean pull, conflict choices, Later does not mutate, replacement confirmation, light/dark/mobile menu.",
+  );
+} finally {
+  await browser.close();
+  await app.close();
+  rmSync(root, { recursive: true, force: true });
+}
