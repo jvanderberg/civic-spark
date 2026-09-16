@@ -7,9 +7,10 @@ import { fromNodeHeaders } from "better-auth/node";
 import Fastify, { type FastifyReply } from "fastify";
 import { z } from "zod";
 import {
+  demoIdentitySchema,
   type Identity,
-  identitySchema,
   teamInputSchema,
+  verifiedIdentitySchema,
 } from "../../../packages/domain/src/access-types.ts";
 import { EventService } from "../../../packages/domain/src/service.ts";
 import { createEventSchema, type Result } from "../../../packages/domain/src/types.ts";
@@ -46,10 +47,15 @@ export async function createApp(
   spritesEnabled = process.env.CIVIC_SPARK_ENABLE_SPRITES === "1",
   baseURL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:4310",
   delivery?: EmailDelivery,
-  authMode = z.enum(["email", "prototype"]).parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
+  authMode = z
+    .enum(["email", "prototype", "demo"])
+    .parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
 ) {
   const deployment = validateDeployment(root, baseURL, authMode);
   const prototype = authMode === "prototype";
+  const demo = authMode === "demo";
+  const unverifiedSignIn = prototype || demo;
+  if (demo) root = join(root, "demo");
   if (prototype) {
     if (!["127.0.0.1", "localhost"].includes(new URL(baseURL).hostname))
       throw new Error("Prototype sign-in requires a localhost browser origin");
@@ -66,7 +72,7 @@ export async function createApp(
   const authentication = await createAuthentication(
     root,
     baseURL,
-    prototype
+    unverifiedSignIn
       ? {
           configured: false,
           async send() {
@@ -74,7 +80,7 @@ export async function createApp(
           },
         }
       : delivery,
-    prototype,
+    demo ? "demo" : prototype,
   );
   const { auth } = authentication;
   app.decorateRequest("actor", null);
@@ -123,12 +129,14 @@ export async function createApp(
       return reply.code(403).send({ error: "Cross-origin requests are disabled" });
     if (!request.url.startsWith("/api/")) return;
     if (request.url.split("?")[0] === "/api/health") return;
-    if (prototype && request.url === "/api/prototype/sign-in") return;
+    if (unverifiedSignIn && request.url === `/api/${authMode}/sign-in`) return;
     const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-    const parsed = identitySchema.safeParse(
+    const parsed = (demo ? demoIdentitySchema : verifiedIdentitySchema).safeParse(
       session?.user && prototype
         ? { ...session.user, id: session.user.email.toLowerCase() }
-        : session?.user,
+        : session?.user && demo
+          ? { ...session.user, authMode: "demo" }
+          : session?.user,
     );
     request.actor = parsed.success ? parsed.data : null;
     if (request.url.split("?")[0] !== "/api/session" && !request.actor)
@@ -179,8 +187,30 @@ export async function createApp(
       return reply.send(await response.text());
     },
   });
-  if (prototype)
-    app.post("/api/prototype/sign-in", async (r, reply) => {
+  // Per-process, fixed-window demo limiter. Bound both sessions per client and
+  // limiter memory; proxy-normalized IP is set by our first onRequest hook.
+  const demoAttempts = new Map<string, { count: number; expires: number }>();
+  const demoBudget = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .parse(process.env.CIVIC_SPARK_AUTH_REQUESTS_PER_MINUTE ?? "20");
+  if (unverifiedSignIn)
+    app.post(`/api/${authMode}/sign-in`, async (r, reply) => {
+      if (demo) {
+        const now = Date.now();
+        for (const [key, entry] of demoAttempts) if (entry.expires <= now) demoAttempts.delete(key);
+        const address = String(r.headers["x-civic-spark-client-ip"]);
+        const entry = demoAttempts.get(address);
+        if ((entry && entry.count >= demoBudget) || (!entry && demoAttempts.size >= 10000))
+          return reply
+            .code(429)
+            .header("Retry-After", "60")
+            .send({ error: "Too many sign-in attempts. Try again in a minute." });
+        if (entry) entry.count++;
+        else demoAttempts.set(address, { count: 1, expires: now + 60000 });
+      }
       const input = z
         .object({
           email: z.email().transform((v) => v.toLowerCase()),
@@ -188,7 +218,16 @@ export async function createApp(
         })
         .parse(r.body);
       reply.header("Cache-Control", "no-store");
-      reply.header("set-cookie", await prototypeSignIn(authentication, input.email, input.name));
+      reply.header(
+        "set-cookie",
+        await prototypeSignIn(
+          authentication,
+          input.email,
+          input.name,
+          demo,
+          new URL(baseURL).protocol === "https:",
+        ),
+      );
       return { signedIn: true };
     });
   app.get("/api/health", async (_request, reply) => {

@@ -110,8 +110,8 @@ export function App() {
     const form = new FormData(e.currentTarget);
     const email = String(form.get("email")).trim().toLowerCase();
     void run(async () => {
-      if (session?.authMode === "prototype") {
-        await api("/prototype/sign-in", "POST", {
+      if (session && session.authMode !== "email") {
+        await api(`/${session.authMode}/sign-in`, "POST", {
           email,
           name: String(form.get("name") ?? "").trim(),
         });
@@ -323,22 +323,26 @@ export function App() {
               <button
                 type="submit"
                 className="button primary email-sign-in"
-                disabled={busy || (session.authMode !== "prototype" && !session.emailSignIn)}
+                disabled={busy || (session.authMode === "email" && !session.emailSignIn)}
               >
                 {busy
                   ? "Please wait…"
-                  : session.authMode === "prototype"
-                    ? "Enter prototype"
-                    : "Email me a sign-in link"}
+                  : session.authMode === "demo"
+                    ? "Enter demo"
+                    : session.authMode === "prototype"
+                      ? "Enter prototype"
+                      : "Email me a sign-in link"}
               </button>
               <p className="small-text muted">
-                {session.authMode === "prototype"
-                  ? "Local prototype: enter any email. No verification email is sent. Use the same email to return to your account."
-                  : "New here? Your first sign-in link also creates and verifies your account."}
+                {session.authMode === "demo"
+                  ? "Unverified demo: anyone entering the same email can access that demo account. No verification email is sent."
+                  : session.authMode === "prototype"
+                    ? "Local prototype: enter any email. No verification email is sent. Use the same email to return to your account."
+                    : "New here? Your first sign-in link also creates and verifies your account."}
               </p>
             </form>
           )}
-          {session.authMode !== "prototype" && !session.emailSignIn && (
+          {session.authMode === "email" && !session.emailSignIn && (
             <p className="auth-pending" role="status">
               Email sign-in is being configured. Please check back with your event organizer.
             </p>
@@ -349,7 +353,10 @@ export function App() {
             </p>
           )}
           <p className="login-fineprint">
-            <ShieldCheck size={15} /> Your workspace belongs to you. Sign in to access it.
+            <ShieldCheck size={15} />{" "}
+            {session.authMode === "demo"
+              ? "Use demo data only."
+              : "Your workspace belongs to you. Sign in to access it."}
           </p>
         </section>
       </div>
@@ -457,11 +464,13 @@ export function App() {
       <div className="main-shell">
         <header className="topbar">
           <span>
-            {session.authMode === "prototype"
-              ? "Local prototype · email identity"
-              : activeTab === "admin"
-                ? "Event administration"
-                : "Your event space"}
+            {session.authMode === "demo"
+              ? "Unverified demo · shared email access"
+              : session.authMode === "prototype"
+                ? "Local prototype · email identity"
+                : activeTab === "admin"
+                  ? "Event administration"
+                  : "Your event space"}
           </span>
           <Badge tone={admin ? "green" : "neutral"}>{admin ? "Event admin" : "Participant"}</Badge>
         </header>

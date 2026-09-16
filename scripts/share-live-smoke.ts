@@ -48,8 +48,9 @@ try {
       "-s",
       name,
       "exec",
-      "-file",
+      "--file",
       `${outbound}:${remote}.bundle`,
+      "--",
       "python3",
       "-c",
       "import pathlib,subprocess,sys; p=sys.argv[1]; subprocess.run(['git','clone',p+'.bundle',p],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); subprocess.run(['git','-C',p,'update-ref','refs/civic-spark/base','HEAD'],check=True); pathlib.Path(p,'large.csv').write_text('year,count\\n'+('2017,3\\n'*160000)); pathlib.Path(p,'note.txt').write_text('First update\\n')",
@@ -67,7 +68,7 @@ try {
     JSON.parse(
       unwrap(
         await client.command(
-          ["-s", name, "exec", "python3", "-c", script],
+          ["-s", name, "exec", "--", "python3", "-c", script],
           30000,
           JSON.stringify(payload),
         ),

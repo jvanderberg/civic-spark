@@ -12,7 +12,7 @@ export async function createAuthentication(
   root: string,
   baseURL: string,
   delivery: EmailDelivery = createEmailDelivery(),
-  prototype = false,
+  mode: boolean | "demo" = false,
 ) {
   const requestsPerMinute = z.coerce
     .number()
@@ -42,7 +42,8 @@ export async function createAuthentication(
     rateLimit: { enabled: true, storage: "database" },
     advanced: {
       useSecureCookies: new URL(baseURL).protocol === "https:",
-      cookiePrefix: prototype ? "civic-spark-prototype" : "better-auth",
+      cookiePrefix:
+        mode === "demo" ? "civic-spark-demo" : mode ? "civic-spark-prototype" : "better-auth",
       disableOriginCheck: false,
       disableCSRFCheck: false,
       ipAddress: { ipAddressHeaders: ["x-civic-spark-client-ip"] },

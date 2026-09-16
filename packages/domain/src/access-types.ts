@@ -1,12 +1,18 @@
 import { z } from "zod";
 import type { Contribution, Event, Participant, Team, Template } from "./types.ts";
 
-export const identitySchema = z.object({
+export const verifiedIdentitySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   email: z.email(),
   emailVerified: z.literal(true),
 });
+// Demo identity is explicitly unverified and never accepted by production auth.
+export const demoIdentitySchema = verifiedIdentitySchema.extend({
+  emailVerified: z.literal(false),
+  authMode: z.literal("demo"),
+});
+export const identitySchema = z.union([verifiedIdentitySchema, demoIdentitySchema]);
 export type Identity = z.infer<typeof identitySchema>;
 export const eventMemberSchema = z.object({
   eventId: z.string(),
@@ -49,7 +55,7 @@ export type TeamView = Team & {
 export type SessionView = {
   user: Identity | null;
   emailSignIn: boolean;
-  authMode: "email" | "prototype";
+  authMode: "email" | "prototype" | "demo";
 };
 export type PortalState = {
   user: Identity;

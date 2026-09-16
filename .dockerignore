@@ -11,9 +11,12 @@
 !packages/
 !packages/**
 !scripts/
+scripts/**
 !scripts/prepare-pty.ts
 !deploy/
+deploy/**
 !deploy/fly/
+deploy/fly/**
 !deploy/fly/Dockerfile
 !deploy/fly/entrypoint.sh
 !deploy/fly/install-sprite.mjs

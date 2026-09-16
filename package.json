@@ -65,6 +65,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@balena/dockerignore": "1.0.2",
     "@biomejs/biome": "2.5.13",
     "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^9.6.0",

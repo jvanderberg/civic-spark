@@ -253,6 +253,7 @@ it("enforces canonical production origin, verified sessions, secure cookies, hea
 it("plans a single-writer volume deployment and safely stages only allowed secrets", () => {
   const config = flyConfig(settings);
   expect(config).toContain('strategy = "immediate"');
+  expect(config).toContain('dockerfile = "../../../deploy/fly/Dockerfile"');
   expect(config).toContain('destination = "/data"');
   expect(config).toContain('auto_stop_machines = "off"');
   expect(config).not.toContain("SPRITE_TOKEN");

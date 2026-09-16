@@ -1,8 +1,8 @@
 # Civic Spark control plane on Fly
 
-This package deploys signup, administration, static UI, authenticated APIs, SQLite and team Git on **one Fly Machine with one encrypted volume**. Participant programs, agents and terminals execute only in Sprites. No app, volume, Machine, token or participant Sprite was created or changed during implementation. Choose and review deployment inputs before running the cloud-mutating steps below.
+This package deploys signup, administration, static UI, authenticated APIs, SQLite and team Git on **one Fly Machine with one encrypted volume**. Participant programs, agents and terminals execute only in Sprites. The setup helper creates only the explicitly selected installation resources. Choose deployment inputs before running the cloud-mutating steps below.
 
-Local validation is not a production certification. Actual Linux image build/start, volume restart recovery, trusted proxy addresses, sender delivery, public sign-in, and dedicated test-Sprite lifecycle still require live checks. Hosted preview opening deliberately returns “Hosted preview is not configured for this installation”; it never returns a Mac/loopback URL or makes a Sprite public. Remote Launch/Stop/status still manage the server inside its Sprite. Full hosted preview isolation/routing is separate work.
+The explicit demo has passed live Linux startup, idle volume restart, public demo sign-in and dedicated Sprite workspace checks; see the live record below. This is not production certification: sender delivery, token rotation, full backup/restore and resource lifecycle recovery remain unverified. Hosted preview opening deliberately returns “Hosted preview is not configured for this installation”; it never returns a Mac/loopback URL or makes a Sprite public. Remote Launch/Stop/status still manage the server inside its Sprite. Full hosted preview isolation/routing is separate work.
 
 ## Requirements and inputs
 
@@ -12,11 +12,19 @@ Choose app name, Fly organization, region, exact public HTTPS origin, Sprite org
 
 `proxyCidrs` specifies the immediate peers allowed to supply `Fly-Client-IP`. The example uses the Fly Machine proxy network; verify it in the selected deployment before inviting users. The generated app has a dedicated Fly network and listens on IPv4 `0.0.0.0`, not its IPv6 private-network address. Do not broaden trust to every address or add unrelated workloads to that network. `X-Forwarded-For`, host and proto do not establish identity or the canonical origin. TLS cookies derive from `BETTER_AUTH_URL`; application and WebSocket origins are exact. An untrusted peer's IP headers are ignored. On another provider use `CIVIC_SPARK_PROXY=none` or implement that provider's explicit peer boundary. No Git or Sprite operation depends on Fly private networking.
 
-Production requires `email` authentication and complete Resend or SMTP settings. SMTP permits port 587 with required STARTTLS or 465 with immediate TLS. Verify the sender domain externally. No public prototype sign-in is available: a public bind, production environment or hosted deployment rejects prototype mode at startup.
+Production defaults to `email` authentication and requires complete Resend or SMTP settings. SMTP permits port 587 with required STARTTLS or 465 with immediate TLS. Verify the sender domain externally. Local prototype sign-in remains unavailable publicly: a public bind, production environment or hosted deployment rejects prototype mode at startup.
+
+## Explicit hosted demo
+
+For a fresh, intentionally unverified demonstration, set `authMode: "demo"` in setup JSON (`CIVIC_SPARK_AUTH_MODE=demo` at runtime). Omit `emailProvider`, `emailFrom` and email credentials; only `SPRITE_TOKEN` and `BETTER_AUTH_SECRET` are required. The UI warns that anyone entering the same email can access that demo account. Use demo data and disposable model credentials only. Demo users retain `emailVerified: false` with an explicit demo identity marker; they are never promoted or migrated to verified users.
+
+Demo metadata is under the separate `demo/` data subtree, with a separate `civic-spark-demo` cookie namespace and Secure cookies on HTTPS. Email mode uses the original separate root and accepts verified identities only; prototype remains loopback-only with its own root/cookies. Changing mode does not import accounts or resources.
+
+The public demo sign-in route limits requests before account/session writes using the normalized trusted client IP. `CIVIC_SPARK_AUTH_REQUESTS_PER_MINUTE` sets its budget (default 20). The fixed one-minute windows are process-local and reset on restart; the map holds at most 10,000 clients and rejects new clients when full. This is request throttling, not a lifetime account/storage quota. Demo installation limits should be modest, for example `maxSprites: 8`, `maxProvisioning: 2`, `volumeGb: 1`; all remain configurable. The organization token can manage its organization's Sprites, not just this demo's resources.
 
 ## Prepare locally
 
-Run commands from the repository root. The helper also anchors Fly's working directory, build context and explicit Dockerfile argument to that root, independently of the generated TOML location. Its public config schema rejects unknown properties, so secrets cannot accidentally be added to configuration.
+Run commands from the repository root. The helper anchors Fly's working directory and build context to that root. Its generated Dockerfile path is relative to the nested TOML directory, matching Fly's actual config resolution; the explicit CLI argument alone does not override that behavior. Its public config schema rejects unknown properties, so secrets cannot accidentally be added to configuration.
 
 ```sh
 npm ci --prefer-offline --no-audit --no-fund
@@ -46,7 +54,7 @@ CI may supply its Fly app/org provisioning token through Fly's supported environ
 
 Create a dedicated **Sprites token** in the selected organization using the Sprites account/token interface. Its documented CLI format is `org-slug/org-id/token-id/token-value`; the helper checks that contract and selected slug. That syntactic check does not prove authorization. The separate `verify-sprites` action performs an authenticated, read-only API list probe and discards all names/metadata. A Sprites organization token can manage that organization's Sprites; do not claim it is event-scoped or limited to a name prefix. Use a dedicated organization if unrelated resources require isolation. It is not a general Fly admin token.
 
-Save all managed credentials as a JSON object in a password manager or a mode-0600 file **outside the repository**. The required keys are `SPRITE_TOKEN`, `BETTER_AUTH_SECRET` (at least 32 random characters), and `RESEND_API_KEY`; for SMTP replace the Resend key with `SMTP_USER` and `SMTP_PASSWORD`. No real credentials belong in examples, shell history, command arguments or tickets. Keep the auth secret stable across repeat setup and Sprite token rotation.
+Save all managed credentials as a JSON object in a password manager or a mode-0600 file **outside the repository**. The required keys are `SPRITE_TOKEN`, `BETTER_AUTH_SECRET` (at least 32 random characters), and `RESEND_API_KEY`; for SMTP replace the Resend key with `SMTP_USER` and `SMTP_PASSWORD`. In explicit demo mode omit the email credentials. No real credentials belong in examples, shell history, command arguments or tickets. Keep the auth secret stable across repeat setup and Sprite token rotation.
 
 ```sh
 # Set this to an existing private JSON file outside this checkout; values are not argv.
@@ -115,3 +123,9 @@ September 16, 2026, isolated deployment worktree:
 - Generated configuration passed `fly config validate`. Installed Fly 0.4.104's exact Go secret parser passed the synthetic special-character envelope round-trip; no cloud secret import was used for this test.
 - `npm run test:browser`, `npm run test:mobile`, `npm run test:provisioning-browser`, and `npm run test:environment-browser` passed, with clean browser consoles and mocked Sprite transports. Desktop, 360px/390px phones and short/landscape viewports passed. Light/dark screenshots were inspected for signup, event creation, provisioning progress, chat and preview controls. Physical device keyboard/picker support is unverified.
 - No Docker binary was available, so Linux image compilation, native-module execution, actual mount ownership/startup and live cloud checks are outstanding. No paid inference, app/volume/Machine creation, participant Sprite modification or Git publication occurred.
+
+## Live demo deployment record
+
+September 16, 2026: fresh https://civic-spark.fly.dev deployment passed real remote Linux build, native dependency loading, mounted-volume ownership/startup and repeated helper deployment on one Machine. Public demo signup, event/project/team creation, real Sprite checkout/files, browser agent setup and one authorized GLM file-edit turn passed. Browser refresh/reopen and idle redeploy retained identity, workspace, provider session, conversation and saved-key presence. Terminal commands/reconnect and different-identity isolation passed. Test provider credentials were removed afterward and key-bearing runtime/provider processes stopped. See [live handoff](handoff.md#first-live-hosted-demo--september-16-2026) for resource identifiers and limitations.
+
+The real build exposed Docker directory-negation semantics that the earlier custom staging approximation missed. Explicit descendant exclusions now restrict `scripts/` and `deploy/`; the staging check uses pinned `@balena/dockerignore` and tests the former directory re-inclusion failure. The provider CLI contract is checked with argument-shape tests and actual Sprite operations; execution disables implicit local port forwarding.

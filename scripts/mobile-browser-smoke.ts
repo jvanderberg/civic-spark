@@ -23,7 +23,8 @@ const port = await new Promise<number>((resolve) => {
   });
 });
 const address = `http://127.0.0.1:${port}`;
-const { app } = await createApp(root, false, address, undefined, "prototype");
+const authMode = process.env.CIVIC_SPARK_MOBILE_DEMO === "1" ? "demo" : "prototype";
+const { app } = await createApp(root, false, address, undefined, authMode);
 await app.listen({ host: "127.0.0.1", port });
 const browser = await chromium.launch();
 const context = await browser.newContext({
@@ -126,12 +127,32 @@ try {
     await page.getByLabel("Email address").evaluate((el) => getComputedStyle(el).fontSize),
     "16px",
   );
+  if (authMode === "demo") {
+    await page.getByText(/anyone entering the same email can access/).waitFor();
+    for (const colorScheme of ["light", "dark"] as const) {
+      for (const [width, height] of [
+        [360, 780],
+        [390, 844],
+        [1440, 900],
+        [360, 430],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        await page.emulateMedia({ colorScheme });
+        await inViewport(page.getByRole("button", { name: "Enter demo" }));
+        await capture(`${width}-${height}-demo-sign-in-${colorScheme}`);
+      }
+    }
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.emulateMedia({ colorScheme: "light" });
+  }
   await capture("360-sign-in-light");
-  await page.getByRole("button", { name: "Enter prototype" }).tap();
+  await page
+    .getByRole("button", { name: authMode === "demo" ? "Enter demo" : "Enter prototype" })
+    .tap();
   await page.getByRole("button", { name: "Create your first event" }).tap();
   assert(
     (await context.cookies()).some(
-      (cookie) => cookie.name === "civic-spark-prototype.session_token",
+      (cookie) => cookie.name === `civic-spark-${authMode}.session_token`,
     ),
     "Prototype sign-in must use the Civic Spark cookie namespace",
   );

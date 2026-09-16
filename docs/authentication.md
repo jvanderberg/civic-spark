@@ -76,3 +76,9 @@ No live sender is configured yet. Before using this at an event, configure the c
 The user explicitly requested email identity without verification for UI prototyping. Set `CIVIC_SPARK_AUTH_MODE=prototype`, restart, and enter an email. A normalized lowercase email is the domain identity; real signed session cookies retain that selection. No email is sent. Signing in with the same email returns to its prototype teams and admin roles.
 
 This mode is loopback-only, uses a separate `civic-spark-prototype` cookie prefix and a `prototype/` subdirectory under the data directory, and displays a prototype label. Its `/api/prototype/sign-in` endpoint exists only in that mode. Anyone with local access can select any prototype email; it is not email verification. The standard auth store and verified-email mode remain separate. Switching back to `email` removes the prototype entry path and does not import prototype accounts.
+
+## Explicit hosted demo mode
+
+`CIVIC_SPARK_AUTH_MODE=demo` enables visibly unverified email entry on a fresh demo installation, including HTTPS hosting without SMTP/Resend. Anyone entering the same email can access that demo account. Demo identities remain `emailVerified: false`, explicitly marked as demo, with a separate `demo/` data directory and `civic-spark-demo` cookie prefix. They never authorize verified-email production mode or migrate automatically. Local prototype restrictions remain unchanged.
+
+`/api/demo/sign-in` checks a per-client limiter before writing users or sessions, using the server's normalized client IP. The default budget is 20 requests/minute, configurable via `CIVIC_SPARK_AUTH_REQUESTS_PER_MINUTE`. Fixed-window entries expire after a minute; the process-local map is capped at 10,000 clients and resets on restart. This throttles requests; it is not a lifetime data quota. Use only demo data and remove disposable model credentials after rehearsals. See [demo deployment](fly-deployment.md#explicit-hosted-demo).

@@ -50,6 +50,8 @@ export function validateDeployment(
     (settings.hosted || !["localhost", "127.0.0.1", "::1"].includes(settings.host))
   )
     throw new Error("Prototype sign-in requires a loopback bind and local deployment");
+  if (!["email", "prototype", "demo"].includes(authMode))
+    throw new Error("Unknown authentication mode");
   if (!settings.hosted) return settings;
   if (
     url.protocol !== "https:" ||
@@ -60,7 +62,7 @@ export function validateDeployment(
   if (!isAbsolute(root)) throw new Error("Hosted data directory must be absolute");
   if (!env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32)
     throw new Error("Hosted deployment requires BETTER_AUTH_SECRET (at least 32 characters)");
-  if (!["smtp", "resend"].includes(env.CIVIC_SPARK_EMAIL_PROVIDER ?? ""))
+  if (authMode !== "demo" && !["smtp", "resend"].includes(env.CIVIC_SPARK_EMAIL_PROVIDER ?? ""))
     throw new Error("Hosted deployment requires configured SMTP or Resend email");
   if (env.FLY_API_TOKEN || env.FLY_ACCESS_TOKEN)
     throw new Error("Do not install Fly administration credentials in the control plane");

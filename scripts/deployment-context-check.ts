@@ -9,25 +9,15 @@ import {
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, matchesGlob, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import dockerignore from "@balena/dockerignore";
+
 const root = fileURLToPath(new URL("../", import.meta.url));
-// The committed allowlist deliberately uses only **, simple paths and ! negation.
-// Check each ancestor too, so excluded directories also exclude their contents.
+// Docker directory negation includes descendants too (unlike the old glob approximation).
 export function includedInContext(path: string, rules: string[]) {
-  const ancestors = path
-    .split("/")
-    .map((_part, index, parts) => parts.slice(0, index + 1).join("/"));
-  let included = true;
-  for (const rule of rules) {
-    if (!rule || rule.startsWith("#")) continue;
-    const include = rule.startsWith("!");
-    const pattern = (include ? rule.slice(1) : rule).replace(/\/$/, "");
-    if (include ? matchesGlob(path, pattern) : ancestors.some((part) => matchesGlob(part, pattern)))
-      included = include;
-  }
-  return included;
+  return !dockerignore().add(rules).ignores(path);
 }
 export function stageContext(destination: string) {
   const rules = readFileSync(join(root, ".dockerignore"), "utf8")
@@ -63,6 +53,9 @@ export function stageContext(destination: string) {
     if (includedInContext(path, rules))
       throw new Error("Sensitive test fixture would enter build context");
   }
+  const scripts = included.filter((path) => path.startsWith("scripts/"));
+  if (scripts.length !== 1 || scripts[0] !== "scripts/prepare-pty.ts")
+    throw new Error("Deployment must include only the install script, not browser/test scripts");
   for (const path of included) {
     mkdirSync(dirname(join(destination, path)), { recursive: true });
     copyFileSync(join(root, path), join(destination, path));

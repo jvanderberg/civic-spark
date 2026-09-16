@@ -50,7 +50,7 @@ export class SpriteClient {
   }
   async create(name: string): Promise<Result<string>> {
     if (!spriteNamePattern.test(name)) return fail("Invalid Civic Spark Sprite name.");
-    const result = await this.command(["create", "-skip-console", name]);
+    const result = await this.command(["create", "--skip-console", name]);
     return result.ok ? ok(name) : result;
   }
   async uploadBundle(name: string, bundle: string): Promise<Result<Buffer>> {
@@ -59,16 +59,26 @@ export class SpriteClient {
       "-s",
       name,
       "exec",
-      "-file",
+      "--no-port-forward",
+      "--file",
       `${bundle}:/tmp/civic-spark-seed.bundle`,
+      "--",
       "bash",
       "-lc",
       readFileSync(new URL("./checkout.sh", import.meta.url), "utf8"),
     ]);
   }
-  async exec(name: string, args: string[]): Promise<Result<Buffer>> {
+  async exec(name: string, args: string[], uploads: string[] = []): Promise<Result<Buffer>> {
     if (!spriteNamePattern.test(name)) return fail("Invalid prototype Sprite name");
-    return this.command(["-s", name, "exec", ...args]);
+    return this.command([
+      "-s",
+      name,
+      "exec",
+      "--no-port-forward",
+      ...uploads.flatMap((file) => ["--file", file]),
+      "--",
+      ...args,
+    ]);
   }
   private async fileOperation<T>(
     name: string,
@@ -85,7 +95,9 @@ export class SpriteClient {
         "-s",
         name,
         "exec",
-        ...(upload ? ["-file", `${upload.local}:${upload.remote}`] : []),
+        "--no-port-forward",
+        ...(upload ? ["--file", `${upload.local}:${upload.remote}`] : []),
+        "--",
         "python3",
         "-c",
         script,

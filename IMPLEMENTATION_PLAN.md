@@ -45,6 +45,7 @@ See [workspace modes and acceptance requirements](docs/product.md#required-works
 - [ ] Verify Chrome/Edge on macOS/Windows; provide browser editing and upload/download fallback for unsupported browsers
 
 - [x] Local email-identity prototype mode with isolated cookies/data and loopback-only access
+- [x] Explicit hosted demo opt-in with unverified identities, isolated cookies/data, shared-email warning and bounded sign-in throttling; verified-email production remains the default
 - [x] Full-screen compact workspace with fixed Opus 5/GLM choices and runtime/key readiness
 - [x] Hierarchical file explorer with collapsible, resizable sidebar and saved layout preferences
 - [x] System-following light/dark themes and syntax-highlighted Monaco editing
@@ -84,7 +85,8 @@ A native helper for syncing while the browser is closed is a possible later exte
 - [ ] Enforced model budgets and deployment resource limits
 - [ ] GitHub publication, external backups, retention and recovery rehearsal
 - [x] Locally validated Fly control-plane deployment package: single-writer volume, canonical HTTPS/auth guards, trusted proxy boundary, pinned build, staged secret setup and restart reconciliation
-- [ ] Build/run Linux container and coordinate first Fly deployment; verify email, proxy peers, token rotation and dedicated Sprite lifecycle live
+- [x] Build/run Linux container and first explicit hosted demo on Fly; real signup/event/project/team/Sprite/files/GLM/terminal, isolation and idle redeploy persistence verified
+- [ ] Verify production email delivery, token rotation and complete dedicated Sprite lifecycle/recovery
 - [ ] Complete hosted multi-user security review and external backup/restore rehearsal
 
 ## Preserved earlier proof

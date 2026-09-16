@@ -57,27 +57,28 @@ export class AgentSessions {
     const existing = this.preparing.get(sprite);
     if (existing) return existing;
     const work = new SpriteClient()
-      .exec(sprite, [
-        "-file",
-        `${fileURLToPath(new URL("../../../packages/agents/runtime/environment.json", import.meta.url))}:/home/sprite/.civic-spark-agent/environment.defaults.json`,
-        ...["package.json", "package-lock.json", "setup.sh", "relay.py"].flatMap((name) => [
-          "-file",
-          `${fileURLToPath(new URL(`../../../packages/agents/runtime/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
-        ]),
-        ...[
-          "cli.ts",
-          "cli-config.ts",
-          "credentials.ts",
-          "protocol.ts",
-          "context.ts",
-          "integration-cli.ts",
-        ].flatMap((name) => [
-          "-file",
-          `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
-        ]),
-        "bash",
-        "/home/sprite/.civic-spark-agent/setup.sh",
-      ])
+      .exec(
+        sprite,
+        ["bash", "/home/sprite/.civic-spark-agent/setup.sh"],
+        [
+          `${fileURLToPath(new URL("../../../packages/agents/runtime/environment.json", import.meta.url))}:/home/sprite/.civic-spark-agent/environment.defaults.json`,
+          ...["package.json", "package-lock.json", "setup.sh", "relay.py"].map(
+            (name) =>
+              `${fileURLToPath(new URL(`../../../packages/agents/runtime/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
+          ),
+          ...[
+            "cli.ts",
+            "cli-config.ts",
+            "credentials.ts",
+            "protocol.ts",
+            "context.ts",
+            "integration-cli.ts",
+          ].map(
+            (name) =>
+              `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
+          ),
+        ],
+      )
       .then((r) => r.ok)
       .finally(() => this.preparing.delete(sprite));
     this.preparing.set(sprite, work);
@@ -101,16 +102,18 @@ export class AgentSessions {
           "-s",
           sprite,
           "exec",
-          "-file",
+          "--no-port-forward",
+          "--file",
           `${runner}:/home/sprite/.civic-spark-agent/runner.ts`,
-          "-file",
+          "--file",
           `${protocol}:/home/sprite/.civic-spark-agent/protocol.ts`,
-          "-file",
+          "--file",
           `${fileURLToPath(new URL("../../../packages/agents/src/credentials.ts", import.meta.url))}:/home/sprite/.civic-spark-agent/credentials.ts`,
           ...["history.ts", "journal.ts", "provider.ts", "context.ts"].flatMap((name) => [
-            "-file",
+            "--file",
             `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
           ]),
+          "--",
           "node",
           "--experimental-strip-types",
           "/home/sprite/.civic-spark-agent/runner.ts",
