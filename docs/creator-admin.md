@@ -1,0 +1,15 @@
+# Event creator and admin access
+
+`POST /api/events` creates an event through `EventService.createEvent` and assigns its authenticated session account the first admin membership before returning success. The submitted event configuration cannot select a different creator. Account signup alone does not grant admin: neither the first account, the most recent login, a team creator, nor another event's admin receives this event's admin permissions.
+
+The role belongs to the stored account ID and event ID. Returning sign-in, session refresh and an application restart preserve it, including when `CIVIC_SPARK_SITE_EVENT_ID` pins the portal. Email mode requires a verified session. Explicit hosted demo mode retains stable, unverified accounts and deliberately allows anyone entering the same email to access that account. An admin grant does not verify its email or migrate it into production. Prototype mode remains isolated and loopback-only.
+
+There is no immutable creator/owner field in the current event schema, and another authorized admin can change the creator's role under the ordinary last-admin protection. Do not infer original ownership from current roles, account ordering, or team membership. An import executed through an operator's session makes that operator account the event admin; it does not automatically grant the eventual participant account admin.
+
+## Correcting an imported event's administrator
+
+Use the existing **Add admin** action or `POST /api/events/:id/admins` with `{ "email": "<explicitly authorized existing account email>" }`, authenticated as a current admin for that event. The target must already have signed in and loaded the portal so its account is known to the event service. Validate the exact account and event before the write; never choose the first/latest account or grant every participant admin. The service normalizes email matching and updates or inserts only that account's event membership. Repeating the grant is idempotent.
+
+Verify the target's normal `/api/state` session reports `admin` for the intended event and that **Admin overview** opens after reload. Preserve account IDs, team memberships, personal workspaces, private files, shared history and other event roles. Role repair requires no direct database edits, identity merging, bootstrap bypass, test-account removal, deployment or Sprite restart. The public demo's same-email access remains unverified after the correction.
+
+`tests/creator-admin.test.ts` exercises real email-link redemption using a test mailbox, explicit prototype/demo login, authenticated event creation, spoofed identity denial, logout/relogin, persisted sessions after restart and a pinned portal. It also verifies an authorized grant to an existing participant preserves their workspace, private draft and shared Git history, denies self-promotion and unknown accounts, and does not promote unrelated accounts or grant access to another event. Tests use isolated local fixtures without cloud resources or model calls.
