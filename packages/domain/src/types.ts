@@ -8,6 +8,7 @@ export const projectSchema = z.object({
   revision: z.number().int().nonnegative().optional(),
 });
 export const scheduleSchema = z.object({
+  id: z.string().optional(),
   time: z.string(),
   title: z.string(),
   description: z.string(),
@@ -35,10 +36,67 @@ export const createEventSchema = z.object({
   budget: z.number().min(0).max(10000),
   templateId: z.enum(["blank", "diod"]),
 });
+// Stored legacy labels remain valid; new edits validate clock-style times separately.
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a 24-hour time (HH:mm)");
 export const defaultProjectBriefGuidance =
   "Describe the problem and who it helps. Explain the outcome or demo you want to build, what is in scope, and how you will know it succeeded. Include useful data links, access requirements, and any constraints.";
-export const eventSchema = createEventSchema.extend({
+const eventDetailsFields = {
   projectBriefGuidance: z.string().max(5000).default(defaultProjectBriefGuidance),
+  description: z.string().max(10000).default(""),
+  address: z.string().trim().max(300).default(""),
+  startTime: z.union([z.literal(""), clockTime]).default(""),
+  endTime: z.union([z.literal(""), clockTime]).default(""),
+};
+export const eventSettingsSchema = createEventSchema
+  .omit({ templateId: true })
+  .extend({
+    ...eventDetailsFields,
+    expectedRevision: z.number().int().nonnegative(),
+    schedule: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(100),
+          time: z.string().trim().min(1).max(100),
+          title: z.string().trim().min(1).max(200),
+          description: z.string().max(5000),
+        }),
+      )
+      .max(100),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.startTime && value.endTime && value.startTime >= value.endTime)
+      ctx.addIssue({
+        code: "custom",
+        path: ["endTime"],
+        message: "End time must be after start time on the event date",
+      });
+    const ids = new Set<string>();
+    let previous = "";
+    for (const [index, row] of value.schedule.entries()) {
+      if (ids.has(row.id))
+        ctx.addIssue({
+          code: "custom",
+          path: ["schedule", index, "id"],
+          message: "Schedule entries must have unique IDs",
+        });
+      ids.add(row.id);
+      if (clockTime.safeParse(row.time).success) {
+        if (previous > row.time)
+          ctx.addIssue({
+            code: "custom",
+            path: ["schedule", index, "time"],
+            message: "Put timed schedule entries in chronological order",
+          });
+        previous = row.time;
+      }
+    }
+  });
+export type EventSettingsInput = z.input<typeof eventSettingsSchema>;
+export type EventSettings = z.infer<typeof eventSettingsSchema>;
+export const eventSchema = createEventSchema.extend({
+  ...eventDetailsFields,
+  revision: z.number().int().nonnegative().default(0),
   id: z.string(),
   status: z.enum(["draft", "registration", "live", "closed"]),
   createdAt: z.string(),
