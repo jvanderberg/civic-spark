@@ -102,3 +102,12 @@ Admin browser recovery handled nine documented failed-initial test reservations 
 Additional lead publication evidence now includes transit, schools, architecture, commissions, crime, ECHO and urban forest MVPs, beyond the initial assessment/tax/cycling baselines. Architecture explicitly uses fictional demonstration data. Urban forest Shared successfully but its native preview returns Vite Host403 even after managed Restart; product integration diagnosis is assigned to Astra. Bus-stop and over-time leads have reviewed implementations but publication/update difficulties remain; their browser personas are continuing the normal conflict/update flow without force overwrite.
 
 The integrated owner-recovery and redundant-write fixes passed 480 tests and the clean deployment build (155 packaged inputs). Independent source review cleared their local contracts; the known live organization mismatch still blocks recovery acceptance/deployment. Combined mobile verification is in progress. These are engineering checks, separate from participant roleplay outcomes.
+
+
+## Recovery release deployed
+
+`49fd716` is deployed on the existing dedicated-CPU Machine and volume. Exact deployed hashes for provider metadata, recovery, provisioning, asynchronous health and recovery UI matched; HTTPS health returned200 in243ms. Final validation: combined510 tests, final ownership-guard focused136 tests, full combined mobile, clean context156 inputs, independent scoped clearance. The final guard rejects conflicting ownership on the requested target row even when the list-level identity matches; unrelated contradictory row claims do not override the authenticated organization identity.
+
+All nine failed-initial personas were resumed for actual browser recovery after deployment. Riley/p09 was separately authorized to explicitly rebuild the confirmed-missing test Sprite from already-shared teamGit. Deployment/source verification is not a claim that these browser recoveries have succeeded; persona logs supply those outcomes. Original user workspace d416 remains distinct from p40 and requires its owner to confirm the shared-only recovery.
+
+All12 leads now have documented manually Shared MVP baselines. The final over-time lead used the explicit agent conflict-resolution workflow, preserved both histories, reviewed the merge, and then manually Shared. This establishes lead publication progress, not full correctness of all demos or completed contribution work for all40 attendees.
