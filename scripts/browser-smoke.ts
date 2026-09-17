@@ -129,13 +129,14 @@ try {
   );
   await page.getByRole("button", { name: "Create a team", exact: true }).click();
   await page.getByLabel("Team name").fill("Library connections");
-  await page.getByLabel("Project", { exact: true }).selectOption("custom");
+  await page.getByLabel("Project", { exact: true }).selectOption("new");
   await page.getByLabel("Project title").fill("A library within reach");
   await page
-    .getByRole("textbox", { name: "Project brief", exact: true })
+    .getByRole("textbox", { name: "Project brief (Markdown)", exact: true })
     .fill(
       "Map **library access** by public transit and explore which neighborhoods need better connections.",
     );
+  await page.getByRole("button", { name: "Create project", exact: true }).click();
   await page.getByRole("button", { name: "Create and join team" }).click();
   await page.getByRole("heading", { name: "Library connections", exact: true }).waitFor();
   const shortBrief = page

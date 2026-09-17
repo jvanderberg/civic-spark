@@ -7,6 +7,7 @@ import { chromium, type Locator, type Page } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 import type { Result } from "../packages/domain/src/types.ts";
+import { verifyAdminEventDetails } from "./admin-event-browser-smoke.ts";
 import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
 
 function unwrap<T>(result: Result<T>) {
@@ -134,7 +135,7 @@ export async function verifyAdminProjects() {
           exact: true,
           includeHidden: true,
         });
-        const childNames = ["Sprites", "Projects", "Teams", "People & roles"];
+        const childNames = ["Event details", "Sprites", "Projects", "Teams", "People & roles"];
         assert.equal(await parent.getAttribute("aria-expanded"), "false");
         assert.equal(await nav.isVisible(), false);
         await visibleBounds(page, parent);
@@ -356,5 +357,7 @@ export async function verifyAdminProjects() {
     rmSync(root, { recursive: true, force: true });
   }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await verifyAdminProjects();
+  await verifyAdminEventDetails();
+}

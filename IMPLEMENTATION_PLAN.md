@@ -2,16 +2,27 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Capacity and resilience for 60 concurrent participants
+
+- [ ] Remove arbitrary Sprite allocation blockers while retaining safe bounded concurrency and owner/pause isolation; address preview-origin capacity without origin reuse.
+- [ ] Expose initial disk sizing and optional bounded auto-expansion in repeatable setup.
+- [ ] Measure realistic 60-participant load, audit polling/Git/database/memory/transport/storage bottlenecks, and implement evidenced fixes.
+- [ ] Exercise crash/restart and disk-full failure/recovery using isolated fixtures; report measured limits and remaining live acceptance.
+
+## Editable event configuration — live
+
+- [x] Add event-admin-authorized, revision-checked settings updates, neutral legacy migration, stable schedule row IDs and persisted plain-text project guidance.
+- [x] Add nested Admin → Event details with reusable metadata/capacity/budget forms, schedule add/edit/remove/reorder, preserved drafts and explicit stale recovery; retain status and workspace controls.
+- [x] Cover unauthorized/cross-event/invalid/stale writes, restart, legacy labels, pinned title privacy and unchanged roles/teams/projects/private files/history in isolated regression tests.
+- [x] Complete full check/mobile/admin/portal browser matrices, screenshot inspection and bounded root source review; integration remains root-owned.
+- [x] Integrated with participant creation and deployed `15c32b4`; live read-only forms/source/state verification passed.
+
 ## Participant project creation
 
-- [ ] Add Projects Create project with useful event-configured brief guidance and authorized participant catalog creation without role/team/runtime side effects.
-- [ ] Add New project inside team creation, returning on success/cancel to the preserved team draft and selecting the newly created project.
-- [ ] Coordinate editable event.projectBriefGuidance with Event Admin branch; combine, test mobile/draft/focus/authorization behavior and deploy together.
-
-## Editable event settings
-
-- [ ] Add event-admin editing for event name, date/time/timezone, location, other existing event details and schedule with persisted validated service writes, stale-edit protection and live-view refresh.
-- [ ] Verify admin/participant scopes and mobile/draft behavior, integrate and deploy without changing the live event content during tests.
+- [x] Allow authenticated discovery-eligible registration/live visitors and members to create catalog projects before joining a team; retain draft privacy, closed read-only behavior and admin-only editing.
+- [x] Add Projects creation and a single-dialog New project handoff preserving team drafts, with plain-text event guidance and canonical description → PROJECT.md briefs.
+- [x] Complete local participant/domain/API/mobile/portal/admin verification and bounded root review, including delayed success across event changes and poll-before-response deduplication; no cloud or paid tests.
+- [x] Combined check299/55, full mobile/portal/admin/context149 passed; published/deployed `15c32b4`, live eight-case read-only acceptance passed.
 
 ## Persistent workspace connections
 

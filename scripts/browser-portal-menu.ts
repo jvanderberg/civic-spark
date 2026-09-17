@@ -8,7 +8,7 @@ export async function openPortalMenu(page: Page) {
 
 export async function openAdminSection(
   page: Page,
-  name: "Projects" | "Sprites" | "Teams" | "People & roles",
+  name: "Event details" | "Projects" | "Sprites" | "Teams" | "People & roles",
 ) {
   await openPortalMenu(page);
   const parent = page.getByRole("button", { name: "Admin", exact: true });

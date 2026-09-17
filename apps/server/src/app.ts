@@ -17,7 +17,11 @@ import {
   spriteActionSchema,
 } from "../../../packages/domain/src/lifecycle.ts";
 import { EventService } from "../../../packages/domain/src/service.ts";
-import { createEventSchema, type Result } from "../../../packages/domain/src/types.ts";
+import {
+  createEventSchema,
+  eventSettingsSchema,
+  type Result,
+} from "../../../packages/domain/src/types.ts";
 import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 import {
@@ -400,6 +404,12 @@ export async function createApp(
   app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled, siteEventId));
   app.post("/api/events", async (r, reply) =>
     send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body))),
+  );
+  app.patch<{ Params: { id: string } }>("/api/events/:id", async (r, reply) =>
+    send(
+      reply,
+      service.updateEvent(actor(r.actor), r.params.id, eventSettingsSchema.parse(r.body)),
+    ),
   );
   app.post<{ Params: { id: string } }>("/api/events/:id/status", async (r, reply) =>
     send(

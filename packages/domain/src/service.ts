@@ -46,7 +46,15 @@ import {
   runtimeSchema,
   type WorkspaceRuntime,
 } from "./lifecycle.ts";
-import { type Event, type EventInput, fail, ok, type Result } from "./types.ts";
+import {
+  type Event,
+  type EventInput,
+  type EventSettingsInput,
+  eventSettingsSchema,
+  fail,
+  ok,
+  type Result,
+} from "./types.ts";
 
 export { templates } from "./engine.ts";
 
@@ -404,6 +412,29 @@ export class EventService {
     this.save();
     return created;
   }
+  updateEvent(actor: Identity, eventId: string, input: EventSettingsInput) {
+    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const parsed = eventSettingsSchema.safeParse(input);
+    if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join(". "));
+    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    if (!event) return fail("Event not found", 404);
+    // Legacy freeform labels are editable. Reject newly introduced malformed clock labels.
+    for (const row of parsed.data.schedule) {
+      const time = row.time.trim();
+      if (
+        /^\d{1,2}:/.test(time) &&
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(time) &&
+        !event.schedule.some((old) => old.id === row.id && old.time === row.time)
+      )
+        return fail("Use a 24-hour schedule time (HH:mm) or a descriptive label");
+    }
+    const active = new Set(
+      this.state.memberships.filter((m) => m.eventId === eventId && m.active).map((m) => m.userId),
+    );
+    if (parsed.data.capacity < active.size && parsed.data.capacity < event.capacity)
+      return fail(`Capacity cannot be reduced below the ${active.size} current participants`, 409);
+    return this.engine.updateEvent(eventId, parsed.data);
+  }
   transition(actor: Identity, eventId: string, status: Event["status"]) {
     if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
     return this.engine.transition(eventId, status);
@@ -465,11 +496,12 @@ export class EventService {
     return ok({ team: team.value, workspace: joined.value });
   }
   createProject(actor: Identity, eventId: string, input: ProjectInput) {
-    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const event = this.engine.snapshot().events.find((event) => event.id === eventId);
+    if (!event || !this.canDiscover(actor, event)) return fail("Event not found", 404);
+    if (event.status === "draft" && !this.isAdmin(actor, eventId))
+      return fail("Event admin access required", 403);
     const parsed = projectInputSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join(". "));
-    const event = this.engine.snapshot().events.find((event) => event.id === eventId);
-    if (!event) return fail("Event not found", 404);
     if (event.status === "closed")
       return fail("This event has ended. Projects are read-only.", 409);
     if (event.projects.some((p) => p.name.toLowerCase() === parsed.data.name.toLowerCase()))

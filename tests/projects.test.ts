@@ -48,12 +48,12 @@ it("creates event-admin projects, preserves Markdown and seeds only the selected
         payload: { ...payload, userId: admin.user.id },
         headers: { ...headers(identity.cookie), "x-user-id": admin.user.id },
       });
-      expect(denied.statusCode).toBe(403);
-      expect(denied.json().error).toBe("Event admin access required");
+      expect(denied.statusCode).toBe(404);
+      expect(denied.json().error).toBe("Event not found");
     }
     expect(service.createProject(member.actor, event.id, payload)).toMatchObject({
       ok: false,
-      status: 403,
+      status: 404,
     });
     for (const invalid of [
       { name: "x", brief },
@@ -355,6 +355,124 @@ it("updates catalog projects by event and stable ID with exact briefs, stale-wri
     ).toMatchObject({ ok: false, status: 409 });
   } finally {
     await fixture.app.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("allows signed-in project creation before teams only in discoverable open events without granting privileges", async () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-participant-projects-"));
+  const { app, service, authentication } = await createApp(root, false);
+  try {
+    const admin = await testIdentity(authentication, "Project organizer");
+    const visitor = await testIdentity(authentication, "Project newcomer");
+    const member = await testIdentity(authentication, "Project member");
+    if (!admin.actor || !visitor.actor || !member.actor) throw new Error("Missing identities");
+    const event = value(service.createEvent(admin.actor, eventInput));
+    const hidden = value(
+      service.createEvent(admin.actor, { ...eventInput, name: "Private event" }),
+    );
+    service.portal(member.actor, false);
+    value(service.addAdmin(admin.actor, event.id, member.actor.email));
+    value(service.setRole(admin.actor, event.id, member.actor.id, "member"));
+    expect(
+      service.createProject(member.actor, event.id, { name: "Draft denied", brief }),
+    ).toMatchObject({ ok: false, status: 403 });
+    for (const identity of [visitor, member]) {
+      const denied = await app.inject({
+        method: "POST",
+        url: `/api/events/${hidden.id}/projects`,
+        headers: { cookie: identity.cookie, "x-user-id": admin.actor.id },
+        payload: { name: "Hidden denied", brief, userId: admin.actor.id },
+      });
+      expect(denied.statusCode).toBe(404);
+    }
+    value(service.transition(admin.actor, event.id, "registration"));
+    const before = service.portal(admin.actor, false);
+    for (const [index, identity] of [visitor, member, admin].entries()) {
+      const result = await app.inject({
+        method: "POST",
+        url: `/api/events/${event.id}/projects`,
+        headers: { cookie: identity.cookie },
+        payload: { name: `Open project ${index}`, brief },
+      });
+      expect(result.statusCode).toBe(200);
+      const id = result.json().id;
+      expect(
+        service
+          .portal(visitor.actor, false)
+          .events.find((e) => e.id === event.id)
+          ?.projects.find((p) => p.id === id)?.description,
+      ).toBe(brief);
+      if (identity !== admin) {
+        expect(
+          (
+            await app.inject({
+              method: "PATCH",
+              url: `/api/events/${event.id}/projects/${id}`,
+              headers: { cookie: identity.cookie },
+              payload: { name: "Escalation", brief, expectedRevision: 0 },
+            })
+          ).statusCode,
+        ).toBe(403);
+      }
+    }
+    const after = service.portal(admin.actor, false);
+    expect(after.members).toEqual(before.members);
+    expect(after.teams).toEqual(before.teams);
+    expect(after.myWorkspaces).toEqual(before.myWorkspaces);
+    expect(after.contributions).toEqual(before.contributions);
+    expect(service.portal(visitor.actor, false).events.find((e) => e.id === event.id)?.role).toBe(
+      "visitor",
+    );
+    expect(service.portal(visitor.actor, false).myWorkspaces).toEqual([]);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/events/${event.id}/projects`,
+          headers: { cookie: visitor.cookie },
+          payload: { name: " OPEN PROJECT 0 ", brief },
+        })
+      ).statusCode,
+    ).toBe(409);
+    value(service.transition(admin.actor, event.id, "live"));
+    value(service.createProject(visitor.actor, event.id, { name: "Live project", brief }));
+    value(service.setExecution(admin.actor, event.id, true));
+    value(service.createProject(visitor.actor, event.id, { name: "Paused catalog", brief }));
+    value(service.setExecution(admin.actor, event.id, false));
+    const id = service.portal(visitor.actor, false).events.find((e) => e.id === event.id)
+      ?.projects[0]?.id;
+    expect(id).toBeDefined();
+    const team = value(
+      service.createTeam(member.actor, {
+        eventId: event.id,
+        name: "Existing source",
+        projectId: id,
+      }),
+    );
+    const source = value(service.readFile(member.actor, team.workspace.id, "PROJECT.md"));
+    const history = value(service.repositoryHistory(admin.actor, team.team.id, {}));
+    value(service.createProject(visitor.actor, event.id, { name: "No source writes", brief }));
+    expect(value(service.readFile(member.actor, team.workspace.id, "PROJECT.md"))).toEqual(source);
+    expect(value(service.repositoryHistory(admin.actor, team.team.id, {}))).toEqual(history);
+    value(service.removeEventMember(admin.actor, event.id, member.actor.id));
+    value(service.createProject(member.actor, event.id, { name: "Removed can return", brief }));
+    expect(service.portal(member.actor, false).events.find((e) => e.id === event.id)?.role).toBe(
+      "visitor",
+    );
+    // Restore explicit membership to exercise visible-closed denial below.
+    value(service.joinTeam(member.actor, team.team.id));
+    value(service.transition(admin.actor, event.id, "closed"));
+    expect(
+      service.createProject(visitor.actor, event.id, { name: "Closed private", brief }),
+    ).toMatchObject({ ok: false, status: 404 });
+    for (const actor of [member.actor, admin.actor]) {
+      expect(
+        service.createProject(actor, event.id, { name: "Closed visible", brief }),
+      ).toMatchObject({ ok: false, status: 409 });
+    }
+  } finally {
+    await app.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

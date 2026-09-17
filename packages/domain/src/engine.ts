@@ -20,6 +20,8 @@ import {
   createEventSchema,
   type Event,
   type EventInput,
+  type EventSettings,
+  eventSchema,
   type FileContent,
   fail,
   ok,
@@ -67,6 +69,11 @@ export class WorkspaceEngine {
       ? stateSchema.parse(JSON.parse(String(row.body)))
       : structuredClone(initialState);
     this.persistedState = JSON.stringify(this.state);
+    // Add only neutral fields and stable row identity; preserve every existing label/value.
+    for (const event of this.state.events) {
+      for (const row of event.schedule) row.id ??= randomUUID();
+    }
+    if (row && JSON.stringify(this.state) !== String(row.body)) this.save();
   }
   close() {
     this.db.close();
@@ -106,17 +113,31 @@ export class WorkspaceEngine {
     if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join(". "));
     const template = templates.find((t) => t.id === parsed.data.templateId);
     if (!template) return fail("Template not found", 404);
-    const event: Event = {
+    const event = eventSchema.parse({
       ...parsed.data,
       id: randomUUID(),
       status: "draft",
       createdAt: stamp(),
       projects: structuredClone(template.projects),
-      schedule: structuredClone(template.schedule),
-    };
+      schedule: template.schedule.map((row) => ({ ...row, id: randomUUID() })),
+    });
     this.state.events.push(event);
     this.record(event.id, "Event created. Ready to make it yours.");
     return ok(event);
+  }
+  updateEvent(eventId: string, input: EventSettings): Result<Event> {
+    const event = this.state.events.find((e) => e.id === eventId);
+    if (!event) return fail("Event not found", 404);
+    if (event.revision !== input.expectedRevision)
+      return fail(
+        "This event changed. Your draft is kept. Load the latest version before saving again.",
+        409,
+      );
+    // Explicit editable fields only. Status, identity, template and project history stay intact.
+    const { expectedRevision, ...settings } = input;
+    Object.assign(event, settings, { revision: expectedRevision + 1 });
+    this.save();
+    return ok(structuredClone(event));
   }
   addProject(eventId: string, name: string, brief: string): Result<string> {
     const event = this.state.events.find((e) => e.id === eventId);
