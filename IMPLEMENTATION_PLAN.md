@@ -2,6 +2,12 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Participant project creation
+
+- [ ] Add Projects Create project with useful event-configured brief guidance and authorized participant catalog creation without role/team/runtime side effects.
+- [ ] Add New project inside team creation, returning on success/cancel to the preserved team draft and selecting the newly created project.
+- [ ] Coordinate editable event.projectBriefGuidance with Event Admin branch; combine, test mobile/draft/focus/authorization behavior and deploy together.
+
 ## Editable event settings
 
 - [ ] Add event-admin editing for event name, date/time/timezone, location, other existing event details and schedule with persisted validated service writes, stale-edit protection and live-view refresh.
