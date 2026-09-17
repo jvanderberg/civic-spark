@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { initialCreationSchema } from "./provisioning.ts";
 
 export const executionSchema = z.object({
   paused: z.boolean().default(false),
@@ -7,6 +8,8 @@ export const executionSchema = z.object({
 });
 export type EventExecution = z.infer<typeof executionSchema>;
 export const runtimeSchema = z.object({
+  // Owner-requested checkout repair; never authorizes provider creation/deletion.
+  projectRepair: initialCreationSchema.omit({ state: true }).optional(),
   generation: z.number().int().nonnegative().default(0),
   deletion: z
     .object({

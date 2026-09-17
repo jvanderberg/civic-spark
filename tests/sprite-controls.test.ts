@@ -51,6 +51,7 @@ const root = () => {
 };
 function fixture() {
   vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
+  vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
   const path = root();
   const service = new EventService(path);
   const event = unwrap(service.createEvent(actor, input));
@@ -121,6 +122,7 @@ it("estimates one continuously-up amount with documented average resources and s
 
 it("scopes individual HTTP actions to event admins and exactly one reservation, with session/origin/schema checks", async () => {
   vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
+  vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
   const runtime = provider();
   const origin = "http://127.0.0.1:4310";
   const setup = await createApp(root(), true, origin, undefined, "email", undefined, runtime);
@@ -231,6 +233,7 @@ it("gates before abort/drain, rejects concurrent wake/bulk/delete, and leaves un
     ).toMatchObject({ ok: false, status: 409 });
     expect(runtime.destroy).not.toHaveBeenCalled();
     vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
+    vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
     expect(
       unwrap(
         await coordinator.changeSprite(
@@ -348,7 +351,11 @@ it.each(["missing", "allocated-personal"])(
       ]);
       if (existence === "allocated-personal") {
         expect(create).not.toHaveBeenCalled();
-        expect(exec).toHaveBeenCalledWith(f.name, ["test", "!", "-e", "/home/sprite/project"]);
+        expect(exec).toHaveBeenCalledWith(f.name, [
+          "bash",
+          "-lc",
+          "test ! -e /home/sprite/project && test ! -L /home/sprite/project",
+        ]);
       } else expect(create).toHaveBeenCalledExactlyOnceWith(f.name);
       expect(upload).toHaveBeenCalledTimes(1);
       expect(f.service.runtime(f.workspace.id).deletion).toBeNull();
@@ -500,6 +507,7 @@ it.each(["wake", "sprite"] as const)(
   "keeps every failed deleted-Sprite preflight held through POST %s and passive polling",
   async (route) => {
     vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
+    vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
     const runtime = provider();
     const origin = "http://127.0.0.1:4310";
     const setup = await createApp(root(), true, origin, undefined, "email", undefined, runtime);
@@ -548,6 +556,7 @@ it.each(["wake", "sprite"] as const)(
       expect((await post()).statusCode).toBe(409);
       expect(service.runtime(own.id).held).toBe(true);
       vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
+      vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
       // A genuine in-flight provisioning job occupies the single concurrent slot.
       vi.stubEnv("CIVIC_SPARK_MAX_PROVISIONING", "1");
       const third = unwrap(

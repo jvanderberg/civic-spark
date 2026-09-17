@@ -126,7 +126,13 @@ export async function createApp(
       agents.isPreparing(service.provisioningRecords().find((w) => w.id === id)?.spriteName ?? ""),
     (id) => provisioning.wait(id),
   );
-  const provisioning: WorkspaceProvisioning = new WorkspaceProvisioning(service, root, client);
+  const provisioning: WorkspaceProvisioning = new WorkspaceProvisioning(
+    service,
+    root,
+    client,
+    undefined,
+    (id) => lifecycle.hasActiveWork(id),
+  );
   const authentication = await createAuthentication(
     root,
     baseURL,
@@ -406,7 +412,12 @@ export async function createApp(
     const before = service.workspace(actor(r.actor), r.params.id, true, true);
     if (!before.ok) return send(reply, before);
     const runtime = service.runtime(r.params.id);
-    if (runtime.held && runtime.reason === "idle" && before.value.spriteStatus === "error")
+    if (
+      runtime.held &&
+      runtime.reason === "idle" &&
+      before.value.spriteStatus === "error" &&
+      !runtime.projectRepair
+    )
       return { awake: false, recoveryRequired: true };
     const eventGeneration = service.execution(before.value.eventId).generation;
     const inspected = await inspectIdleWorkspaceForWake(
@@ -426,8 +437,12 @@ export async function createApp(
       return send(reply, fail("Workspace state changed. Refresh before resuming.", 409));
     const workspace = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!workspace.ok) return send(reply, workspace);
-    const prepared = await provisioning.start(workspace.value, () =>
-      authorizePreparation(r, r.params.id),
+    const prepared = await provisioning.start(
+      workspace.value,
+      () => authorizePreparation(r, r.params.id),
+      false,
+      undefined,
+      true,
     );
     if (!prepared.ok) return send(reply, prepared);
     if (prepared.value.preparing) return reply.code(202).send(prepared.value);
@@ -901,6 +916,8 @@ export async function createApp(
       workspace.value,
       () => authorizePreparation(r, r.params.id),
       input.action === "retry-initial-creation",
+      undefined,
+      true,
     );
     if (result.ok) return reply.code(result.value.preparing ? 202 : 200).send(result.value);
     return send(reply, result);

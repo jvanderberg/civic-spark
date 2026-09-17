@@ -1,3 +1,11 @@
+## Absent project checkout repair — local, pending integration
+
+- [x] Distinguish absent roots from empty/private/excluded projects and refuse symlink/file/unreadable roots in the trusted file adapter.
+- [x] Guard shared checkout uploads after queue admission; publish atomically without replacing or nesting into a concurrent destination.
+- [x] Add explicit owner wake/retry repair of falsely ready, genuinely absent checkouts on the same allocated Sprite; retain shared-only repair intent across restart without provider recreation permission. Preserve ordinary Resume with active work or uncertain listing.
+- [x] Focused six-file152-test pass and both types; final HTTP/atomic-race coverage and complete check being finalized.
+- [ ] Root integration and deployed same-resource checkout acceptance; no live mutation in this worktree.
+
 ## Latest deployed checkpoint
 
 - Native public Sprite previews and reviewed capacity/resilience changes are live at runtime `400c345`; all fifteen old/rejected ingress apps removed. No replacement ingress resources.

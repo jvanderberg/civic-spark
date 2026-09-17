@@ -28,6 +28,7 @@ export class WorkspaceProvisioning {
     private root: string,
     private client = new SpriteClient(),
     private inspectRecovery = inspectRecoverySprite,
+    private hasActiveWork: (id: string) => boolean = () => false,
   ) {
     for (const workspace of service.provisioningRecords()) {
       if (workspace.spriteStatus === "provisioning" && workspace.spriteName)
@@ -60,6 +61,7 @@ export class WorkspaceProvisioning {
       preparationAction:
         workspace.spriteName &&
         workspace.spriteStatus === "error" &&
+        !runtime.projectRepair &&
         (runtime.deletion?.ownerRecovery ||
           (!runtime.deletion &&
             !(
@@ -121,11 +123,18 @@ export class WorkspaceProvisioning {
     },
     retryInitialCreation = false,
     missingOwner?: Identity,
+    repairReadyProject = false,
   ): Promise<Result<{ preparing: boolean }>> {
     const pending = this.starts.get(workspace.id);
     if (pending) return pending;
     const expected = this.service.runtime(workspace.id);
-    const started = this.prepare(workspace, authorize, retryInitialCreation, missingOwner)
+    const started = this.prepare(
+      workspace,
+      authorize,
+      retryInitialCreation,
+      missingOwner,
+      repairReadyProject,
+    )
       .catch(() => {
         this.restoreRecoveryHold(workspace.id, expected);
         return fail(
@@ -152,6 +161,7 @@ export class WorkspaceProvisioning {
     authorize: () => Promise<Result<Workspace>>,
     retryInitialCreation: boolean,
     missingOwner?: Identity,
+    repairReadyProject = false,
   ): Promise<Result<{ preparing: boolean }>> {
     if (this.jobs.has(workspace.id)) return ok({ preparing: true });
     const limits = this.limits();
@@ -243,7 +253,60 @@ export class WorkspaceProvisioning {
         409,
       );
     }
-    if (workspace.spriteStatus === "ready" && !recovery) return ok({ preparing: false });
+    // Only an explicit owner wake/retry may repair a falsely ready absent checkout.
+    // Reads/status polling never enter this path. Persist the shared-only source before work.
+    if (workspace.spriteStatus === "ready" && !recovery && !expected.projectRepair) {
+      if (!repairReadyProject) return ok({ preparing: false });
+      const name = workspace.spriteName;
+      const binding = this.client.provisioningBinding();
+      if (!name) return denied("Workspace reservation is missing.", 409);
+      const configuredOrg = process.env.CIVIC_SPARK_SPRITE_ORG;
+      const eventGeneration = this.service.execution(workspace.eventId).generation;
+      const validate = async () => {
+        const current = await authorize();
+        if (!current.ok) throw Error(current.error);
+        if (
+          current.value.spriteName !== name ||
+          current.value.spriteStatus !== "ready" ||
+          this.service.runtime(workspace.id).generation !== expected.generation ||
+          this.service.runtime(workspace.id).deletion ||
+          this.service.execution(workspace.eventId).generation !== eventGeneration ||
+          process.env.CIVIC_SPARK_SPRITE_ORG !== configuredOrg ||
+          JSON.stringify(this.client.provisioningBinding()) !== JSON.stringify(binding) ||
+          !this.service.executionAllowed(workspace.id).ok
+        )
+          throw Error("Workspace state or active work changed. Refresh before retrying.");
+      };
+      await validate();
+      if (this.hasActiveWork(workspace.id)) return ok({ preparing: false });
+      const files = await this.client.files(name);
+      await validate();
+      if (files.ok || this.hasActiveWork(workspace.id)) return ok({ preparing: false });
+      // Listing limits and uncertain reads deny repair, not ordinary ready Resume.
+      if (files.status !== 404 || files.error !== "Workspace project is absent")
+        return ok({ preparing: false });
+      if (!binding) return denied("Workspace provider could not be authenticated.", 409);
+      if ((await this.client.inspectReservation(name, true)) !== "present")
+        return denied(
+          "The provider could not confirm the existing workspace. Nothing was rebuilt.",
+          409,
+        );
+      await validate();
+      if (this.hasActiveWork(workspace.id)) return ok({ preparing: false });
+      const absent = await this.client.exec(name, [
+        "bash",
+        "-lc",
+        "test ! -e /home/sprite/project && test ! -L /home/sprite/project",
+      ]);
+      await validate();
+      if (this.hasActiveWork(workspace.id)) return ok({ preparing: false });
+      if (!absent.ok)
+        return denied("The project is no longer absent. Its files were preserved.", 409);
+      expected = this.service.setRuntime(workspace.id, {
+        projectRepair: { ...binding, name },
+      });
+    }
+    const projectRepair = expected.projectRepair;
     if (this.jobs.has(workspace.id)) return ok({ preparing: true });
     if (
       new Set([...this.jobs.keys(), ...this.starts.keys()].filter((id) => id !== workspace.id))
@@ -256,7 +319,11 @@ export class WorkspaceProvisioning {
     const eventGeneration = this.service.execution(workspace.eventId).generation;
     // Reject unshared local edits before reserving any provider identity or phase.
     // The in-memory start entry deduplicates/bounds this asynchronous preflight.
-    if (!recovery && (await gitAsync(dir, ["status", "--porcelain"])).toString().trim())
+    if (
+      !recovery &&
+      !projectRepair &&
+      (await gitAsync(dir, ["status", "--porcelain"])).toString().trim()
+    )
       return fail("Share saved changes before preparing your Sprite", 409);
     const fresh = await authorize();
     if (!fresh.ok) return denied(fresh.error, fresh.status);
@@ -279,17 +346,25 @@ export class WorkspaceProvisioning {
       (workspace.spritePhase === "bundling" || workspace.spritePhase === "creating");
     const ownerRecovery = expected.deletion?.ownerRecovery;
     const storedBinding =
-      ownerRecovery && expected.deletion ? { ...expected.deletion, ...ownerRecovery } : initial;
+      projectRepair ??
+      (ownerRecovery && expected.deletion
+        ? { ...expected.deletion, ...ownerRecovery }
+        : recovery && binding
+          ? { ...binding, ...recovery }
+          : initial);
     const sameBinding = () =>
       binding !== null &&
       storedBinding != null &&
       storedBinding.org === binding.org &&
       storedBinding.apiOrigin === binding.apiOrigin &&
       storedBinding.account === binding.account &&
+      process.env.CIVIC_SPARK_SPRITE_ORG === binding.org &&
       JSON.stringify(this.client.provisioningBinding()) === JSON.stringify(binding);
     if (
-      (initialRetry || ownerRecovery) &&
-      (!sameBinding() || (ownerRecovery && ownerRecovery.name !== name))
+      (initialRetry || recovery || projectRepair) &&
+      (!sameBinding() ||
+        (ownerRecovery && ownerRecovery.name !== name) ||
+        (projectRepair && projectRepair.name !== name))
     )
       return denied(
         "Initial workspace creation belongs to a different provider configuration. Ask an event admin to investigate.",
@@ -305,6 +380,7 @@ export class WorkspaceProvisioning {
         current.value.spriteName !== name ||
         runtime.generation !== generation ||
         JSON.stringify(runtime.deletion) !== JSON.stringify(expected.deletion) ||
+        JSON.stringify(runtime.projectRepair) !== JSON.stringify(projectRepair) ||
         this.service.execution(workspace.eventId).generation !== eventGeneration
       )
         throw new Error("Workspace access or state changed. Refresh before retrying preparation.");
@@ -352,7 +428,8 @@ export class WorkspaceProvisioning {
         throw new Error(spriteCreationMessages[currentFailure]);
       };
       try {
-        if (recovery) {
+        if (recovery || projectRepair) {
+          await revalidate();
           await gitAsync(this.service.sharedWorkspaceRepository(workspace.id), [
             "bundle",
             "create",
@@ -376,25 +453,36 @@ export class WorkspaceProvisioning {
               process.env.CIVIC_SPARK_SPRITE_API_URL ?? "https://api.sprites.dev",
               process.env.SPRITE_TOKEN ?? "",
             );
+            await revalidate();
             phase("creating"); // Pause may have arrived during the provider existence check.
+            if (existence === "missing" && projectRepair)
+              throw Error("The reserved workspace is missing. No replacement was created.");
             if (existence === "missing") {
               await create();
               phase("checkout");
-              const uploaded = await client.uploadBundle(name, bundle);
+              const uploaded = await client.uploadBundle(name, bundle, revalidate);
               if (!uploaded.ok) throw new Error(uploaded.error);
+              await revalidate();
             } else {
               // Existing private work always wins over recovery source. Only seed
               // an absent project after a previous create interrupted before checkout.
               const files = await client.files(name);
+              await revalidate();
               if (!files.ok) {
                 phase("checkout");
-                const absent = await client.exec(name, ["test", "!", "-e", "/home/sprite/project"]);
+                const absent = await client.exec(name, [
+                  "bash",
+                  "-lc",
+                  "test ! -e /home/sprite/project && test ! -L /home/sprite/project",
+                ]);
+                await revalidate();
                 if (!absent.ok)
                   throw new Error(
                     "The existing recovery Sprite could not reconnect. Its files were not replaced.",
                   );
-                const uploaded = await client.uploadBundle(name, bundle);
+                const uploaded = await client.uploadBundle(name, bundle, revalidate);
                 if (!uploaded.ok) throw new Error(uploaded.error);
+                await revalidate();
               }
             }
           }
@@ -460,10 +548,11 @@ export class WorkspaceProvisioning {
         phase("verifying");
         const verified = await client.files(name);
         if (!verified.ok) throw new Error(verified.error);
-        if (initialRetry || ownerRecovery) await revalidate();
+        if (initialRetry || recovery || projectRepair) await revalidate();
         phase("verifying");
         const saved = this.service.setSprite(workspace.id, name, "ready", null, "ready");
         if (!saved.ok) throw new Error(saved.error);
+        if (projectRepair) this.service.setRuntime(workspace.id, { projectRepair: undefined });
         if (recovery) {
           completeRecovery(this.root, workspace.id, name);
           const runtime = this.service.runtime(workspace.id);
@@ -475,7 +564,7 @@ export class WorkspaceProvisioning {
         }
       } catch (error) {
         if (
-          ownerRecovery &&
+          (ownerRecovery || projectRepair || recovery) &&
           (this.service.runtime(workspace.id).generation !== generation ||
             this.service.provisioningRecords().find((w) => w.id === workspace.id)?.spriteName !==
               name)

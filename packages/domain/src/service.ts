@@ -317,7 +317,12 @@ export class EventService {
       return fail("Sprite deletion needs to finish. Ask an event admin to retry.", 423);
     if (runtime.stopState === "pending")
       return fail("Sprite pause is still in progress. Retry shortly.", 423);
-    if (runtime.held && runtime.reason === "idle" && workspace.value.spriteStatus === "error")
+    if (
+      runtime.held &&
+      runtime.reason === "idle" &&
+      workspace.value.spriteStatus === "error" &&
+      !runtime.projectRepair
+    )
       return fail("Confirm Rebuild from shared work to recover this missing workspace.", 409);
     this.setRuntime(id, {
       held: false,

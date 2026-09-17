@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import re
+import stat
 import sys
 
 ROOT = pathlib.Path("/home/sprite/project")
@@ -43,8 +44,14 @@ def safe_path(name):
 try:
     request = json.loads(sys.stdin.read(LIMIT * 6 + 65536))
     if request["operation"] == "list":
+        try:
+            root_stat = ROOT.lstat()
+        except FileNotFoundError:
+            fail("Workspace project is absent", 404)
+        if not stat.S_ISDIR(root_stat.st_mode):
+            fail("Workspace project is not a regular directory", 409)
         files = []
-        for directory, dirs, names in os.walk(ROOT, followlinks=False):
+        for directory, dirs, names in os.walk(ROOT, followlinks=False, onerror=lambda error: (_ for _ in ()).throw(error)):
             dirs[:] = [d for d in dirs if allowed(str(pathlib.Path(directory, d).relative_to(ROOT))) and not pathlib.Path(directory, d).is_symlink()]
             for name in names:
                 target = pathlib.Path(directory, name)
