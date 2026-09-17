@@ -118,3 +118,12 @@ All12 leads now have documented manually Shared MVP baselines. The final over-ti
 Observer/preview release `3b49122` deployed with exact hashes verified and health200. Quinn/p10 made exactly one normal browser Resume at the existing reservation; no duplicate creation was requested. The sanitized outbound diagnostic recorded HTTP201 after81,996ms, matching requested resource name, valid object/string field types and no abort. Application confirmation was false because the response organization string matched neither configured slug nor token-account component. This directly establishes an application identity-contract rejection after provider creation, not a quota error or timeout for this attempt. The created resource is preserved; correction and existing-resource reconnect acceptance remain pending. Other earlier120-second failures may have different timing and are not retroactively explained solely by this one observation.
 
 Evidence: `artifacts/roleplay-20260917/p10-create-observer.jsonl` and p10's browser log. No provider credentials, raw response body or participant file contents were logged.
+
+
+## Exact-resource correction and completion backlog
+
+The complete provider list proved p10's exact resource membership using matching ID/name/organization fields within the authenticated organization scope. The reviewed correction checks that proof rather than treating the returned opaque organization value as a slug alias. Final identity-only combined validation passed581 tests and packaging; the previously-ready/missing Resume UI fix is separately reviewed and integrated for final combined validation. Neither correction is claimed live yet.
+
+The participant audit established20 personas with documented Shared contributions (12 leads and8 collaborators), and23 personas who submitted at least one model request—not23 total turns. Eleven participants whose old logs awaited a lead MVP or unfinished-turn review were resumed after all12 leads Shared. Nine initial-provisioning personas remain blocked; four of their resources plus p10 were confirmed created and must be preserved. Previously-ready Riley/p09 remains a separate missing-resource recovery case.
+
+Deployment was deferred because seven real model turns were active, falling to five on the next check. New submissions are held while existing turns finish. The management upgrade and deployed preview correction remain healthy; p26's actual native preview now renders and its controls work at desktop/360/390 without a project edit or new model call.
