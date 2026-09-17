@@ -2,6 +2,11 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Persistent workspace connections
+
+- [ ] Diagnose repeated agent reconnects and keep Agent/Terminal connections after first tab activation independent of selected view; preserve drafts/session IDs and intentional lifecycle cleanup. Keep five-minute idle timeout unchanged.
+- [ ] Review, test combined mobile/agent/terminal flows, integrate and deploy the connection fix.
+
 ## Agent screenshots
 
 - [x] Add image paste/picker, removable thumbnails and native multimodal requests for the fixed Claude/GLM providers; bounded owner-only transcript/replay and explicit failure/draft retention. See [limits and local verification](docs/agent-images.md).

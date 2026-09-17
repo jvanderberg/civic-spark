@@ -1,3 +1,9 @@
+# Persistent workspace connections — pending
+
+User reports repeated Agent connecting/disconnecting/reconnecting and wants Agent and Terminal connections independent of the selected view after first activation. Keep lazy initial activation, then retain sockets/session/drafts while tabs or menus change. Five-minute idle timeout is explicitly unchanged. Intentional idle/pause/delete, revocation, sign-out and explicit Stop/Disconnect must remain effective; do not hold resources awake forever or send paid prompts automatically.
+
+Full-access Paseo Astra `d9224de3-46a9-4607-9586-4799f9459623` owns isolated `civic-spark-persistent-connections` from main `fa6d68e`. Initial root inspection: Workspace already renders both panels unconditionally with hidden props; Agent visibility effect cancels retry/reset state and online/retry paths require visibility. This is evidence for investigation, not a confirmed cause of constant reconnects. Worker must reproduce mount/availability/effect/transport behavior, preserve recent images/preview work, add stable-connection/reconnect/lifecycle and mobile regressions, and commit locally. Root owns integration/push/deployment; no cloud or paid calls by worker.
+
 # Preview dependencies and screenshot paste LIVE — September 16, 2026
 
 Runtime `49cdda9` is deployed at https://civic-spark.fly.dev and pushed to main, integrating preview `6629ca2` + transitive-cache fix `9c94452` and images `11637c6`. Launch now installs/reuses root npm project dependencies inside the owner Sprite without a model/key or harness preparation; existing launch configuration and tracked source/locks remain intact. Agent supports image paste/file-picker attachments and native fixed-provider image requests, with private bounded replay and keyboard-safe container layout.
