@@ -468,6 +468,7 @@ export function Workspace({
         />
       </section>
       <Agent
+        key={`agent:${participant.spriteName ?? `unallocated:${participant.id}`}`}
         workspace={participant.id}
         available={remote && !eventClosed && !blocked}
         visible={view === "agent"}
@@ -485,6 +486,7 @@ export function Workspace({
         }}
       />
       <Terminal
+        key={`terminal:${participant.spriteName ?? `unallocated:${participant.id}`}`}
         workspace={participant.id}
         available={remote && !eventClosed && !blocked}
         visible={view === "terminal"}

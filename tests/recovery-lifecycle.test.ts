@@ -171,7 +171,7 @@ it("restores paused state, then explicitly recreates a confirmed missing reserva
       spriteName: f.name,
       spriteStatus: "ready",
     });
-    expect(create).toHaveBeenCalledExactlyOnceWith(f.name);
+    expect(create).toHaveBeenCalledExactlyOnceWith(f.name, expect.any(Function), false);
     expect(inspect).toHaveBeenCalledTimes(1);
     expect(uploaded).toEqual([f.sharedHead]);
     expect(recoveryPermission(f.data, f.workspace.id, f.name, "test-org")).toBeNull();
@@ -244,7 +244,7 @@ it("requires an authorized explicit owner HTTP reopen after restore and never pr
         restored.service.provisioningRecords().find((w) => w.id === f.workspace.id)?.spriteStatus,
       ).toBe("ready"),
     );
-    expect(create).toHaveBeenCalledExactlyOnceWith(f.name);
+    expect(create).toHaveBeenCalledExactlyOnceWith(f.name, expect.any(Function), false);
     expect(request.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
     expect(recoveryPermission(f.data, f.workspace.id, f.name, "test-org")).toBeNull();
   } finally {

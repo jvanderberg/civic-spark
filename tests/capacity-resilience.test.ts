@@ -679,7 +679,7 @@ for (const route of ["wake", "sprite"] as const) {
         }),
       );
       expect(f.service.runtime(id)).toMatchObject({ held: false, deletion: null });
-      expect(create).toHaveBeenCalledExactlyOnceWith(name);
+      expect(create).toHaveBeenCalledExactlyOnceWith(name, expect.any(Function), false);
       expect(upload).toHaveBeenCalledTimes(1);
       expect(command).not.toHaveBeenCalled();
       expect(readFileSync(join(f.dir, "fixture.txt"), "utf8")).toBe("Private local change\n");
