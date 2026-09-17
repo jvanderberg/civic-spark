@@ -1,6 +1,6 @@
 # Live rehearsal — September 17, 2026
 
-Status: live UI inspection complete; roster approved and execution starting.
+Status: pilot MVP turn running on the live site (P01 / Rehearsal01).
 
 Site: https://civic-spark.fly.dev — Day in Our Data.
 
@@ -46,11 +46,13 @@ Credential values, browser cookies, private storage states and request bodies ar
 - Found 16 projects, one existing team with3participants, two admins, capacity40.
 - Twelve-project roster approved. Capacity adjustment40→43 authorized through Eventdetails UI; no other event settings/roles change.
 - Capacity43 was saved through Event details and verified by reopening the form; other settings unchanged.
-- First-team pilot is underway. No model prompt or Share completed yet.
+- P01 created and joined Rehearsal01 (Assessment fairness); workspace ready in about3seconds.
+- GLM/OpenRouter connection ready about21seconds later; first MVP prompt submitted at12:18:20UTC.
+- No completed Share or collaborator handoff yet; these remain pending.
 
 ## Errors, quirks and observations
 
 - Harness issue: after successful capacity Save, the script waited for a summary absent from that screen. Corrected to reopen the form and verify43, without repeating the mutation.
 - Harness issue: participant sign-in incorrectly waited for an admin-only control. Normal participants correctly do not see Admin; the script is being corrected to wait for participant navigation.
 - Review guard: conversation output alone is not turn completion. Share must wait for the actual working→idle transition and confirm pending changes.
-- No confirmed application defect or completed model handoff yet.
+- No confirmed application defect or completed model handoff yet. The first real paid MVP turn has started; no completion inferred from its initial output.
