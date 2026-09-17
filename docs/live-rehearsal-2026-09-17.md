@@ -1,6 +1,6 @@
 # Live rehearsal — September 17, 2026
 
-Status: planning and live UI inspection. No rehearsal attendees or teams created yet.
+Status: live UI inspection complete; roster approved and execution starting.
 
 Site: https://civic-spark.fly.dev — Day in Our Data.
 
@@ -12,20 +12,20 @@ Forty new, clearly labelled rehearsal attendees form twelve teams. All attendees
 
 | Team | Lead | Collaborators | Project |
 | --- | --- | --- | --- |
-| Rehearsal 01 | P01 | P02, P03, P04 | Pending live catalog selection |
-| Rehearsal 02 | P05 | P06, P07, P08 | Pending live catalog selection |
-| Rehearsal 03 | P09 | P10, P11, P12 | Pending live catalog selection |
-| Rehearsal 04 | P13 | P14, P15, P16 | Pending live catalog selection |
-| Rehearsal 05 | P17 | P18, P19 | Pending live catalog selection |
-| Rehearsal 06 | P20 | P21, P22 | Pending live catalog selection |
-| Rehearsal 07 | P23 | P24, P25 | Pending live catalog selection |
-| Rehearsal 08 | P26 | P27, P28 | Pending live catalog selection |
-| Rehearsal 09 | P29 | P30, P31 | Pending live catalog selection |
-| Rehearsal 10 | P32 | P33, P34 | Pending live catalog selection |
-| Rehearsal 11 | P35 | P36, P37 | Pending live catalog selection |
-| Rehearsal 12 | P38 | P39, P40 | Pending live catalog selection |
+| Rehearsal 01 | P01 | P02, P03, P04 | Is my assessment fair? |
+| Rehearsal 02 | P05 | P06, P07, P08 | Where does my tax dollar go? |
+| Rehearsal 03 | P09 | P10, P11, P12 | Can a kid bike to school safely? |
+| Rehearsal 04 | P13 | P14, P15, P16 | Which bus stops need help? |
+| Rehearsal 05 | P17 | P18, P19 | Build the Oak Park transit dashboard |
+| Rehearsal 06 | P20 | P21, P22 | Oak Park over time |
+| Rehearsal 07 | P23 | P24, P25 | How are our schools doing? |
+| Rehearsal 08 | P26 | P27, P28 | How resilient is our urban forest? |
+| Rehearsal 09 | P29 | P30, P31 | Build an architecture walking tour |
+| Rehearsal 10 | P32 | P33, P34 | What do our commissions do? |
+| Rehearsal 11 | P35 | P36, P37 | Oak Park crime data explorer |
+| Rehearsal 12 | P38 | P39, P40 | What does ECHO see? |
 
-Account namespace: `rehearsal-20260917-pNN@example.test`. Team names begin with `Rehearsal NN`. Twelve distinct existing project briefs will be selected after live UI inspection. Existing event capacity and registrations will be checked before creation.
+Account namespace: `rehearsal-20260917-pNN@example.test`. Team names begin with `Rehearsal NN`. Twelve distinct existing project briefs selected through the live catalog. Inspection found 3 existing participants in one team and capacity40; authorized UI-only capacity adjustment to43 accommodates forty test attendees without altering existing memberships.
 
 ## Execution
 
@@ -42,7 +42,10 @@ Credential values, browser cookies, private storage states and request bodies ar
 
 ## Progress
 
-- Plan published; Luna browser operator starting live inspection.
+- Plan published; Luna headed-browser inspection completed.
+- Found 16 projects, one existing team with3participants, two admins, capacity40.
+- Twelve-project roster approved. Capacity adjustment40→43 authorized through Eventdetails UI; no other event settings/roles change.
+- First-team pilot will run MVP→Share→collaborator update before expanding the remaining teams.
 
 ## Errors, quirks and observations
 
