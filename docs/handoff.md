@@ -1,6 +1,10 @@
-# Event settings and participant creation — integrated, awaiting deployment
+# Event settings and participant creation LIVE — September 16, 2026
 
-Root combined event chain da2c7be/3bf6475/8d40b3a with participant1477c36 as08fe3ef/88b3241/0641ebe/b4e012d, preserving all three dirty guards, refresh generation, delayed response identity guards and both browser suites. Combined check passes299tests55files and full mobile passes; root inspected short/light/dark form, schedule and returned-team screenshots. Specialized portal/admin and clean deployment context149 checks passed. Live remains82e3769 until explicit subsequent checkpoint. Capacity/resilience f3758e32 remains independent active work; no live scaling or event content changes.
+Runtime `15c32b4` is pushed to main and live at https://civic-spark.fly.dev. Admin → Event details edits metadata, schedule and new-project guidance; Projects Create project and team New project share that guidance and preserve team drafts. Root combined event chain da2c7be/3bf6475/8d40b3a with participant1477c36, preserving all three dirty guards, refresh generation, delayed response identity guards and stable-ID deduplication.
+
+Combined check299tests55files, full mobile, portal/admin and clean deployment context149 passed. Root inspected local phone/short/light/dark form, schedule and returned-team screenshots. Four allocated workspaces idle before deploy. Helper succeeded; initial immediate remote verification connection failed, retry succeeded with exact source hashes, health200, all16 project hashes, participant reservation ready, original Machine/volume/receipt and CLI ownership unchanged. Live read-only form acceptance passed eight viewport/theme cases with zero mutations/console errors; screenshots inspected. No event-content changes, new teams/projects, provider model calls or capacity changes. Evidence live artifacts/event-creation-deploy/{verification,acceptance}.json and screenshots. Physical devices remain unverified.
+
+Capacity/resilience f3758e32 remains active separate work. Baseline local60-person polling returned1920/1920 HTTP200, p95 .32-.78s; simultaneous60 Shares blocked event loop49.16s (12successful,48expected divergent history conflicts). Bounded async Git preparation/validation worker work approved with final owner/pause/auth/CAS preservation; no live scaling/load or production60-user capacity claim. First live backup remains pending.
 
 # Capacity and crash resilience — requested, in progress
 
