@@ -45,8 +45,12 @@ Credential values, browser cookies, private storage states and request bodies ar
 - Plan published; Luna headed-browser inspection completed.
 - Found 16 projects, one existing team with3participants, two admins, capacity40.
 - Twelve-project roster approved. Capacity adjustment40→43 authorized through Eventdetails UI; no other event settings/roles change.
-- First-team pilot will run MVP→Share→collaborator update before expanding the remaining teams.
+- Capacity43 was saved through Event details and verified by reopening the form; other settings unchanged.
+- First-team pilot is underway. No model prompt or Share completed yet.
 
 ## Errors, quirks and observations
 
-None observed yet. This means testing has not reached the workflows, not that they pass.
+- Harness issue: after successful capacity Save, the script waited for a summary absent from that screen. Corrected to reopen the form and verify43, without repeating the mutation.
+- Harness issue: participant sign-in incorrectly waited for an admin-only control. Normal participants correctly do not see Admin; the script is being corrected to wait for participant navigation.
+- Review guard: conversation output alone is not turn completion. Share must wait for the actual working→idle transition and confirm pending changes.
+- No confirmed application defect or completed model handoff yet.
