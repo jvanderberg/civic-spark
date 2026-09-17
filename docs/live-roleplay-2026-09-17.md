@@ -133,3 +133,11 @@ Deployment was deferred because seven real model turns were active, falling to f
 Release `da2aa9d` deployed after the final preflight found 37 ready workspace records, zero working turns and two confirmed missing resources. Combined validation passed 605 tests (two opt-in skips), lint/types/build and 158-input packaging. Exact deployed hashes for provider identity checks, missing-workspace recovery and UI matched; health returned 200, all 16 project hashes and team/workspace counts were preserved, with the same Machine and volume.
 
 Quinn/p10 is released for one normal browser reconnect to the existing provider-created resource. Riley/p09 separately tests the owner-confirmed recovery control for a previously-ready missing resource. Neither is claimed recovered until browser readiness is observed. Eleven non-creation-blocked collaborators have been released to review and Share their existing work, checking transcripts before any continuation so completed paid prompts are not repeated.
+
+### Live acceptance exposed two remaining recovery defects
+
+Quinn/p10's single Retry passed resource confirmation and opened the workspace, but the Files explorer remained empty after a bounded wait and reload. The file API currently returns an empty successful list for an absent project directory, so the existing-resource recovery path skips checkout and incorrectly marks the workspace ready. The resource is preserved; no model prompt, Share or file mutation was performed. A narrow absent-directory repair is under implementation, with explicit protection for existing private directories and symlinks.
+
+Riley/p09's missing-resource detection persisted the correct error while retaining the idle hold, but the browser displayed a disabled Preparing control instead of an actionable recovery confirmation, including after reload. No replacement was authorized through the UI or created in this acceptance attempt. The exact held-plus-error render state is being corrected separately. Neither case is counted recovered.
+
+Ellis/p30 completed the architecture-tour accessibility review at desktop, 360px and 390px and manually Shared commit `fa8b356`; the UI confirmed zero remaining changes. This raises the documented contribution count to at least 22 of 40, including Remy/p39’s independently documented Share, while the latest roster audit continues.
