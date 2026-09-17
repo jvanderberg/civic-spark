@@ -1,3 +1,9 @@
+## Latest deployed checkpoint
+
+- Native public Sprite previews and reviewed capacity/resilience changes are live at runtime `400c345`; all fifteen old/rejected ingress apps removed. No replacement ingress resources.
+- Original management Machine now 2 shared CPUs/4 GB RAM; original volume 10 GB with explicit 80%/+5 GB/50 GB auto-growth. Local 60-person load evidence is not cloud certification.
+- Live dedicated Vite HTTP/assets/HMR, owner Stop/Launch, anonymous public access, same native origin, and warm-sleep subsequent HTTP200 verified; fixture cleaned. Cold restart, physical devices and first live backup remain unverified. See current docs/handoff.md checkpoint.
+
 # Implementation plan
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
