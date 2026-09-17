@@ -1,6 +1,6 @@
 # Live rehearsal — September 17, 2026
 
-Status: pilot MVP turn running on the live site (P01 / Rehearsal01).
+Status: ABANDONED — user rejected deterministic scripted testing. These results do not count toward the requested role-directed rehearsal.
 
 Site: https://civic-spark.fly.dev — Day in Our Data.
 
@@ -40,7 +40,11 @@ Initial concurrency: at most two provisioning flows and three model turns at onc
 
 Credential values, browser cookies, private storage states and request bodies are excluded from this report, screenshots and committed scripts. Evidence is recorded in the shared ignored `artifacts/live-rehearsal-20260917/` directory; this report is the published summary.
 
-## Progress
+## Abandonment
+
+The user clarified that Luna participants must act independently from prose role instructions, observing the UI and deciding their next action. The deterministic pilot/cohort workflow is discontinued. Only P01/Team01 was created and one MVP prompt submitted; final stop/Share/cleanup state is being reconciled. No further scripted signup, model or publication actions are authorized. A fresh role-directed rehearsal must have separate accounts/results and must not inherit this pilot as a passed test.
+
+## Historical progress
 
 - Plan published; Luna headed-browser inspection completed.
 - Found 16 projects, one existing team with3participants, two admins, capacity40.
