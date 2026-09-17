@@ -25,6 +25,7 @@ import {
 } from "../../workspace/src/types.ts";
 import { CommandBusy, CommandQueue } from "./command-queue.ts";
 import { validateSpriteToken } from "./credentials.ts";
+import { spriteOrganizationListSchema, spriteResourceSchema } from "./metadata.ts";
 import { boundedProviderJson, classifyCreationFailure } from "./provisioning.ts";
 
 const execute = promisify(execFile);
@@ -228,18 +229,9 @@ export class SpriteClient {
         await response.body?.cancel();
         return "unknown" as const;
       }
-      const org = z
-        .object({
-          name: z.literal(this.org).optional(),
-          sprites: z.array(
-            z.object({
-              name: z.string().min(1),
-              org_slug: z.literal(this.org).optional(),
-              organization: z.literal(this.org).optional(),
-            }),
-          ),
-        })
-        .safeParse(await boundedProviderJson(response));
+      const org = spriteOrganizationListSchema(this.org as string).safeParse(
+        await boundedProviderJson(response),
+      );
       if (!org.success) return "unknown" as const;
     }
     const response = await get(url);
@@ -251,9 +243,9 @@ export class SpriteClient {
       await response.body?.cancel();
       return "unknown" as const;
     }
-    const result = z
-      .object({ name: z.literal(name), organization: z.literal(this.org) })
-      .safeParse(await boundedProviderJson(response));
+    const result = spriteResourceSchema(name, this.org as string).safeParse(
+      await boundedProviderJson(response),
+    );
     return result.success ? ("present" as const) : ("unknown" as const);
   }
   /** Metadata only; callers separately authorize any creation. */
@@ -342,9 +334,7 @@ export class SpriteClient {
       });
       const body = await boundedProviderJson(response);
       if (!response.ok) return failure(classifyCreationFailure(response.status, body));
-      const created = z
-        .object({ name: z.literal(name), organization: z.literal(this.org) })
-        .safeParse(body);
+      const created = spriteResourceSchema(name, this.org as string).safeParse(body);
       return (requireMissing ? response.status === 201 : [200, 201].includes(response.status)) &&
         created.success
         ? ok(name)

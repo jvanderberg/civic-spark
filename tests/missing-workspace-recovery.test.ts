@@ -146,6 +146,14 @@ it("requires owner confirmation, correct origin/name/generation and current sess
 
 it("rebuilds a legacy reservation exactly once from shared Git, preserving identity and excluding private commits", async () => {
   const f = await fixture();
+  f.request.mockImplementation(async (url, init) =>
+    new URL(String(url)).search
+      ? Response.json({
+          name: "test-org",
+          sprites: [{ name: "unrelated", organization: "unexplained-claim" }],
+        })
+      : f.normalResponse(url, init),
+  );
   const shared = git(f.service.sharedWorkspaceRepository(f.id), ["rev-parse", "HEAD"])
     .toString()
     .trim();

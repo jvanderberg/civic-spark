@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createApp } from "../apps/server/src/app.ts";
 import { WorkspaceLifecycle } from "../apps/server/src/lifecycle.ts";
 import { WorkspaceProvisioning } from "../apps/server/src/provisioning.ts";
+import { inspectRecoverySprite } from "../packages/backup/src/recovery.ts";
 import { EventService } from "../packages/domain/src/service.ts";
 import { fail, ok, type Result } from "../packages/domain/src/types.ts";
 import { git } from "../packages/git/src/repository.ts";
@@ -275,6 +276,7 @@ it("marks interrupted durable deletion retryable at restart without provider cal
 
 it("reopens a deleted reservation only from shared main, preserving history/identity/origin and rejecting stale deletion after recreation", async () => {
   const f = fixture();
+  vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
   const shared = f.service.sharedWorkspaceRepository(f.workspace.id);
   const head = git(shared, ["rev-parse", "main"]).toString();
   writeFileSync(join(f.service.workspacePath(f.workspace.id), "PRIVATE.txt"), "never share this");
@@ -283,7 +285,17 @@ it("reopens a deleted reservation only from shared main, preserving history/iden
     JSON.stringify({ [f.workspace.id]: "https://permanent.example.test" }),
   );
   const client = new SpriteClient();
-  const inspect = vi.fn().mockResolvedValue("missing" as const);
+  const metadata = vi.fn<typeof fetch>(async (url) =>
+    new URL(String(url)).search
+      ? Response.json({
+          name: "fixture-org",
+          sprites: [{ name: "unrelated", organization: "unexplained-claim" }],
+        })
+      : new Response(null, { status: 404 }),
+  );
+  const inspect = vi.fn<typeof inspectRecoverySprite>((name, org, origin, token) =>
+    inspectRecoverySprite(name, org, origin, token, metadata),
+  );
   const create = vi.spyOn(client, "create").mockResolvedValue(ok(f.name));
   vi.spyOn(client, "files").mockResolvedValue(ok(["README.md"]));
   const upload = vi.spyOn(client, "uploadBundle").mockImplementation(async (_name, bundle) => {
@@ -314,6 +326,10 @@ it("reopens a deleted reservation only from shared main, preserving history/iden
       spriteStatus: "ready",
     });
     expect(inspect).toHaveBeenCalledTimes(1);
+    expect(metadata.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+      "/v1/sprites",
+      `/v1/sprites/${f.name}`,
+    ]);
     expect(create).toHaveBeenCalledExactlyOnceWith(f.name);
     expect(upload).toHaveBeenCalledTimes(1);
     expect(f.service.runtime(f.workspace.id).deletion).toBeNull();

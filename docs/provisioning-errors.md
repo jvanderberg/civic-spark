@@ -12,6 +12,12 @@ The provider's [API reference](https://sprites.dev/api/sprites) documents creati
 
 A failed reconnect may perform a bounded metadata GET for the exact reserved name. Only authenticated HTTP404 establishes current absence; access errors, timeouts, malformed responses and identity mismatches remain unknown. Absence alone does not authorize creation. Current failure copy keeps any saved creation cause visible and offers explicit owner recovery for missing legacy reservations.
 
+## Provider metadata identity
+
+Recovery and provisioning share one metadata contract. The [current API](https://sprites.dev/api/sprites) defines List's top-level `name` as the authenticated organization slug. When present, it must match the configured organization and validated token; unrelated List rows do not establish the reserved resource's ownership. The [official JavaScript SDK](https://github.com/superfly/sprites-js/blob/main/src/client.ts) accepts a null list; Civic Spark accepts that shape only with a matching explicit organization identity. Older rc48 responses without top-level `name` still require an array and matching optional row claims. Malformed shapes and conflicting top-level identity remain unknown. Responses are bounded and their diagnostics are not exposed.
+
+The provider also documents resource `organization` as a slug. A live unrelated List row contradicted its matching top-level organization identity during the September 17 recovery exercise; that alternate value's meaning remains unexplained. It is not treated as an accepted ID or alias. Named GET and create still require the exact reserved name and configured `organization`, and reject any conflicting `org_slug`. An authenticated List cannot override a named resource mismatch or turn an uncertain GET into permission to create. These checks do not change owner authorization, leases, generation checks, recovery receipts or preservation of existing private work.
+
 ## Explicit initial-creation retry
 
 For new token-configured reservations, EventService writes an `initial_sprite_creation` record in `state.sqlite` before the first reservation/POST. It binds the workspace UUID and canonical Sprite name to the configured HTTPS provider origin, organization slug and a hash of the credential's organization/account ID. It stores no token or private contents and is not exposed in participant responses. Token rotation within the same provider account is supported. CLI-login-only and legacy reservations do not acquire this evidence retrospectively.

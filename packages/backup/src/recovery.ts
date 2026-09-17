@@ -5,6 +5,8 @@ import { z } from "zod";
 import { acquireWriter } from "../../../apps/server/src/deployment.ts";
 import { validatePreviewOrigin } from "../../../apps/server/src/preview-origins.ts";
 import { validateSpriteToken } from "../../sprites/src/credentials.ts";
+import { spriteOrganizationListSchema, spriteResourceSchema } from "../../sprites/src/metadata.ts";
+import { boundedProviderJson } from "../../sprites/src/provisioning.ts";
 import { privateDirectory, syncPath, writePrivate } from "./archive.ts";
 import { installationSchema } from "./backup.ts";
 import { modeRoot, stateInventory } from "./verify.ts";
@@ -106,29 +108,8 @@ export async function verifyRecoveryOrganization(
 ) {
   const response = await providerGet("/sprites?max_results=1", org, apiOrigin, token, request);
   if (response.status !== 200) throw new Error("Provider organization cannot be authenticated");
-  // The authenticated org-bearing token binds even an empty list. The documented
-  // rc48 response has no top-level name; check any additional ownership claims.
-  const result = z
-    .object({
-      name: z.string().optional(),
-      sprites: z.array(
-        z.object({
-          name: z.string().min(1),
-          org_slug: z.string().optional(),
-          organization: z.string().optional(),
-        }),
-      ),
-    })
-    .parse(await response.json());
-  if (
-    (result.name !== undefined && result.name !== org) ||
-    result.sprites.some(
-      (sprite) =>
-        (sprite.org_slug !== undefined && sprite.org_slug !== org) ||
-        (sprite.organization !== undefined && sprite.organization !== org),
-    )
-  )
-    throw new Error("Provider organization mismatch");
+  const result = spriteOrganizationListSchema(org).safeParse(await boundedProviderJson(response));
+  if (!result.success) throw new Error("Provider organization mismatch or invalid metadata");
 }
 export async function inspectRecoverySprite(
   name: string,
@@ -150,11 +131,10 @@ export async function inspectRecoverySprite(
   );
   if (response.status === 404) return "missing";
   if (response.status !== 200) throw new Error("Provider resource existence remains unknown");
-  const resource = z
-    .object({ id: z.string().min(1), name: z.string(), organization: z.string() })
-    .parse(await response.json());
-  if (resource.name !== name || resource.organization !== org)
-    throw new Error("Provider resource ownership mismatch");
+  const resource = spriteResourceSchema(name, org)
+    .extend({ id: z.string().min(1) })
+    .safeParse(await boundedProviderJson(response));
+  if (!resource.success) throw new Error("Provider resource ownership mismatch");
   return "present";
 }
 
