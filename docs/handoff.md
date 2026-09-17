@@ -1,6 +1,6 @@
 # Event settings and participant creation — integrated, awaiting deployment
 
-Root combined event chain da2c7be/3bf6475/8d40b3a with participant1477c36 as08fe3ef/88b3241/0641ebe/b4e012d, preserving all three dirty guards, refresh generation, delayed response identity guards and both browser suites. Combined check passes299tests55files and full mobile passes; root inspected short/light/dark form, schedule and returned-team screenshots. Specialized portal/admin and clean deployment context checks are in progress. Live remains82e3769 until explicit subsequent checkpoint. Capacity/resilience f3758e32 remains independent active work; no live scaling or event content changes.
+Root combined event chain da2c7be/3bf6475/8d40b3a with participant1477c36 as08fe3ef/88b3241/0641ebe/b4e012d, preserving all three dirty guards, refresh generation, delayed response identity guards and both browser suites. Combined check passes299tests55files and full mobile passes; root inspected short/light/dark form, schedule and returned-team screenshots. Specialized portal/admin and clean deployment context149 checks passed. Live remains82e3769 until explicit subsequent checkpoint. Capacity/resilience f3758e32 remains independent active work; no live scaling or event content changes.
 
 # Capacity and crash resilience — requested, in progress
 
