@@ -16,6 +16,14 @@ export const runtimeSchema = z.object({
       error: z.string().nullable(),
       org: z.string().min(1),
       apiOrigin: z.url(),
+      // Explicit owner confirmation of current absence, not historical deletion.
+      ownerRecovery: z
+        .object({
+          name: z.string().regex(/^civic-spark-[a-z0-9-]{1,45}$/),
+          account: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .strict()
+        .optional(),
     })
     .nullable()
     .default(null),
@@ -78,3 +86,27 @@ export const SPRITE_PRICING = {
   hotStorageGbHour: 0.000683,
   coldStorageGbHour: 0.000027,
 } as const;
+
+export const missingWorkspaceConfirmationSchema = z
+  .object({
+    action: z.literal("recover-missing"),
+    confirmSharedWork: z.literal(true),
+    name: z.string().regex(/^civic-spark-[a-z0-9-]{1,45}$/),
+    generation: z.number().int().nonnegative(),
+  })
+  .strict();
+
+// Internal evidence from authenticated provider inspection; never parse browser
+// input as evidence. The HTTP boundary accepts only the confirmation above.
+export const missingWorkspaceEvidenceSchema = z
+  .object({
+    name: z.string().regex(/^civic-spark-[a-z0-9-]{1,45}$/),
+    generation: z.number().int().nonnegative(),
+    eventGeneration: z.number().int().nonnegative(),
+    org: z.string().min(1),
+    apiOrigin: z.url(),
+    account: z.string().regex(/^[a-f0-9]{64}$/),
+    observedAt: z.iso.datetime(),
+    httpStatus: z.literal(404),
+  })
+  .strict();

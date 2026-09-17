@@ -42,6 +42,7 @@ import { templates, WorkspaceEngine } from "./engine.ts";
 import {
   executionSchema,
   HELD_MESSAGE,
+  missingWorkspaceEvidenceSchema,
   PAUSED_MESSAGE,
   runtimeSchema,
   type WorkspaceRuntime,
@@ -238,6 +239,46 @@ export class EventService {
       throw error;
     }
     return ok(workspaces);
+  }
+  // Internal provisioning transition after a fresh authenticated exact-name 404.
+  // Reuses the durable deletion/replacement lifecycle without issuing DELETE or
+  // claiming that the original workspace never held private work.
+  confirmMissingWorkspace(actor: Identity, id: string, evidence: unknown) {
+    const parsed = missingWorkspaceEvidenceSchema.safeParse(evidence);
+    if (!parsed.success) return fail("Invalid missing workspace evidence", 409);
+    const proof = parsed.data;
+    const workspace = this.workspace(actor, id, true, true);
+    if (!workspace.ok) return workspace;
+    const runtime = this.runtime(id);
+    const age = Date.now() - Date.parse(proof.observedAt);
+    if (
+      workspace.value.spriteStatus !== "error" ||
+      workspace.value.spriteName !== proof.name ||
+      runtime.generation !== proof.generation ||
+      this.execution(workspace.value.eventId).generation !== proof.eventGeneration ||
+      runtime.stopState === "pending" ||
+      runtime.deletion ||
+      age < 0 ||
+      age > 30000
+    )
+      return fail("Workspace state changed. Refresh before rebuilding.", 409);
+    this.setRuntime(id, {
+      generation: runtime.generation + 1,
+      held: false,
+      reason: null,
+      stopState: null,
+      stopError: null,
+      deletion: {
+        state: "deleted",
+        changedAt: proof.observedAt,
+        replacementReserved: true,
+        error: null,
+        org: proof.org,
+        apiOrigin: proof.apiOrigin,
+        ownerRecovery: { name: proof.name, account: proof.account },
+      },
+    });
+    return this.workspace(actor, id, true);
   }
   wakeWorkspace(actor: Identity, id: string) {
     const workspace = this.workspace(actor, id, true, true);

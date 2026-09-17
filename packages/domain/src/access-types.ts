@@ -36,6 +36,7 @@ export const accessStateSchema = z.object({
 export type AccessState = z.infer<typeof accessStateSchema>;
 export type Membership = z.infer<typeof membershipSchema>;
 export type Workspace = Participant & {
+  preparationAction?: "retry" | "recover-missing";
   userId: string;
   teamName: string;
   runtime?: import("./lifecycle.ts").WorkspaceRuntime;

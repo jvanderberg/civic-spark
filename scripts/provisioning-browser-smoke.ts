@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { PortalState, Workspace } from "../packages/domain/src/access-types.ts";
 import {
+  missingWorkspaceMessage,
   spriteCreationMessages,
   withCreationFailure,
 } from "../packages/domain/src/provisioning.ts";
@@ -38,6 +39,7 @@ export async function verifyProvisioning() {
   let polls = 0;
   let spriteError: string | null = null;
   let failedRetry = false;
+  let recoverMissing = false;
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error" && !message.text().includes("409 (Conflict)"))
@@ -61,7 +63,16 @@ export async function verifyProvisioning() {
       posts += 1;
       assert.deepEqual(
         route.request().postDataJSON() ?? {},
-        posts === 1 ? {} : { action: "retry-initial-creation" },
+        recoverMissing
+          ? {
+              action: "recover-missing",
+              confirmSharedWork: true,
+              name: "civic-spark-provision-fixture",
+              generation: 0,
+            }
+          : posts === 1
+            ? {}
+            : { action: "retry-initial-creation" },
         "Only an explicit button action requests initial-creation retry",
       );
       if (posts === 1)
@@ -81,6 +92,7 @@ export async function verifyProvisioning() {
         spriteError,
         spritePhase: phase,
         spriteUpdatedAt: new Date().toISOString(),
+        preparationAction: recoverMissing ? "recover-missing" : "retry",
       },
     });
   });
@@ -202,6 +214,68 @@ export async function verifyProvisioning() {
       !(await page.getByRole("alert").innerText()).includes("limit"),
       "Legacy unknown cause must not be labeled quota",
     );
+    recoverMissing = true;
+    spriteError = missingWorkspaceMessage;
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      for (const viewport of sizes) {
+        await page.setViewportSize(viewport);
+        await page.reload();
+        const rebuild = page.getByRole("button", { name: "Rebuild from shared work", exact: true });
+        await rebuild.waitFor();
+        assert.equal(await page.getByRole("button", { name: "Retry preparation" }).count(), 0);
+        const beforeRebuild: number = posts;
+        const activate = async () => {
+          await rebuild.scrollIntoViewIfNeeded();
+          if (viewport.width < 500) await rebuild.tap();
+          else {
+            await rebuild.focus();
+            await page.keyboard.press("Enter");
+          }
+        };
+        page.once("dialog", async (dialog) => {
+          assert.equal(dialog.type(), "confirm");
+          assert(
+            dialog
+              .message()
+              .includes("Unshared files, commits and workspace history are unavailable"),
+          );
+          await dialog.dismiss();
+        });
+        await activate();
+        assert.equal(posts, beforeRebuild, "Cancel must not start recovery");
+        page.once("dialog", async (dialog) => {
+          await dialog.accept();
+        });
+        await activate();
+        await page.waitForFunction(() => !document.querySelector("button:disabled.button.primary"));
+        assert.equal(
+          posts,
+          beforeRebuild + 1,
+          "Explicit confirmation submits one recovery request",
+        );
+        await page.reload();
+        await rebuild.waitFor();
+        assert.equal(posts, beforeRebuild + 1, "Reload/polling never creates recovery work");
+        await rebuild.scrollIntoViewIfNeeded();
+        const box = await rebuild.boundingBox();
+        assert(box && box.height >= 44 && box.y >= 0 && box.y + box.height <= viewport.height + 1);
+        assert(
+          await page.evaluate(
+            () =>
+              document.documentElement.scrollWidth <= innerWidth &&
+              document.documentElement.scrollHeight <= innerHeight + 1,
+          ),
+        );
+        await page.screenshot({
+          path: join(
+            artifacts,
+            `provisioning-recovery-${viewport.width}x${viewport.height}-${colorScheme}.png`,
+          ),
+          animations: "disabled",
+        });
+      }
+    }
     const expectedPosts = posts;
     spriteError = null;
     phase = "ready";

@@ -81,7 +81,7 @@ it.each(["capacity", "rate", "auth", "transient", "unknown"] as const)(
         expect(current().spriteCreationFailure).toBe(kind);
         expect(current().spriteError).toContain(spriteCreationMessages[kind]);
         expect(current().spriteError).toContain(
-          outcome === "missing" ? "reserved Sprite is absent" : "could not be reached",
+          outcome === "missing" ? "reserved workspace is missing" : "could not be reached",
         );
         expect(current().spriteError).not.toContain("UNTRUSTED");
       }
@@ -173,8 +173,8 @@ it("does not invent a cause or allocate a replacement for a legacy absent reserv
       const current = unwrap(service.workspace(owner, workspace.id));
       expect(current.spriteName).toBe(name);
       expect(current.spriteCreationFailure).toBeUndefined();
-      expect(current.spriteError).toContain("reserved Sprite is absent");
-      expect(current.spriteError).toContain("event admin to investigate");
+      expect(current.spriteError).toContain("reserved workspace is missing");
+      expect(current.spriteError).toContain("Rebuild from shared work");
       expect(current.spriteError).not.toMatch(/quota|limit|credentials|provider access/);
     }
     expect(create).not.toHaveBeenCalled();

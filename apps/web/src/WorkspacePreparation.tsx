@@ -29,19 +29,36 @@ export function WorkspacePreparation({
   const readStatus = useCallback(async () => {
     const next = await api<Workspace>(`/workspaces/${participant.id}/sprite`);
     setWorkspace(next);
-    if (next.spriteStatus !== "local") setError("");
+    if (next.spriteStatus === "provisioning" || next.spriteStatus === "ready") setError("");
     if (next.spriteStatus === "ready") await changed.current();
     return next;
   }, [participant.id]);
   const start = useCallback(
     async (explicitRetry = false) => {
+      const recover = explicitRetry && workspace.preparationAction === "recover-missing";
+      if (
+        recover &&
+        !window.confirm(
+          "Rebuild from shared work? Only work shared to your team’s Git repository will be restored. Unshared files, commits and workspace history are unavailable if the workspace is missing. Any existing workspace will be preserved.",
+        )
+      )
+        return;
       setStarting(true);
       setError("");
       try {
         await api(
           `/workspaces/${participant.id}/sprite`,
           "POST",
-          explicitRetry ? { action: "retry-initial-creation" } : undefined,
+          recover
+            ? {
+                action: "recover-missing",
+                confirmSharedWork: true,
+                name: workspace.spriteName,
+                generation: workspace.runtime?.generation ?? 0,
+              }
+            : explicitRetry
+              ? { action: "retry-initial-creation" }
+              : undefined,
         );
         await readStatus();
       } catch (cause) {
@@ -54,7 +71,13 @@ export function WorkspacePreparation({
         setStarting(false);
       }
     },
-    [participant.id, readStatus],
+    [
+      participant.id,
+      readStatus,
+      workspace.preparationAction,
+      workspace.spriteName,
+      workspace.runtime?.generation,
+    ],
   );
   useEffect(() => {
     if (!attempted.current && participant.spriteStatus === "local" && !eventClosed) {
@@ -154,6 +177,13 @@ export function WorkspacePreparation({
         {eventClosed && (
           <p>This event has ended. Ask an event admin to reopen it before preparing a workspace.</p>
         )}
+        {workspace.preparationAction === "recover-missing" && !running && (
+          <p>
+            Rebuild a missing workspace from your team’s shared Git work. Unshared files, commits
+            and workspace history are unavailable. We’ll check that it is missing first; any
+            existing workspace will be preserved.
+          </p>
+        )}
         {(!running || error) && (
           <button
             className="button primary"
@@ -161,7 +191,11 @@ export function WorkspacePreparation({
             disabled={starting || eventClosed}
             onClick={() => void start(true)}
           >
-            {failed || error ? "Retry preparation" : "Start workspace"}
+            {workspace.preparationAction === "recover-missing"
+              ? "Rebuild from shared work"
+              : failed || error
+                ? "Retry preparation"
+                : "Start workspace"}
           </button>
         )}
       </section>

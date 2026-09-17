@@ -307,7 +307,7 @@ it("never bootstraps initial evidence for a legacy reservation", async () => {
   await f.restart();
   unwrap(await f.run());
   expect(f.request.mock.calls.map(([, init]) => init?.method)).toEqual(["GET"]);
-  expect(f.current().spriteError).toContain("event admin to investigate");
+  expect(f.current().spriteError).toContain("Rebuild from shared work");
   expect(f.service.initialCreation(f.id)).toBeNull();
   expect(() => f.service.reserveInitialCreation(f.id, f.name, unwrapBinding(f.client))).toThrow(
     "never-reserved",

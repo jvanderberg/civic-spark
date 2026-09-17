@@ -39,3 +39,8 @@ export function withCreationFailure(
   const original = cause ? spriteCreationMessages[cause] : null;
   return original && original !== current ? `${original} ${current}` : current;
 }
+
+export const legacyMissingWorkspaceMessage =
+  "Workspace preparation did not complete, and the reserved Sprite is absent. Ask an event admin to investigate; retrying will not create a replacement.";
+export const missingWorkspaceMessage =
+  "The reserved workspace is missing. Rebuild from shared work can restore your team’s shared Git work. Unshared files, commits and workspace history are unavailable.";

@@ -137,6 +137,7 @@ export class SpriteClient {
     timeout = 120000,
     input?: string,
     maxBuffer = 16 * 1024 * 1024,
+    beforeDispatch?: () => Promise<void>,
   ): Promise<Result<Buffer>> {
     let lease: SpriteLease | undefined;
     let closed: Promise<void> | undefined;
@@ -152,6 +153,7 @@ export class SpriteClient {
       if (maxBuffer > 16 * 1024 * 1024)
         releaseTransfer = await this.transfers.acquire(lease?.signal);
       releaseCommand = await this.commands.acquire(lease?.signal);
+      await beforeDispatch?.();
       lease?.signal.throwIfAborted();
       const pending = execute("sprite", this.args(args), {
         timeout,
@@ -206,38 +208,75 @@ export class SpriteClient {
       return null;
     }
   }
-  /** Metadata only; callers separately authorize any initial-creation retry. */
-  async inspectReservation(name: string): Promise<"present" | "missing" | "unknown"> {
-    if (!spriteNamePattern.test(name)) return "unknown";
-    let release: (() => void) | undefined;
-    try {
-      const { token, url } = this.provisioningEndpoint(name);
-      release = await this.commands.acquire();
-      const response = await this.request(url, {
+  /** Runs within an admitted command slot; never nests queue acquisition. */
+  private async reservationMetadata(
+    name: string,
+    authenticateOrganization: boolean,
+    signal?: AbortSignal,
+  ) {
+    const { token, url } = this.provisioningEndpoint(name);
+    const get = (target: URL) =>
+      this.request(target, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
         redirect: "error",
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])]),
       });
-      if (response.status === 404) {
-        await response.body?.cancel();
-        return "missing";
-      }
+    if (authenticateOrganization) {
+      const response = await get(new URL("/v1/sprites?max_results=1", url));
       if (response.status !== 200) {
         await response.body?.cancel();
-        return "unknown";
+        return "unknown" as const;
       }
-      const result = z
-        .object({ name: z.literal(name), organization: z.literal(this.org) })
+      const org = z
+        .object({
+          name: z.literal(this.org).optional(),
+          sprites: z.array(
+            z.object({
+              name: z.string().min(1),
+              org_slug: z.literal(this.org).optional(),
+              organization: z.literal(this.org).optional(),
+            }),
+          ),
+        })
         .safeParse(await boundedProviderJson(response));
-      return result.success ? "present" : "unknown";
+      if (!org.success) return "unknown" as const;
+    }
+    const response = await get(url);
+    if (response.status === 404) {
+      await response.body?.cancel();
+      return "missing" as const;
+    }
+    if (response.status !== 200) {
+      await response.body?.cancel();
+      return "unknown" as const;
+    }
+    const result = z
+      .object({ name: z.literal(name), organization: z.literal(this.org) })
+      .safeParse(await boundedProviderJson(response));
+    return result.success ? ("present" as const) : ("unknown" as const);
+  }
+  /** Metadata only; callers separately authorize any creation. */
+  async inspectReservation(
+    name: string,
+    authenticateOrganization = false,
+  ): Promise<"present" | "missing" | "unknown"> {
+    if (!spriteNamePattern.test(name)) return "unknown";
+    let release: (() => void) | undefined;
+    try {
+      release = await this.commands.acquire();
+      return await this.reservationMetadata(name, authenticateOrganization);
     } catch {
       return "unknown";
     } finally {
       release?.();
     }
   }
-  async create(name: string, beforeDispatch?: () => Promise<void>): Promise<SpriteCreateResult> {
+  async create(
+    name: string,
+    beforeDispatch?: () => Promise<void>,
+    requireMissing = false,
+  ): Promise<SpriteCreateResult> {
     if (!spriteNamePattern.test(name)) return fail("Invalid Civic Spark Sprite name.");
     const failure = (kind: SpriteCreationFailure): SpriteCreateResult => ({
       ok: false,
@@ -250,7 +289,7 @@ export class SpriteClient {
     if (!process.env.SPRITE_TOKEN) {
       try {
         // A guarded retry must never fall back to unaudited CLI authentication.
-        if (beforeDispatch) return failure("unknown");
+        if (beforeDispatch || requireMissing) return failure("unknown");
         const result = await this.command(["create", "--skip-console", name]);
         return result.ok ? ok(name) : failure("unknown");
       } catch {
@@ -276,6 +315,16 @@ export class SpriteClient {
       release = await this.commands.acquire(lease?.signal);
       lease?.signal.throwIfAborted();
       await beforeDispatch?.();
+      if (requireMissing) {
+        // Refresh absence after queue admission under the lifecycle lease. A
+        // same-name race at POST must fail as conflict; never attach/seed it.
+        if (
+          !beforeDispatch ||
+          (await this.reservationMetadata(name, true, lease?.signal)) !== "missing"
+        )
+          return failure("unknown");
+        await beforeDispatch();
+      }
       lease?.signal.throwIfAborted();
       // Revalidation may await session storage; never cross a provider/credential
       // change between admission and this actual dispatch.
@@ -296,7 +345,8 @@ export class SpriteClient {
       const created = z
         .object({ name: z.literal(name), organization: z.literal(this.org) })
         .safeParse(body);
-      return [200, 201].includes(response.status) && created.success
+      return (requireMissing ? response.status === 201 : [200, 201].includes(response.status)) &&
+        created.success
         ? ok(name)
         : failure("unknown");
     } catch {
@@ -306,20 +356,30 @@ export class SpriteClient {
       lease?.release();
     }
   }
-  async uploadBundle(name: string, bundle: string): Promise<Result<Buffer>> {
+  async uploadBundle(
+    name: string,
+    bundle: string,
+    beforeDispatch?: () => Promise<void>,
+  ): Promise<Result<Buffer>> {
     if (!spriteNamePattern.test(name)) return fail("Invalid prototype Sprite name");
-    return this.command([
-      "-s",
-      name,
-      "exec",
-      "--no-port-forward",
-      "--file",
-      `${bundle}:/tmp/civic-spark-seed.bundle`,
-      "--",
-      "bash",
-      "-lc",
-      readFileSync(new URL("./checkout.sh", import.meta.url), "utf8"),
-    ]);
+    return this.command(
+      [
+        "-s",
+        name,
+        "exec",
+        "--no-port-forward",
+        "--file",
+        `${bundle}:/tmp/civic-spark-seed.bundle`,
+        "--",
+        "bash",
+        "-lc",
+        readFileSync(new URL("./checkout.sh", import.meta.url), "utf8"),
+      ],
+      120000,
+      undefined,
+      16 * 1024 * 1024,
+      beforeDispatch,
+    );
   }
   async exec(name: string, args: string[], uploads: string[] = []): Promise<Result<Buffer>> {
     if (!spriteNamePattern.test(name)) return fail("Invalid prototype Sprite name");

@@ -222,3 +222,11 @@ Deployment setup, exact commands, constraints and validation gaps: [Fly deployme
 - [x] Complete final local runner/browser/context checks and the opt-in Node 24.18.0 / OpenCode 1.18.31 loopback turn beyond 300 seconds, including Tasks renewal; see [evidence and limits](docs/opencode-turns.md).
 - [x] Correct independent-review findings: recover durable current-answer text without duplicate streaming/replay, and validate message/status evidence before terminal hold release; actual-runner regressions added.
 - [ ] Reviewer reread, root integration and separately authorized deployment/live acceptance. No participant resources or paid inference used by this workstream.
+
+## Corrective owner recovery for missing legacy reservations
+
+- [x] Add explicit owner-confirmed recovery from canonical shared team Git using validated durable lifecycle state; preserve identity/name, never backfill initial-create evidence or call provider DELETE.
+- [x] Require fresh authenticated exact404, current owner/session/event/lifecycle/provider binding and queue-dispatch revalidation; preserve any present or uncertain resource without upload.
+- [x] Expose Rebuild from shared work with private-state-loss confirmation; cancel, reload, status and ordinary wake never recreate.
+- [x] Validate local HTTP/provider races and phone/desktop/short viewport confirmation/cancel/reload: full check, 71 focused tests (38 recovery cases), provisioning browser and complete mobile matrix passed.
+- [ ] Root review/integration/deployment and physical-device acceptance. No live recovery mutations authorized in this worktree.

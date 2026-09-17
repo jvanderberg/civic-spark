@@ -14,6 +14,7 @@ import {
 } from "../../../packages/domain/src/access-types.ts";
 import {
   lifecycleActionSchema,
+  missingWorkspaceConfirmationSchema,
   spriteActionSchema,
 } from "../../../packages/domain/src/lifecycle.ts";
 import { EventService } from "../../../packages/domain/src/service.ts";
@@ -372,7 +373,7 @@ export async function createApp(
     const input = lifecycleActionSchema.parse(r.body);
     return send(reply, await lifecycle.change(actor(r.actor), r.params.id, input.action));
   });
-  const authorizePreparation = async (r: FastifyRequest, id: string) => {
+  const authorizePreparation = async (r: FastifyRequest, id: string, waking = false) => {
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(r.headers),
       query: { disableCookieCache: true },
@@ -383,13 +384,18 @@ export async function createApp(
       (prototype ? session.user.email.toLowerCase() : session.user.id) !== actor(r.actor).id
     )
       return fail("Sign in again before preparing your workspace.", 401);
-    return service.workspace(actor(r.actor), id, true);
+    return service.workspace(actor(r.actor), id, true, waking);
   };
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/wake", async (r, reply) => {
     if (!spritesEnabled)
       return reply
         .code(409)
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
+    if (service.runtime(r.params.id).deletion?.ownerRecovery)
+      return send(
+        reply,
+        fail("Confirm Rebuild from shared work to recover this missing workspace.", 409),
+      );
     const workspace = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!workspace.ok) return send(reply, workspace);
     const prepared = await provisioning.start(workspace.value, () =>
@@ -829,8 +835,10 @@ export async function createApp(
   });
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/sprite", async (r, reply) => {
     const input = z
-      .object({ action: z.literal("retry-initial-creation").optional() })
-      .strict()
+      .union([
+        z.object({ action: z.literal("retry-initial-creation").optional() }).strict(),
+        missingWorkspaceConfirmationSchema,
+      ])
       .parse(r.body ?? {});
     const workspace = service.workspace(actor(r.actor), r.params.id, true, true);
     if (!workspace.ok) return send(reply, workspace);
@@ -838,6 +846,27 @@ export async function createApp(
       return reply
         .code(409)
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
+    if (input.action === "recover-missing") {
+      if (
+        workspace.value.spriteName !== input.name ||
+        service.runtime(r.params.id).generation !== input.generation
+      )
+        return send(reply, fail("Workspace state changed. Refresh before rebuilding.", 409));
+      const result = await provisioning.start(
+        workspace.value,
+        () => authorizePreparation(r, r.params.id, true),
+        false,
+        actor(r.actor),
+      );
+      return result.ok
+        ? reply.code(result.value.preparing ? 202 : 200).send(result.value)
+        : send(reply, result);
+    }
+    if (service.runtime(r.params.id).deletion?.ownerRecovery)
+      return send(
+        reply,
+        fail("Confirm Rebuild from shared work to recover this missing workspace.", 409),
+      );
     const waking = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!waking.ok) return send(reply, waking);
     const result = await provisioning.start(
