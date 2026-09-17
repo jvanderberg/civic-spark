@@ -1079,7 +1079,11 @@ export function App() {
                 />
               </Field>
               <Field label="Timezone">
-                <input name="timezone" required defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone} />
+                <input
+                  name="timezone"
+                  required
+                  defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone}
+                />
               </Field>
             </div>
             <Field label="Location">

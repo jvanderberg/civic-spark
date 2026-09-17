@@ -1,3 +1,7 @@
+# Event settings and participant creation — integrated, awaiting deployment
+
+Root combined event chain da2c7be/3bf6475/8d40b3a with participant1477c36 as08fe3ef/88b3241/0641ebe/b4e012d, preserving all three dirty guards, refresh generation, delayed response identity guards and both browser suites. Combined check passes299tests55files and full mobile passes; root inspected short/light/dark form, schedule and returned-team screenshots. Specialized portal/admin and clean deployment context checks are in progress. Live remains82e3769 until explicit subsequent checkpoint. Capacity/resilience f3758e32 remains independent active work; no live scaling or event content changes.
+
 # Capacity and crash resilience — requested, in progress
 
 Full-access Paseo Astra `f3758e32-adeb-4967-a782-8260aed51a2f` owns isolated `civic-spark-capacity-resilience`. User targets up to 60 concurrent participants, removes arbitrary Sprite cost/allocation blocking, requests setup disk sizing and optional auto-expansion, bottleneck audit, executable load testing, and fast crash failure/recovery. Root remains sole cloud/deployment owner. Preserve five-minute idle, auth/owner isolation, pause gates, non-recycled preview origins and participant history. Local isolated load/fault fixtures first; no paid models/live participant load or cloud resizing by worker. Distinguish measured provider-mock load from real cloud capacity; no untested 60-user support claim. Coordinate overlap with pending event settings and participant project creation.
