@@ -2,6 +2,14 @@
 
 Site: https://civic-spark.fly.dev — Day in Our Data.
 
+## Current status — 16:10 CDT
+
+**38 of 40 participants have reviewed and manually Shared contributions across all 12 teams.** All 40 have usable workspaces and have submitted their role-specific model request. The final two are P14 (bus-stop UI review) and P36 (crime UI change, resolving concurrent team work before publication). No provisioning blocker remains in this cohort.
+
+Seven newly verified Shares: P04 accessibility `7a7ab78`, P06 tax year selector `9fb4e84`, P10 cycling phone filters `4beb8da`, P19 transit eligibility `52127eb`, P33 commission phone controls `056c20e`, P37 crime count/period semantics `2bbc5b5`, and P40 ECHO suppressed-count interpretation `000105a`. Each participant recorded managed preview review and the normal Share success state. Several still saw stale generic Sprite-command or HTTP 502 alerts despite successful work; these remain usability observations, not erased failures.
+
+The sections below are a chronological record; early holds and lower counts describe earlier stages, not current status. This remains a staggered functional exercise, not proof of sustained 40-person simultaneous inference capacity.
+
 ## Method
 
 40 participant identities, 12 teams. Each participant is operated by a separate Luna agent with a prose role brief. The agent observes the live browser and chooses its next action. Playwright supplies browser actions only; there are no deterministic scenario scripts, API setup, injected state, or prewritten application changes. Headed browsers and live team activity make progress visible.
