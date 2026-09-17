@@ -106,12 +106,16 @@ export class EventService {
     return runtimeSchema.parse(row ? JSON.parse(String(row.body)) : {});
   }
   setRuntime(id: string, change: Partial<WorkspaceRuntime>) {
-    const next = runtimeSchema.parse({ ...this.runtime(id), ...change });
+    const previous = this.runtime(id);
+    const next = runtimeSchema.parse({ ...previous, ...change });
+    const body = JSON.stringify(next);
+    // Exact no-ops only: changed activity timestamps and generations still commit.
+    if (body === JSON.stringify(previous)) return previous;
     this.db
       .prepare(
         "INSERT INTO workspace_runtime(id,body) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
       )
-      .run(id, JSON.stringify(next));
+      .run(id, body);
     return next;
   }
   setExecution(actor: Identity, eventId: string, paused: boolean) {
@@ -302,6 +306,7 @@ export class EventService {
   }
   private save() {
     const body = JSON.stringify(this.state);
+    if (body === this.persistedState) return;
     try {
       this.db
         .prepare(

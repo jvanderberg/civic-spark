@@ -6,6 +6,15 @@
 
 # Implementation plan
 
+## Management disk writes — local, pending root integration
+
+- [x] Audit polling/request persistence, health probes, the writer lock, activity timestamps and synchronous Git; retain correctness/durability and existing policy/provider behavior.
+- [x] Skip exact no-op access/runtime/provisioning writes; preserve transition history, initial-creation sealing, changed timestamps/generations and failure rollback.
+- [x] Move HTTP health filesystem probing off the event loop and coalesce only concurrent probes, retaining fresh headroom/real-write/failure checks. Startup/writer admission unchanged.
+- [x] Focused regression/type verification: 83 tests across six files; real SQLite write counts, forty overlapping health requests, changed-write durability and failure/recovery coverage.
+- [x] Full check passed with VITEST_MAX_WORKERS=2: 416 tests, lint, both typechecks and build. The default-worker attempt had three existing Git-test timeouts; affected files passed all25 tests in isolation without timeout changes.
+- [ ] Root integration and deployed latency acceptance; dedicated CPU setup remains root-owned. No UI/provider/policy or live changes in this workstream.
+
 ## Provisioning diagnostics — local, pending root integration
 
 - [x] Preserve a sanitized original creation-failure category across retry phases and restarts; legacy failures remain unknown and successful preparation clears the category.

@@ -38,7 +38,12 @@ import {
 import { registerAdminRoutes } from "./admin.ts";
 import { AgentSessions } from "./agents.ts";
 import { createAuthentication } from "./auth.ts";
-import { clientAddress, storageHeadroom, storageReady, validateDeployment } from "./deployment.ts";
+import {
+  clientAddress,
+  createStorageReadiness,
+  storageHeadroom,
+  validateDeployment,
+} from "./deployment.ts";
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
 import { WorkspaceLifecycle } from "./lifecycle.ts";
@@ -304,11 +309,12 @@ export async function createApp(
       );
       return { signedIn: true };
     });
+  const checkStorageReadiness = createStorageReadiness(root);
   app.get("/api/health", async (_request, reply) => {
     try {
       service.checkHealth();
       authentication.checkHealth();
-      storageReady(root);
+      await checkStorageReadiness();
       return { ok: true };
     } catch {
       return reply.code(503).send({ ok: false });

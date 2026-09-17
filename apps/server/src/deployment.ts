@@ -1,4 +1,13 @@
-import { existsSync, lstatSync, mkdirSync, rmSync, statfsSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  existsSync,
+  promises as fs,
+  lstatSync,
+  mkdirSync,
+  rmSync,
+  statfsSync,
+  writeFileSync,
+} from "node:fs";
 import type { IncomingHttpHeaders } from "node:http";
 import { BlockList, isIP } from "node:net";
 import { tmpdir } from "node:os";
@@ -125,14 +134,45 @@ export function storageReady(root: string) {
   rmSync(path);
 }
 
+/** Share only an in-flight probe; every later request performs a fresh check. */
+export function createStorageReadiness(root: string) {
+  let pending: Promise<void> | undefined;
+  const probe = async () => {
+    // Health must not hold the event loop in a filesystem write/journal wait.
+    // Keep the same headroom and real-write requirements as startup readiness.
+    const stats = await Promise.all([...new Set([root, tmpdir()])].map((path) => fs.statfs(path)));
+    for (const stat of stats) requireHeadroom(stat);
+    const path = join(root, `.civic-spark-health-${randomUUID()}`);
+    const file = await fs.open(path, "wx", 0o600);
+    try {
+      await file.writeFile("ready");
+    } finally {
+      try {
+        await file.close();
+      } finally {
+        await fs.rm(path, { force: true });
+      }
+    }
+  };
+  return () => {
+    pending ??= probe().finally(() => {
+      pending = undefined;
+    });
+    return pending;
+  };
+}
+
+function requireHeadroom(stat: { bavail: number; bsize: number }, incomingBytes = 0) {
+  const available = stat.bavail * stat.bsize;
+  if (available < 128 * 1024 * 1024 + incomingBytes * 2)
+    throw new Error(
+      "Server storage is nearly full. Ask the event operator to add space, then retry.",
+    );
+}
+
 /** Check both persistent data and temporary/root filesystem; growth of one cannot repair the other. */
 export function storageHeadroom(root: string, incomingBytes = 0) {
   for (const path of new Set([root, tmpdir()])) {
-    const stat = statfsSync(path);
-    const available = stat.bavail * stat.bsize;
-    if (available < 128 * 1024 * 1024 + incomingBytes * 2)
-      throw new Error(
-        "Server storage is nearly full. Ask the event operator to add space, then retry.",
-      );
+    requireHeadroom(statfsSync(path), incomingBytes);
   }
 }

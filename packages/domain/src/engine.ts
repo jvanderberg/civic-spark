@@ -712,14 +712,30 @@ export class WorkspaceEngine {
           .prepare("UPDATE initial_sprite_creation SET body=? WHERE workspace=?")
           .run(JSON.stringify({ ...initial, state: "sealed" }), id);
     }
+    const nextFailure =
+      status === "ready"
+        ? null
+        : creationFailure
+          ? (p.spriteCreationFailure ?? creationFailure)
+          : p.spriteCreationFailure;
+    const nextPhase = phase ?? (status === "ready" ? "ready" : (p.spritePhase ?? null));
+    // A repeated observation is not a new transition. Keep the last transition's
+    // timestamp/activity and avoid rewriting the whole state for the same phase.
+    if (
+      p.spriteName === name &&
+      p.spriteStatus === status &&
+      p.spriteError === error &&
+      p.spritePhase === nextPhase &&
+      p.spriteCreationFailure === nextFailure
+    )
+      return ok(p);
     p.spriteName = name;
     p.spriteStatus = status;
     p.spriteError = error;
     // Phase updates and retries must not erase or rewrite the original cause.
     // Legacy records remain unknown; only a newly observed create failure sets it.
-    if (status === "ready") p.spriteCreationFailure = null;
-    else if (creationFailure) p.spriteCreationFailure ??= creationFailure;
-    p.spritePhase = phase ?? (status === "ready" ? "ready" : (p.spritePhase ?? null));
+    p.spriteCreationFailure = nextFailure;
+    p.spritePhase = nextPhase;
     p.spriteUpdatedAt = stamp();
     this.record(p.eventId, `${p.name} · Sprite ${status}.`);
     return ok(p);
