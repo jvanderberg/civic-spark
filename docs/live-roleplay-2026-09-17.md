@@ -70,8 +70,19 @@ Source inspection identifies a long-running local OpenCode session.prompt HTTP r
 - **Avery / assessment fairness:** preview opens at https://civic-spark-858930f9-d666-4633-bee6-2528faf08cd5-biglv.sprites.app/. Desktop and 360/390px review found a histogram, working year selector, peer-relative tables and visible data caveats. Repeated condo units dominate the top-over-assessed list; narrow tables require horizontal scrolling. Local commit reported: e96a5de. Manual Share succeeded; UI showed 0 files changed and No changes to share.
 - **Riley / school cycling:** preview opens at https://civic-spark-6ba5ed42-cd36-4c31-b051-762b6ed32368-biglv.sprites.app/. Review found a working map, schools, phased bikeways, crashes, attribution and usable phone layout. **Data correctness issue:** Village severity shows zero injuries/fatalities and the severity filter empties the layer, while IDOT has nonzero totals. The network summary also remains Village-specific after switching sources. Some brief overlays/gap analysis remain unimplemented; mobile legend obscures part of the map. Local commit reported: 325e170. Authorized Share as an incomplete baseline with these defects explicitly handed to reviewers, not as a fully correct demo; Share succeeded with 0 files changed and No changes to share.
 
-Runtime repair is assigned to a separate Luna agent in an isolated source worktree. It must preserve one prompt/session, accurate working/completion state and cancellation, with an actual pinned-runtime loopback regression exceeding five minutes. No production fix/deployment claimed yet.
+Runtime repair was reassigned to Astra in an isolated source worktree; Luna remains responsible for browser roleplay. It must preserve one prompt/session, accurate working/completion state and cancellation, with an actual pinned-runtime loopback regression exceeding five minutes. No production fix/deployment claimed yet.
 
 ## Abandoned pilot
 
 The earlier scripted rehearsal is not part of these results. Its one test team and Sprite were deleted through the UI after stopping its single model turn. Nothing was Shared or launched. Its demo account remains because no account-delete UI exists. The real Bobs your uncle team remains untouched. See [the abandoned pilot record](live-rehearsal-2026-09-17.md).
+
+
+## Full participant restart after deployed fixes
+
+The runtime and initial-provisioning fixes are deployed at `10f4395`; live source hashes and HTTPS health were verified. Combined validation passed 436 tests, the full mobile matrix, deployment-context build, and independent review. The pinned runtime proof exceeded five minutes with one inference, continued activity holds, and exact answer delivery. The upgraded provider metadata reports 100 running / 100 warm.
+
+All 40 existing Luna participant agents received the full roleplay release, and Paseo reported all 40 running at the restart check. This is agent-orchestration status, not a claim of 40 simultaneous successful model turns. Nine remaining leads may build and Share their brief-driven MVPs concurrently; collaborators may review and improve available shared work without another coordinator release. Completed leads preserve their existing MVPs and review incoming contributions.
+
+A separate Luna browser operator handles only documented failed initial test provisioning through the normal admin UI. Previously ready workspaces and ambiguous private work are excluded from deletion. Two previously ready resources returned provider 404 during deployment preflight, including the cycling lead; those require separate recovery and are not silently replaced. Existing ready resources checked idle before deployment.
+
+Per-person observations remain in `artifacts/roleplay-20260917/pNN.md`; operator recovery is recorded in `artifacts/roleplay-20260917/recovery.md`. No deterministic business-flow scripts replace participant decisions.
