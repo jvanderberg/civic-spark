@@ -15,7 +15,8 @@ function elapsed(hours: number | null) {
   return `${Math.floor(hours / 24)}d ${Math.floor(hours) % 24}h`;
 }
 function status(row: Row) {
-  if (row.runtime.deletion?.state === "failed") return "Delete needs retry";
+  if (row.runtime.deletion?.state === "failed" || row.runtime.deletion?.reset)
+    return "Delete needs retry";
   if (row.runtime.deletion?.state === "pending") return "Deleting…";
   if (row.runtime.deletion?.state === "deleted")
     return row.runtime.deletion.replacementReserved ? "Rebuilding" : "Deleted";
@@ -209,11 +210,14 @@ export function AdminSprites({
                       disabled={
                         busy ||
                         (row.runtime.deletion?.state === "deleted" &&
-                          !row.runtime.deletion.replacementReserved)
+                          !row.runtime.deletion.replacementReserved &&
+                          !row.runtime.deletion.reset)
                       }
                       onClick={() => setAction({ kind: "delete", row })}
                     >
-                      {row.runtime.deletion?.state === "failed" ? "Retry delete" : "Delete"}
+                      {row.runtime.deletion?.state === "failed" || row.runtime.deletion?.reset
+                        ? "Retry delete"
+                        : "Delete"}
                     </button>
                   </td>
                 </tr>
@@ -238,7 +242,7 @@ export function AdminSprites({
             )}
             <p>
               {action.kind === "delete"
-                ? "Permanently delete this Sprite and its unshared private files, saved keys and conversation history. Shared team Git remains. The owner can reopen a new workspace from shared Git."
+                ? "Permanently delete this Sprite and its unshared private files, saved keys and conversation history. Shared team Git remains. The owner can reconnect to a new Sprite from shared Git."
                 : action.kind === "pause"
                   ? "Interrupt this workspace’s agents, terminal and preview. Saved files and conversations remain. Its owner can reopen it unless the hackathon is paused."
                   : action.kind === "pause-sprites"

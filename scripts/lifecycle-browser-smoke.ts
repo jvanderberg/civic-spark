@@ -11,6 +11,7 @@ import { SpriteClient } from "../packages/sprites/src/client.ts";
 import { waitEditorText } from "./browser-editor.ts";
 import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
 import { verifySpriteRows } from "./sprite-controls-browser-smoke.ts";
+import { verifySpriteReset } from "./sprite-reset-browser-smoke.ts";
 
 const unwrap = <T>(result: Result<T>) => {
   if (!result.ok) throw new Error(result.error);
@@ -251,6 +252,7 @@ export async function verifyLifecyclePortal() {
     rmSync(root, { recursive: true, force: true });
   }
   await verifySpriteRows();
+  await verifySpriteReset();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
   await verifyLifecyclePortal();

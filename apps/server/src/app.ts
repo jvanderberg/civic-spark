@@ -343,6 +343,18 @@ export async function createApp(
     if (!value) throw new Error("Missing session");
     return value;
   };
+  // Keep the whole request in the drain, including gaps between remote commands
+  // and asynchronous Git/authorization callbacks. Do not release on client disconnect.
+  const requestLeases = new WeakMap<FastifyRequest, ReturnType<typeof lifecycle.acquire>>();
+  const releaseRequest = (request: FastifyRequest) => {
+    requestLeases.get(request)?.release();
+    requestLeases.delete(request);
+  };
+  app.addHook("onSend", async (request, _reply, payload) => {
+    releaseRequest(request);
+    return payload;
+  });
+  app.addHook("onError", async (request) => releaseRequest(request));
   // Every workspace route is owner-authorized before the execution gate. Only
   // metadata and explicit wake bypass runtime gating, never private file reads.
   app.addHook("preHandler", async (r, reply) => {
@@ -362,6 +374,11 @@ export async function createApp(
     if (match[2] === "sprite" || match[2] === "wake") return;
     const access = service.executionAllowed(workspace.value.id);
     if (!access.ok) return send(reply, access);
+    if (workspace.value.spriteName)
+      requestLeases.set(
+        r,
+        lifecycle.acquire(workspace.value.spriteName, r.method === "GET" || r.method === "HEAD"),
+      );
   });
   app.get<{ Params: { id: string } }>("/api/events/:id/sprites", async (r, reply) =>
     send(reply, await lifecycle.inventory(actor(r.actor), r.params.id)),
@@ -412,6 +429,15 @@ export async function createApp(
     const before = service.workspace(actor(r.actor), r.params.id, true, true);
     if (!before.ok) return send(reply, before);
     const runtime = service.runtime(r.params.id);
+    const input = z
+      .object({ action: z.literal("connect-new"), generation: z.number().int().nonnegative() })
+      .strict()
+      .optional()
+      .parse(r.body);
+    if (runtime.reset && (!input || input.generation !== runtime.generation))
+      return send(reply, fail("Choose Connect new Sprite to start from shared team work.", 409));
+    if (input && (!runtime.reset || input.generation !== runtime.generation))
+      return send(reply, fail("Workspace changed. Refresh before connecting.", 409));
     if (
       runtime.held &&
       runtime.reason === "idle" &&
@@ -539,7 +565,10 @@ export async function createApp(
     if (!p.ok) return send(reply, p);
     if (p.value.spriteStatus !== "ready" || !p.value.spriteName)
       return reply.code(409).send({ error: "Agent execution needs a running Sprite" });
+    const generation = service.runtime(r.params.id).generation;
     const prepared = await agents.prepare(p.value.spriteName);
+    if (service.runtime(r.params.id).generation !== generation)
+      return reply.code(409).send({ error: "Workspace changed. Reconnect to continue." });
     if (prepared && !allowed(r.params.id))
       return send(reply, service.executionAllowed(r.params.id));
     if (prepared) {
@@ -879,7 +908,15 @@ export async function createApp(
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/sprite", async (r, reply) => {
     const input = z
       .union([
-        z.object({ action: z.literal("retry-initial-creation").optional() }).strict(),
+        z
+          .object({
+            action: z.literal("retry-initial-creation").optional(),
+            generation: z.number().int().nonnegative().optional(),
+          })
+          .strict(),
+        z
+          .object({ action: z.literal("connect-new"), generation: z.number().int().nonnegative() })
+          .strict(),
         missingWorkspaceConfirmationSchema,
       ])
       .parse(r.body ?? {});
@@ -889,6 +926,18 @@ export async function createApp(
       return reply
         .code(409)
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
+    const runtime = service.runtime(r.params.id);
+    if (
+      runtime.reset &&
+      (input.generation !== runtime.generation ||
+        (!workspace.value.spriteName && input.action !== "connect-new"))
+    )
+      return send(reply, fail("Choose Connect new Sprite to start from shared team work.", 409));
+    if (
+      input.action === "connect-new" &&
+      (!runtime.reset || input.generation !== runtime.generation)
+    )
+      return send(reply, fail("Workspace changed. Refresh before connecting.", 409));
     if (input.action === "recover-missing") {
       if (
         workspace.value.spriteName !== input.name ||

@@ -143,7 +143,7 @@ export async function verifySpriteRows() {
         const table = page.getByRole("table", { name: "Event Sprites" });
         await table.waitFor();
         const rows = table.locator("tbody tr");
-        assert.equal(await rows.count(), 32);
+        assert.equal(await rows.count(), 32 - index);
         await page.getByRole("button", { name: "Refresh status", exact: true }).click();
         assert.equal(wakes, index, "Admin inventory/navigation never wakes a workspace");
         assert.equal(await page.locator(".sprite-card").count(), 0);
@@ -188,7 +188,7 @@ export async function verifySpriteRows() {
         assert.equal(wake.status(), 200);
         assert.equal(wakes, index + 1);
         // Delete a different row each round, keeping the first row for repeated pause checks.
-        const target = rows.nth(index + 1);
+        const target = rows.nth(1);
         await target.scrollIntoViewIfNeeded();
         const deleteButton = target.getByRole("button", { name: "Delete", exact: true });
         await inBounds(deleteButton, page);
@@ -209,12 +209,17 @@ export async function verifySpriteRows() {
         await page.screenshot({ path: join(artifacts, `${theme}-${width}-${height}-delete.png`) });
         await confirm.click();
         await dialog.waitFor({ state: "detached" });
-        await target.getByText("Deleted", { exact: true }).waitFor();
+        await page.waitForFunction(
+          (count) =>
+            document.querySelectorAll('table[aria-label="Event Sprites"] tbody tr').length ===
+            count,
+          31 - index,
+        );
         assert.equal(destroyed.length, index + 1);
         assert.equal(destroyed.at(-1), `civic-spark-${workspaces[index + 1]?.id}`);
         assert.equal(
-          await target.getByRole("button", { name: "Delete", exact: true }).isDisabled(),
-          true,
+          service.provisioningRecords().find((w) => w.id === workspaces[index + 1]?.id)?.spriteName,
+          null,
         );
         index++;
         await openPortalMenu(page);

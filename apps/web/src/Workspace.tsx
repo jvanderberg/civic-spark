@@ -72,20 +72,31 @@ export function Workspace({
     };
   }, [blocked, participant.id, participant.spriteName, onChanged]);
   const initiallyPaused = useRef(eventPaused);
-  const wake = useCallback(async () => {
-    setWaking(true);
-    setWakeError("");
-    try {
-      await api(`/workspaces/${participant.id}/wake`, "POST");
-      await onChanged();
-    } catch (error) {
-      setWakeError(error instanceof Error ? error.message : "Could not resume the Sprite.");
-      // A concurrent Resume can have recorded fresh absence while this request failed.
-      await onChanged().catch(() => {});
-    } finally {
-      setWaking(false);
-    }
-  }, [participant.id, onChanged]);
+  const connectionGeneration = useRef(participant.runtime?.generation ?? 0);
+  connectionGeneration.current = participant.runtime?.generation ?? 0;
+  const wake = useCallback(
+    async (connectNew = false) => {
+      setWaking(true);
+      setWakeError("");
+      try {
+        await api(
+          `/workspaces/${participant.id}/wake`,
+          "POST",
+          connectNew
+            ? { action: "connect-new", generation: connectionGeneration.current }
+            : undefined,
+        );
+        await onChanged();
+      } catch (error) {
+        setWakeError(error instanceof Error ? error.message : "Could not resume the Sprite.");
+        // A concurrent Resume can have recorded fresh absence while this request failed.
+        await onChanged().catch(() => {});
+      } finally {
+        setWaking(false);
+      }
+    },
+    [participant.id, onChanged],
+  );
   useEffect(() => {
     if (participant.spriteName && participant.spriteStatus === "ready" && !initiallyPaused.current)
       void wake();
@@ -286,16 +297,26 @@ export function Workspace({
     <main ref={screen} className="workspace-screen">
       {blocked && (
         <Modal
-          title={eventPaused ? "Hackathon paused" : waking ? "Resuming workspace" : "Sprite paused"}
+          title={
+            eventPaused
+              ? "Hackathon paused"
+              : participant.runtime?.reset
+                ? "Connect a new Sprite"
+                : waking
+                  ? "Resuming workspace"
+                  : "Sprite paused"
+          }
           onClose={onClose}
         >
           <div className="modal-body">
             <p>
               {eventPaused
                 ? "Workspace execution is paused until an admin unpauses the hackathon. Shared team source is available to download."
-                : waking
-                  ? "Reconnecting to your existing Sprite…"
-                  : "Your saved workspace is preserved. Resume to continue."}
+                : participant.runtime?.reset
+                  ? "Your Sprite was deleted. Connect to start again from shared team work."
+                  : waking
+                    ? "Reconnecting to your existing Sprite…"
+                    : "Your saved workspace is preserved. Resume to continue."}
             </p>
             {wakeError && (
               <p className="error" role="alert">
@@ -311,9 +332,9 @@ export function Workspace({
                   type="button"
                   className="button primary"
                   disabled={waking}
-                  onClick={() => void wake()}
+                  onClick={() => void wake(Boolean(participant.runtime?.reset))}
                 >
-                  Resume workspace
+                  {participant.runtime?.reset ? "Connect new Sprite" : "Resume workspace"}
                 </button>
               )}
               <button type="button" className="button" onClick={onClose}>

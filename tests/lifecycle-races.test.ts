@@ -77,7 +77,7 @@ it.each(["manifest", "changes", "preview", "preview-delete"])(
     const exited = join(root, "exited");
     writeFileSync(
       join(bin, "sprite"),
-      `#!${process.execPath}\nconst fs=require('node:fs');\nif (process.argv.some(a=>a.endsWith('/runner.ts'))) {\n console.log(JSON.stringify({type:'state',id:'fixture',text:'Ready',runtimeReady:true,working:false})); process.stdin.resume();\n} else {\n process.stdin.resume(); fs.writeFileSync(${JSON.stringify(started)},'started');\n process.on('SIGTERM',()=>{setTimeout(()=>{fs.writeFileSync(${JSON.stringify(exited)},'closed');process.exit(0);},80);});\n setInterval(()=>{},1000);\n}\n`,
+      `#!${process.execPath}\nconst fs=require('node:fs');\nif (process.argv.some(a=>a.endsWith('/runner.ts'))) {\n console.log(JSON.stringify({type:'state',id:'fixture',text:'Ready',runtimeReady:true,working:${deleting}})); process.stdin.resume();\n} else {\n process.stdin.resume(); fs.writeFileSync(${JSON.stringify(started)},'started');\n process.on('SIGTERM',()=>{setTimeout(()=>{fs.writeFileSync(${JSON.stringify(exited)},'closed');process.exit(0);},80);});\n setInterval(()=>{},1000);\n}\n`,
     );
     chmodSync(join(bin, "sprite"), 0o755);
     vi.stubEnv("PATH", `${bin}:${process.env.PATH}`);
@@ -98,6 +98,7 @@ it.each(["manifest", "changes", "preview", "preview-delete"])(
       { inspect: vi.fn(), stop, destroy: stop },
     );
     const sockets: WebSocket[] = [];
+    let activeTurn = false;
     try {
       const identity = await testIdentity(authentication, "Race owner");
       if (!identity.actor) throw new Error("Missing actor");
@@ -118,11 +119,15 @@ it.each(["manifest", "changes", "preview", "preview-delete"])(
           { headers },
         );
         sockets.push(socket);
+        socket.on("message", (raw) => {
+          if (route === "agent" && JSON.parse(raw.toString()).working) activeTurn = true;
+        });
         await new Promise<void>((done, reject) => {
           socket.once("open", done);
           socket.once("error", reject);
         });
       }
+      if (deleting) await vi.waitFor(() => expect(activeTurn).toBe(true));
       const closes = sockets.map(
         (socket) => new Promise<number>((done) => socket.once("close", done)),
       );

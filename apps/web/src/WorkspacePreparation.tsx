@@ -57,7 +57,10 @@ export function WorkspacePreparation({
                 generation: workspace.runtime?.generation ?? 0,
               }
             : explicitRetry
-              ? { action: "retry-initial-creation" }
+              ? {
+                  action: "retry-initial-creation",
+                  ...(workspace.runtime?.reset ? { generation: workspace.runtime.generation } : {}),
+                }
               : undefined,
         );
         await readStatus();
@@ -77,6 +80,7 @@ export function WorkspacePreparation({
       workspace.preparationAction,
       workspace.spriteName,
       workspace.runtime?.generation,
+      workspace.runtime?.reset,
     ],
   );
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
+import { inspectRecoverySprite } from "../../backup/src/recovery.ts";
 import type { SpriteObservation } from "../../domain/src/lifecycle.ts";
 // Official rates retrieved 2026-09-16: https://fly.io/sprites/#pricing.
 // CPU is cumulative cpu.stat usage, not elapsed allocation time. Memory and
@@ -152,7 +153,17 @@ export class SpriteLifecycle implements SpriteLifecycleProvider {
   async destroy(name: string) {
     // Documented permanent delete: 204 complete; 404 already absent. Every other
     // response is uncertain and must keep the durable deletion gate in place.
+    const org = process.env.CIVIC_SPARK_SPRITE_ORG ?? "";
+    const token = this.token ?? "";
+    const inspect = () => inspectRecoverySprite(name, org, this.baseURL, token, this.request);
+    // Authenticate the organization and exact resource before any destructive call.
+    if ((await inspect()) === "missing") return;
     await this.api(name, "", "DELETE");
+    // A DELETE acknowledgement alone is insufficient to retire local identity.
+    if ((await inspect()) !== "missing")
+      throw new Error(
+        "Sprite deletion could not be confirmed. Retry after checking provider access.",
+      );
   }
   async stop(name: string) {
     const info = await this.inspect(name);

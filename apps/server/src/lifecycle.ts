@@ -1,4 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
+import { discardWorkspaceRecovery } from "../../../packages/backup/src/recovery.ts";
 import type { Identity } from "../../../packages/domain/src/access-types.ts";
 import type { SpriteInventory } from "../../../packages/domain/src/lifecycle.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
@@ -36,6 +40,10 @@ export class WorkspaceLifecycle {
     // pending stop or contact a live provider during constructor reconciliation.
     for (const w of service.provisioningRecords()) {
       const runtime = service.runtime(w.id);
+      if (runtime.deletion?.state === "deleted" && runtime.deletion.reset) {
+        this.finishDeletion(w.id);
+        continue;
+      }
       if (runtime.deletion?.state === "pending")
         service.setRuntime(w.id, {
           held: true,
@@ -52,6 +60,13 @@ export class WorkspaceLifecycle {
           stopError: "Pause was interrupted by a server restart. Retry pause to finish.",
         });
     }
+  }
+  private finishDeletion(id: string) {
+    const reset = this.service.runtime(id).deletion?.reset;
+    if (!reset) throw new Error("Missing deletion receipt");
+    discardWorkspaceRecovery(this.service.root, id);
+    rmSync(join(this.service.root, "agent-integrations", `${id}.json`), { force: true });
+    this.service.finishSpriteDeletion(id);
   }
   touch(id: string) {
     if (this.service.executionAllowed(id).ok)
@@ -145,6 +160,23 @@ export class WorkspaceLifecycle {
     if (!this.service.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
     if (this.changing.has(eventId))
       return fail("A Sprite operation is in progress. Retry shortly.", 409);
+    const receipt = this.service.runtime(id);
+    if (action === "delete" && receipt.deletion?.state === "deleted" && receipt.deletion.reset) {
+      if (
+        receipt.generation !== generation ||
+        !this.service.provisioningRecords().some((w) => w.id === id && w.eventId === eventId)
+      )
+        return fail("This Sprite changed. Refresh status before trying again.", 409);
+      this.changing.add(eventId);
+      try {
+        this.finishDeletion(id);
+        return ok({ failures: 0 });
+      } catch {
+        return ok({ failures: 1 });
+      } finally {
+        this.changing.delete(eventId);
+      }
+    }
     const org = process.env.CIVIC_SPARK_SPRITE_ORG ?? "";
     const apiOrigin = process.env.CIVIC_SPARK_SPRITE_API_URL ?? "https://api.sprites.dev";
     if (action === "delete" && !org) return fail("Sprite organization is not configured.", 503);
@@ -156,6 +188,11 @@ export class WorkspaceLifecycle {
       action === "delete" ? { org, apiOrigin } : undefined,
     );
     if (!held.ok) return held;
+    const heldGeneration = this.service.runtime(id).generation;
+    const current = () =>
+      this.service.runtime(id).generation === heldGeneration &&
+      this.service.provisioningRecords().find((w) => w.id === id)?.spriteName ===
+        held.value.spriteName;
     this.changing.add(eventId);
     try {
       this.disconnect(id);
@@ -166,20 +203,27 @@ export class WorkspaceLifecycle {
       }
       await this.drain(id);
       // No await separates this authorization check and the provider action.
-      if (!this.service.isAdmin(actor, eventId)) throw new Error("Authorization changed");
+      if (!this.service.isAdmin(actor, eventId) || !current())
+        throw new Error("Authorization changed");
       if (action === "delete") {
         await this.provider.destroy(held.value.spriteName as string);
         const deletion = this.service.runtime(id).deletion;
+        if (!current()) throw new Error("Workspace changed during deletion");
         if (!deletion) throw new Error("Missing deletion state");
         this.service.setRuntime(id, {
           held: true,
           deletion: {
             ...deletion,
             state: "deleted",
+            reset: {
+              previousName: held.value.spriteName as string,
+              nextName: `civic-spark-${randomUUID()}`,
+            },
             error: null,
             changedAt: new Date().toISOString(),
           },
         });
+        this.finishDeletion(id);
       } else {
         await this.provider.stop(held.value.spriteName as string);
         this.service.setRuntime(id, {
@@ -190,9 +234,10 @@ export class WorkspaceLifecycle {
       }
       return ok({ failures: 0 });
     } catch {
+      if (!current()) return ok({ failures: 1 });
       if (action === "delete") {
         const deletion = this.service.runtime(id).deletion;
-        if (deletion)
+        if (deletion && deletion.state !== "deleted")
           this.service.setRuntime(id, {
             held: true,
             deletion: {

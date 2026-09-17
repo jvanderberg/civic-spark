@@ -84,6 +84,17 @@ export function completeRecovery(root: string, workspaceId: string, spriteName: 
   });
 }
 
+// Confirmed administrative deletion retires all obsolete evidence for this workspace.
+// Unlike checkout completion, no old reservation may authorize future recreation.
+export function discardWorkspaceRecovery(root: string, workspaceId: string) {
+  const resources = readRecoveryResources(root);
+  if (!resources?.entries.some((entry) => entry.workspaceId === workspaceId)) return;
+  replacePrivate(join(root, recoveryResourcesFile), {
+    ...resources,
+    entries: resources.entries.filter((entry) => entry.workspaceId !== workspaceId),
+  });
+}
+
 export type RecoveryFetch = typeof fetch;
 async function providerGet(
   path: string,

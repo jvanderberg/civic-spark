@@ -675,6 +675,19 @@ export class WorkspaceEngine {
       return ok(git(this.repoPath(id), ["archive", "--format=zip", "--prefix=project/", "main"]));
     });
   }
+  resetSprite(id: string, previousName: string) {
+    const p = this.state.participants.find((p) => p.id === id);
+    if (!p || (p.spriteName !== null && p.spriteName !== previousName))
+      throw new Error("Sprite identity changed during deletion cleanup");
+    this.db.prepare("DELETE FROM initial_sprite_creation WHERE workspace=?").run(id);
+    p.spriteName = null;
+    p.spriteStatus = "local";
+    p.spriteError = null;
+    p.spritePhase = null;
+    p.spriteCreationFailure = null;
+    p.spriteUpdatedAt = undefined;
+    this.save();
+  }
   initialCreation(id: string): InitialCreation | null {
     const row = this.db
       .prepare("SELECT body FROM initial_sprite_creation WHERE workspace=?")
@@ -683,7 +696,7 @@ export class WorkspaceEngine {
   }
   reserveInitialCreation(id: string, name: string, binding: SpriteProviderBinding) {
     const p = this.state.participants.find((p) => p.id === id);
-    if (!p || p.spriteName !== null || p.spriteStatus !== "local" || name !== `civic-spark-${id}`)
+    if (!p || p.spriteName !== null || p.spriteStatus !== "local")
       throw new Error("Initial creation requires a never-reserved workspace.");
     const next = initialCreationSchema.parse({ name, ...binding, state: "creating" });
     const existing = this.initialCreation(id);

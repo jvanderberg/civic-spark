@@ -267,12 +267,18 @@ it.each(["pause", "pause-unpause", "revoke", "generation", "origin", "account"] 
     else if (action === "origin")
       vi.stubEnv("CIVIC_SPARK_SPRITE_API_URL", "https://changed.example.test");
     else vi.stubEnv("SPRITE_TOKEN", "test-org/other-account/token-id/private-token");
+    const newerState = f.service.provisioningRecords().find((w) => w.id === f.id);
     gate.resolve();
     unwrap(await running);
     expect(f.request).toHaveBeenCalledTimes(1);
     expect(f.upload).not.toHaveBeenCalled();
     expect(f.files).not.toHaveBeenCalled();
-    expect(f.service.provisioningRecords().find((w) => w.id === f.id)?.spriteStatus).toBe("error");
+    if (action === "generation")
+      expect(f.service.provisioningRecords().find((w) => w.id === f.id)).toEqual(newerState);
+    else
+      expect(f.service.provisioningRecords().find((w) => w.id === f.id)?.spriteStatus).toBe(
+        "error",
+      );
   },
 );
 

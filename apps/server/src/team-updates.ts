@@ -27,7 +27,10 @@ export function registerTeamUpdateRoutes(
   busy: Set<string>,
   client = new SpriteClient(),
 ) {
-  const cache = new Map<string, { at: number; remote: string; value: TeamStatus }>();
+  const cache = new Map<
+    string,
+    { at: number; remote: string; value: TeamStatus; generation: number }
+  >();
   const pending = new Map<string, Promise<Result<TeamStatus>>>();
   const invalidate = (id: string) => {
     cache.delete(id);
@@ -38,10 +41,17 @@ export function registerTeamUpdateRoutes(
       const p = await service.teamReferenceAsync(actor(r.actor), r.params.id);
       if (!p.ok) return send(reply, p);
       const { workspace, remote } = p.value;
+      const generation = service.runtime(r.params.id).generation;
+      const pendingKey = `${r.params.id}:${generation}`;
       const saved = cache.get(r.params.id);
-      if (r.query.fresh !== "1" && saved?.remote === remote && Date.now() - saved.at < 10000)
+      if (
+        r.query.fresh !== "1" &&
+        saved?.generation === generation &&
+        saved.remote === remote &&
+        Date.now() - saved.at < 10000
+      )
         return { ...saved.value, agentWorking: agents.isWorking(r.params.id) };
-      let request = pending.get(r.params.id);
+      let request = pending.get(pendingKey);
       if (!request) {
         request =
           workspace.spriteStatus === "local"
@@ -53,13 +63,20 @@ export function registerTeamUpdateRoutes(
                   error: "Wait for the workspace to be ready.",
                   status: 409,
                 });
-        pending.set(r.params.id, request);
+        pending.set(pendingKey, request);
       }
-      const result = await request.finally(() => pending.delete(r.params.id));
+      const result = await request.finally(() => pending.delete(pendingKey));
       const authorized = service.workspace(actor(r.actor), r.params.id);
       if (!authorized.ok) return send(reply, authorized);
       if (!result.ok) return send(reply, result);
-      cache.set(r.params.id, { at: Date.now(), remote: result.value.remote, value: result.value });
+      if (service.runtime(r.params.id).generation !== generation)
+        return reply.code(409).send({ error: "Workspace changed. Refresh its status." });
+      cache.set(r.params.id, {
+        at: Date.now(),
+        remote: result.value.remote,
+        value: result.value,
+        generation,
+      });
       if (cache.size > 200) {
         const first = cache.keys().next().value;
         if (first) cache.delete(first);

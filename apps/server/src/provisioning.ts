@@ -62,6 +62,7 @@ export class WorkspaceProvisioning {
         workspace.spriteName &&
         workspace.spriteStatus === "error" &&
         !runtime.projectRepair &&
+        !runtime.reset &&
         (runtime.deletion?.ownerRecovery ||
           (!runtime.deletion &&
             !(
@@ -96,6 +97,15 @@ export class WorkspaceProvisioning {
     return workspace;
   }
   needsRecovery(workspace: Workspace) {
+    const reset = this.service.runtime(workspace.id).reset;
+    if (reset) {
+      if (
+        reset.org !== (process.env.CIVIC_SPARK_SPRITE_ORG ?? "") ||
+        reset.apiOrigin !== (process.env.CIVIC_SPARK_SPRITE_API_URL ?? "https://api.sprites.dev")
+      )
+        throw new Error("Fresh Sprite provider mismatch");
+      return reset;
+    }
     const deletion = this.service.runtime(workspace.id).deletion;
     if (deletion?.state === "deleted") {
       if (
@@ -150,7 +160,7 @@ export class WorkspaceProvisioning {
     const current = this.service.runtime(id);
     // Undo only this recovery attempt's wake, never a newer lifecycle decision.
     if (
-      expected.deletion &&
+      (expected.deletion || expected.reset) &&
       current.generation === expected.generation &&
       JSON.stringify(current.deletion) === JSON.stringify(expected.deletion)
     )
@@ -334,7 +344,7 @@ export class WorkspaceProvisioning {
       JSON.stringify(this.service.runtime(workspace.id).deletion) !== JSON.stringify(deletion)
     )
       return denied("Workspace state changed. Refresh and retry preparation.", 409);
-    const name = workspace.spriteName ?? `civic-spark-${workspace.id}`;
+    const name = workspace.spriteName ?? expected.reset?.name ?? `civic-spark-${workspace.id}`;
     const binding = this.client.provisioningBinding();
     const initial = this.service.initialCreation(workspace.id);
     const initialRetry =
@@ -391,6 +401,8 @@ export class WorkspaceProvisioning {
     const phase = (next: SpritePhase) => {
       const allowed = this.service.executionAllowed(workspace.id);
       if (!allowed.ok) throw new Error(allowed.error);
+      if (this.service.runtime(workspace.id).generation !== generation)
+        throw new Error("Workspace generation changed");
       const result = this.service.setSprite(workspace.id, name, "provisioning", null, next);
       if (!result.ok) throw new Error(result.error);
     };
@@ -554,7 +566,8 @@ export class WorkspaceProvisioning {
         if (!saved.ok) throw new Error(saved.error);
         if (projectRepair) this.service.setRuntime(workspace.id, { projectRepair: undefined });
         if (recovery) {
-          completeRecovery(this.root, workspace.id, name);
+          if (expected.reset) this.service.setRuntime(workspace.id, { reset: undefined });
+          else completeRecovery(this.root, workspace.id, name);
           const runtime = this.service.runtime(workspace.id);
           if (runtime.deletion?.state === "deleted")
             this.service.setRuntime(workspace.id, {
@@ -564,10 +577,8 @@ export class WorkspaceProvisioning {
         }
       } catch (error) {
         if (
-          (ownerRecovery || projectRepair || recovery) &&
-          (this.service.runtime(workspace.id).generation !== generation ||
-            this.service.provisioningRecords().find((w) => w.id === workspace.id)?.spriteName !==
-              name)
+          this.service.runtime(workspace.id).generation !== generation ||
+          this.service.provisioningRecords().find((w) => w.id === workspace.id)?.spriteName !== name
         )
           return;
         this.service.setSprite(

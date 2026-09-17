@@ -123,9 +123,11 @@ export class WorkspaceIntegrations {
         void relay
           .authorized()
           .then((ok) => {
-            if (!ok) this.stop(id);
+            if (!ok && this.relays.get(id) === relay) this.stop(id);
           })
-          .catch(() => this.stop(id));
+          .catch(() => {
+            if (this.relays.get(id) === relay) this.stop(id);
+          });
       }, 15000),
     };
     this.relays.set(id, relay);
@@ -145,9 +147,11 @@ export class WorkspaceIntegrations {
         .then(async () => {
           const request = input.data;
           let response: object;
+          let operation: ReturnType<SpriteClient["lease"]>;
           try {
-            if (!(await relay.authorized()))
+            if (!(await relay.authorized()) || this.relays.get(id) !== relay)
               throw new Error("Workspace access ended. Sign in again.");
+            operation = this.client.lease(sprite);
             unwrap(this.service.workspace(owner, id, true));
             if (request.operation === "git-publish")
               response = { ok: true, value: await this.publish(id, owner, relay.authorized) };
@@ -181,6 +185,8 @@ export class WorkspaceIntegrations {
                   ? error.message
                   : "Integration failed; your saved work is preserved.",
             };
+          } finally {
+            operation?.release();
           }
           if (!child.stdin.destroyed)
             child.stdin.write(`${JSON.stringify({ id: request.id, ...response })}\n`);

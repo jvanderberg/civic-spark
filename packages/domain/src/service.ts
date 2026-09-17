@@ -138,7 +138,7 @@ export class EventService {
     if (!workspace) return fail("Workspace not found", 404);
     if (this.execution(workspace.eventId).paused) return fail(PAUSED_MESSAGE, 423);
     const runtime = this.runtime(id);
-    if (runtime.deletion && runtime.deletion.state !== "deleted")
+    if (runtime.deletion?.reset || (runtime.deletion && runtime.deletion.state !== "deleted"))
       return fail("Sprite deletion needs to finish. Ask an event admin to retry.", 423);
     if (runtime.held) return fail(HELD_MESSAGE, 423);
     return ok(workspace);
@@ -148,13 +148,16 @@ export class EventService {
     const data = this.engine.snapshot();
     return ok(
       data.participants
-        .filter((w) => w.eventId === eventId && w.spriteName)
+        .filter(
+          (w) => w.eventId === eventId && (w.spriteName || this.runtime(w.id).deletion?.reset),
+        )
         .map((w) => {
           const m = this.state.memberships.find((m) => m.id === w.id);
           const team = data.teams.find((t) => t.id === w.teamId);
           return {
             workspaceId: w.id,
-            spriteName: w.spriteName as string,
+            spriteName: (w.spriteName ??
+              this.runtime(w.id).deletion?.reset?.previousName) as string,
             owner: this.state.users.find((u) => u.id === m?.userId)?.name ?? "Former member",
             team: team?.name ?? "Retained team",
             membershipActive: Boolean(m?.active && !team?.deletedAt),
@@ -164,6 +167,21 @@ export class EventService {
           };
         }),
     );
+  }
+  finishSpriteDeletion(id: string) {
+    const runtime = this.runtime(id);
+    const deletion = runtime.deletion;
+    if (deletion?.state !== "deleted" || !deletion.reset)
+      throw new Error("Provider deletion has not been confirmed");
+    this.engine.resetSprite(id, deletion.reset.previousName);
+    this.setRuntime(id, {
+      ...runtimeSchema.parse({}),
+      projectRepair: undefined,
+      generation: runtime.generation + 1,
+      held: true,
+      reason: "admin",
+      reset: { name: deletion.reset.nextName, org: deletion.org, apiOrigin: deletion.apiOrigin },
+    });
   }
   holdSprite(
     actor: Identity,
@@ -313,7 +331,7 @@ export class EventService {
     const workspace = this.workspace(actor, id, true, true);
     if (!workspace.ok) return workspace;
     const runtime = this.runtime(id);
-    if (runtime.deletion && runtime.deletion.state !== "deleted")
+    if (runtime.deletion?.reset || (runtime.deletion && runtime.deletion.state !== "deleted"))
       return fail("Sprite deletion needs to finish. Ask an event admin to retry.", 423);
     if (runtime.stopState === "pending")
       return fail("Sprite pause is still in progress. Retry shortly.", 423);
@@ -939,6 +957,8 @@ export class EventService {
     return this.engine.initialCreation(id);
   }
   reserveInitialCreation(id: string, name: string, binding: SpriteProviderBinding) {
+    if (name !== (this.runtime(id).reset?.name ?? `civic-spark-${id}`))
+      throw new Error("Initial creation identity mismatch");
     return this.engine.reserveInitialCreation(id, name, binding);
   }
   workspacePath(id: string) {

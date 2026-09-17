@@ -388,6 +388,8 @@ export async function verifyProvisioning() {
       "PASS: startup error persists, explicit retry, real phases, reload attaches without duplicate creation, and ready opens files; no Sprite/model calls.",
     );
   } finally {
+    // Wait for in-flight route.fetch/json handlers before disposing their responses.
+    await page.unrouteAll({ behavior: "wait" });
     await browser.close();
     await app.close();
     rmSync(root, { recursive: true, force: true });

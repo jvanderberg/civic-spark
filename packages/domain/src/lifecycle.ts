@@ -8,6 +8,14 @@ export const executionSchema = z.object({
 });
 export type EventExecution = z.infer<typeof executionSchema>;
 export const runtimeSchema = z.object({
+  // Shared-only fresh connection after an administrator confirmed provider deletion.
+  reset: z
+    .object({
+      name: z.string().regex(/^civic-spark-[a-z0-9-]{1,45}$/),
+      org: z.string().min(1),
+      apiOrigin: z.url(),
+    })
+    .optional(),
   // Owner-requested checkout repair; never authorizes provider creation/deletion.
   projectRepair: initialCreationSchema.omit({ state: true }).optional(),
   generation: z.number().int().nonnegative().default(0),
@@ -19,6 +27,12 @@ export const runtimeSchema = z.object({
       error: z.string().nullable(),
       org: z.string().min(1),
       apiOrigin: z.url(),
+      reset: z
+        .object({
+          previousName: z.string().regex(/^civic-spark-[a-z0-9-]{1,45}$/),
+          nextName: z.string().regex(/^civic-spark-[a-z0-9-]{1,45}$/),
+        })
+        .optional(),
       // Explicit owner confirmation of current absence, not historical deletion.
       ownerRecovery: z
         .object({

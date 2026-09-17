@@ -176,7 +176,7 @@ export class AgentSessions {
       session = active;
       this.sessions.set(id, active);
       createInterface({ input: child.stdout }).on("line", (line) => {
-        if (line.length > agentWireByteLimit) return;
+        if (this.sessions.get(id) !== active || line.length > agentWireByteLimit) return;
         try {
           const event = eventSchema.parse(JSON.parse(line));
           active.replay.accept(event);
