@@ -153,3 +153,9 @@ Current documented completion is 30 of 40 Shared contributions. Riley/p09 also c
 The existing-resource absent-checkout repair is integrated as `24de48f` (reviewed source `e5c8be3`). It distinguishes a genuinely absent project root from empty/private/unreadable/symlink paths, preserves ordinary reattachment during active turns or listing failures, and publishes the staged shared checkout without overwriting a concurrently appeared destination. Final canonical validation passed 639 tests/68 files with two opt-in skips, lint/types/build, provisioning browser checks and 158-input packaging. The author worktree’s first broad run could not start runner tests because its pinned runtime SDK was absent; canonical validation used the installed locked runtime, with no test relaxation.
 
 Deployment started after a fresh read-only check found 39 ready workspace records, zero active turns and one confirmed missing resource. Quinn’s actual shared-files acceptance remains the next gate before releasing the blocked cohort.
+
+### Existing-resource repair accepted live; final cohort released
+
+`24de48f` deployed successfully. Exact source hashes for provisioning, file checks and atomic checkout matched; health and preserved project/state checks passed. Quinn/p10 reopened the same existing workspace, verified the restored shared file tree, launched its managed preview and reviewed desktop/360px/390px. Only after that did the participant begin the assigned focused UI improvement. No Sprite deletion or replacement was needed.
+
+The other eight initial-provisioning participants were released in parallel through their normal browser workflows, with explicit file verification before any model prompt and no repeated prompts or blind resets. The completion count is 31 Shared contributions, including the transit UI reviewer’s `2bcad30`; the final nine are now authorized to complete their original roles autonomously.
