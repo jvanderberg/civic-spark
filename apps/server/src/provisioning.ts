@@ -8,6 +8,10 @@ import {
 } from "../../../packages/backup/src/recovery.ts";
 import type { Workspace } from "../../../packages/domain/src/access-types.ts";
 import type { WorkspaceRuntime } from "../../../packages/domain/src/lifecycle.ts";
+import {
+  spriteCreationMessages,
+  withCreationFailure,
+} from "../../../packages/domain/src/provisioning.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
 import { fail, ok, type Result, type SpritePhase } from "../../../packages/domain/src/types.ts";
 import { gitAsync } from "../../../packages/git/src/async.ts";
@@ -28,7 +32,10 @@ export class WorkspaceProvisioning {
           workspace.id,
           workspace.spriteName,
           "error",
-          "Workspace preparation was interrupted by a server restart. Retry to resume safely.",
+          withCreationFailure(
+            workspace.spriteCreationFailure,
+            "Workspace preparation was interrupted by a server restart. Retry to check the reserved workspace.",
+          ),
         );
     }
   }
@@ -44,8 +51,10 @@ export class WorkspaceProvisioning {
   }
   status(workspace: Workspace): Workspace {
     if (workspace.spriteStatus === "provisioning" && !this.jobs.has(workspace.id)) {
-      const error =
-        "Workspace preparation was interrupted by a server restart. Retry to resume safely.";
+      const error = withCreationFailure(
+        workspace.spriteCreationFailure,
+        "Workspace preparation was interrupted by a server restart. Retry to check the reserved workspace.",
+      );
       this.service.setSprite(
         workspace.id,
         workspace.spriteName ?? `civic-spark-${workspace.id}`,
@@ -169,6 +178,18 @@ export class WorkspaceProvisioning {
     // Defer the work until the job is registered, so repeated starts are idempotent.
     const job = Promise.resolve().then(async () => {
       const client = this.client;
+      let creationFailure = workspace.spriteCreationFailure;
+      const create = async () => {
+        try {
+          const result = await client.create(name);
+          if (result.ok) return;
+          creationFailure ??= result.creationFailure ?? "unknown";
+        } catch {
+          creationFailure ??= "unknown";
+        }
+        // Even an unexpected adapter exception must not escape as raw diagnostics.
+        throw new Error(spriteCreationMessages[creationFailure]);
+      };
       try {
         if (recovery) {
           await gitAsync(this.service.sharedWorkspaceRepository(workspace.id), [
@@ -187,8 +208,7 @@ export class WorkspaceProvisioning {
           );
           phase("creating"); // Pause may have arrived during the provider existence check.
           if (existence === "missing") {
-            const created = await client.create(name);
-            if (!created.ok) throw new Error(created.error);
+            await create();
             phase("checkout");
             const uploaded = await client.uploadBundle(name, bundle);
             if (!uploaded.ok) throw new Error(uploaded.error);
@@ -211,13 +231,16 @@ export class WorkspaceProvisioning {
           await gitAsync(dir, ["bundle", "create", bundle, "--all"]);
           phase("creating");
           const resumed = workspace.spriteName ? await client.exec(name, ["true"]) : null;
-          if (resumed && !resumed.ok)
+          if (resumed && !resumed.ok) {
+            const existence = await client.inspectReservation(name);
             throw new Error(
-              "The reserved Sprite could not reconnect. Retry after checking provider access; it will not be replaced.",
+              existence === "missing"
+                ? "Workspace preparation did not complete, and the reserved Sprite is absent. Ask an event admin to investigate; retrying will not create a replacement."
+                : "The reserved workspace could not be reached. Ask an event admin to investigate; its identity and any existing work have been preserved.",
             );
+          }
           if (!workspace.spriteName) {
-            const created = await client.create(name);
-            if (!created.ok) throw new Error(created.error);
+            await create();
           }
           phase("checkout");
           const uploaded = await client.uploadBundle(name, bundle);
@@ -243,9 +266,14 @@ export class WorkspaceProvisioning {
           workspace.id,
           name,
           "error",
-          error instanceof Error
-            ? error.message
-            : "Workspace preparation failed. Retry to resume safely.",
+          withCreationFailure(
+            creationFailure,
+            error instanceof Error
+              ? error.message
+              : "Workspace preparation failed. Retry to resume safely.",
+          ),
+          undefined,
+          creationFailure,
         );
       } finally {
         try {

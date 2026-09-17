@@ -20,6 +20,7 @@ import { verifySiteEventPortal } from "./browser-site-event.ts";
 import { verifyKeyboardViewport } from "./keyboard-browser-smoke.ts";
 import { verifyLifecyclePortal } from "./lifecycle-browser-smoke.ts";
 import { verifyParticipantProjects } from "./participant-projects-browser-smoke.ts";
+import { verifyProvisioning } from "./provisioning-browser-smoke.ts";
 import { verifyTeamsPortal } from "./teams-browser-smoke.ts";
 
 // Disposable local APIs and deterministic Sprite transports; never runs participant
@@ -459,3 +460,5 @@ await verifyTeamsPortal();
 await verifyAdminEventDetails();
 
 await verifyParticipantProjects();
+
+await verifyProvisioning();

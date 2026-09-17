@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { spriteCreationFailureSchema } from "./provisioning.ts";
 
 export const projectSchema = z.object({
   id: z.string(),
@@ -131,6 +132,7 @@ export const participantSchema = z.object({
   spriteName: z.string().nullable(),
   spriteStatus: z.enum(["local", "provisioning", "ready", "error"]),
   spriteError: z.string().nullable(),
+  spriteCreationFailure: spriteCreationFailureSchema.nullable().optional(),
   spritePhase: spritePhaseSchema.nullable().optional(),
   spriteUpdatedAt: z.string().nullable().optional(),
 });

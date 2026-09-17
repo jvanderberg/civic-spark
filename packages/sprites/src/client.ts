@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { z } from "zod";
+import {
+  type SpriteCreationFailure,
+  spriteCreationMessages,
+} from "../../domain/src/provisioning.ts";
 import type { FileContent, Result } from "../../domain/src/types.ts";
 import { fail, ok } from "../../domain/src/types.ts";
 import {
@@ -19,10 +23,13 @@ import {
   TEXT_BODY_LIMIT,
 } from "../../workspace/src/types.ts";
 import { CommandBusy, CommandQueue } from "./command-queue.ts";
+import { validateSpriteToken } from "./credentials.ts";
+import { boundedProviderJson, classifyCreationFailure } from "./provisioning.ts";
 
 const execute = promisify(execFile);
 const spriteNamePattern = /^civic-spark-[a-z0-9-]{1,45}$/;
 export type SpriteLease = { signal: AbortSignal; release(): void };
+export type SpriteCreateResult = Result<string> & { creationFailure?: SpriteCreationFailure };
 export class SpriteClient {
   private commands = new CommandQueue(
     z.coerce
@@ -168,10 +175,110 @@ export class SpriteClient {
       releaseTransfer?.();
     }
   }
-  async create(name: string): Promise<Result<string>> {
+  private provisioningEndpoint(name?: string) {
+    const token = validateSpriteToken(process.env.SPRITE_TOKEN, this.org);
+    const base = new URL(process.env.CIVIC_SPARK_SPRITE_API_URL ?? "https://api.sprites.dev");
+    if (
+      base.protocol !== "https:" ||
+      base.username ||
+      base.password ||
+      base.search ||
+      base.hash ||
+      base.pathname !== "/"
+    )
+      throw new Error("Invalid provider origin");
+    return { token, url: new URL(name ? `/v1/sprites/${name}` : "/v1/sprites", base) };
+  }
+  /** Metadata only; a missing or uncertain reservation never authorizes creation. */
+  async inspectReservation(name: string): Promise<"present" | "missing" | "unknown"> {
+    if (!spriteNamePattern.test(name)) return "unknown";
+    let release: (() => void) | undefined;
+    try {
+      const { token, url } = this.provisioningEndpoint(name);
+      release = await this.commands.acquire();
+      const response = await this.request(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        redirect: "error",
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.status === 404) {
+        await response.body?.cancel();
+        return "missing";
+      }
+      if (response.status !== 200) {
+        await response.body?.cancel();
+        return "unknown";
+      }
+      const result = z
+        .object({ name: z.literal(name), organization: z.literal(this.org) })
+        .safeParse(await boundedProviderJson(response));
+      return result.success ? "present" : "unknown";
+    } catch {
+      return "unknown";
+    } finally {
+      release?.();
+    }
+  }
+  async create(name: string): Promise<SpriteCreateResult> {
     if (!spriteNamePattern.test(name)) return fail("Invalid Civic Spark Sprite name.");
-    const result = await this.command(["create", "--skip-console", name]);
-    return result.ok ? ok(name) : result;
+    const failure = (kind: SpriteCreationFailure): SpriteCreateResult => ({
+      ok: false,
+      status: 502,
+      error: spriteCreationMessages[kind],
+      creationFailure: kind,
+    });
+    // Retain local CLI-login support. Its free-form output cannot reliably carry
+    // structured provider codes, so a failure remains unknown, never guessed.
+    if (!process.env.SPRITE_TOKEN) {
+      try {
+        const result = await this.command(["create", "--skip-console", name]);
+        return result.ok ? ok(name) : failure("unknown");
+      } catch {
+        return failure("unknown");
+      }
+    }
+    let endpoint: ReturnType<SpriteClient["provisioningEndpoint"]>;
+    try {
+      validateSpriteToken(process.env.SPRITE_TOKEN, this.org);
+    } catch {
+      return failure("auth");
+    }
+    try {
+      endpoint = this.provisioningEndpoint();
+    } catch {
+      return failure("unknown");
+    }
+    let lease: SpriteLease | undefined;
+    let release: (() => void) | undefined;
+    let dispatched = false;
+    try {
+      lease = this.lease(name);
+      release = await this.commands.acquire(lease?.signal);
+      lease?.signal.throwIfAborted();
+      // One POST, no automatic retries or fallback mutation after an uncertain response.
+      dispatched = true;
+      const response = await this.request(endpoint.url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${endpoint.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+        redirect: "error",
+        signal: AbortSignal.any([AbortSignal.timeout(120000), ...(lease ? [lease.signal] : [])]),
+      });
+      const body = await boundedProviderJson(response);
+      if (!response.ok) return failure(classifyCreationFailure(response.status, body));
+      const created = z
+        .object({ name: z.literal(name), organization: z.literal(this.org) })
+        .safeParse(body);
+      return [200, 201].includes(response.status) && created.success
+        ? ok(name)
+        : failure("unknown");
+    } catch {
+      return failure(dispatched && !lease?.signal.aborted ? "transient" : "unknown");
+    } finally {
+      release?.();
+      lease?.release();
+    }
   }
   async uploadBundle(name: string, bundle: string): Promise<Result<Buffer>> {
     if (!spriteNamePattern.test(name)) return fail("Invalid prototype Sprite name");

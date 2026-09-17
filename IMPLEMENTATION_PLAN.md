@@ -6,6 +6,14 @@
 
 # Implementation plan
 
+## Provisioning diagnostics — local, pending root integration
+
+- [x] Preserve a sanitized original creation-failure category across retry phases and restarts; legacy failures remain unknown and successful preparation clears the category.
+- [x] Classify documented provider concurrent-limit and creation-rate codes separately; distinguish access/service/unknown outcomes without relaying provider diagnostics or guessing from stderr.
+- [x] Retain reserved identity and fail closed on absent/unknown resources; show an honest admin-investigation message after confirmed absence.
+- [x] Complete local check (381 tests), full mobile and dedicated provisioning browser verification; inspect both-theme phone/desktop/short screenshots and console errors.
+- [ ] Root integration/review and dedicated deployed acceptance; no live repair, replacement, deployment or provider-capacity conclusion from this workstream.
+
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
 ## Capacity and resilience for 60 concurrent participants

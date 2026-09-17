@@ -865,7 +865,8 @@ export class EventService {
     status: Workspace["spriteStatus"],
     error: string | null,
     phase?: Workspace["spritePhase"],
+    creationFailure?: Workspace["spriteCreationFailure"],
   ) {
-    return this.engine.setSprite(id, name, status, error, phase);
+    return this.engine.setSprite(id, name, status, error, phase, creationFailure);
   }
 }

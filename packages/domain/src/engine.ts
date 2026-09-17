@@ -673,12 +673,17 @@ export class WorkspaceEngine {
     status: Participant["spriteStatus"],
     error: string | null,
     phase?: Participant["spritePhase"],
+    creationFailure?: Participant["spriteCreationFailure"],
   ): Result<Participant> {
     const p = this.state.participants.find((p) => p.id === id);
     if (!p) return fail("Participant not found", 404);
     p.spriteName = name;
     p.spriteStatus = status;
     p.spriteError = error;
+    // Phase updates and retries must not erase or rewrite the original cause.
+    // Legacy records remain unknown; only a newly observed create failure sets it.
+    if (status === "ready") p.spriteCreationFailure = null;
+    else if (creationFailure) p.spriteCreationFailure ??= creationFailure;
     p.spritePhase = phase ?? (status === "ready" ? "ready" : (p.spritePhase ?? null));
     p.spriteUpdatedAt = stamp();
     this.record(p.eventId, `${p.name} · Sprite ${status}.`);

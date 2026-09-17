@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp } from "../apps/server/src/app.ts";
+import { WorkspaceProvisioning } from "../apps/server/src/provisioning.ts";
+import {
+  type SpriteCreationFailure,
+  spriteCreationMessages,
+} from "../packages/domain/src/provisioning.ts";
+import { EventService } from "../packages/domain/src/service.ts";
 import { fail, ok, type Result } from "../packages/domain/src/types.ts";
 import { git } from "../packages/git/src/repository.ts";
 import { SpriteClient } from "../packages/sprites/src/client.ts";
@@ -14,6 +20,171 @@ const unwrap = <T>(result: Result<T>) => {
   return result.value;
 };
 afterEach(() => vi.restoreAllMocks());
+
+it.each(["capacity", "rate", "auth", "transient", "unknown"] as const)(
+  "retains original %s creation cause through missing/unknown retries and interrupted restart",
+  async (kind: SpriteCreationFailure) => {
+    const root = mkdtempSync(join(tmpdir(), "civic-spark-cause-"));
+    let service = new EventService(root);
+    const owner = {
+      id: "cause-owner",
+      name: "Owner",
+      email: "cause@example.test",
+      emailVerified: true as const,
+    };
+    const event = unwrap(
+      service.createEvent(owner, {
+        name: "Cause retention",
+        date: "2026-10-03",
+        timezone: "America/Chicago",
+        location: "Test",
+        capacity: 10,
+        budget: 0,
+        templateId: "blank",
+      }),
+    );
+    const workspace = unwrap(
+      service.createTeam(owner, {
+        eventId: event.id,
+        name: "Test team",
+        projectId: "data-starter",
+      }),
+    ).workspace;
+    const name = `civic-spark-${workspace.id}`;
+    const client = new SpriteClient("test-org");
+    const create = vi.spyOn(client, "create").mockResolvedValue({
+      ok: false,
+      status: 502,
+      error: "UNTRUSTED stderr Bearer private-token",
+      creationFailure: kind,
+    });
+    const exec = vi.spyOn(client, "exec").mockResolvedValue(fail("UNTRUSTED retry output"));
+    const inspect = vi.spyOn(client, "inspectReservation").mockResolvedValue("missing");
+    const upload = vi.spyOn(client, "uploadBundle").mockResolvedValue(ok(Buffer.from("")));
+    const files = vi.spyOn(client, "files").mockResolvedValue(ok(["README.md"]));
+    let provisioning = new WorkspaceProvisioning(service, root, client);
+    const current = () => unwrap(service.workspace(owner, workspace.id));
+    const head = () => git(service.workspacePath(workspace.id), ["rev-parse", "HEAD"]).toString();
+    const originalHead = head();
+    try {
+      unwrap(await provisioning.start(current()));
+      await provisioning.wait(workspace.id);
+      expect(current()).toMatchObject({
+        spriteCreationFailure: kind,
+        spriteError: spriteCreationMessages[kind],
+        spriteName: name,
+      });
+      for (const outcome of ["missing", "unknown", "missing"] as const) {
+        inspect.mockResolvedValue(outcome);
+        unwrap(await provisioning.start(current()));
+        await provisioning.wait(workspace.id);
+        expect(current().spriteCreationFailure).toBe(kind);
+        expect(current().spriteError).toContain(spriteCreationMessages[kind]);
+        expect(current().spriteError).toContain(
+          outcome === "missing" ? "reserved Sprite is absent" : "could not be reached",
+        );
+        expect(current().spriteError).not.toContain("UNTRUSTED");
+      }
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(upload).not.toHaveBeenCalled();
+      expect(files).not.toHaveBeenCalled();
+      expect(head()).toBe(originalHead);
+      // Simulate crash after the retry cleared visible error for its new phase.
+      unwrap(service.setSprite(workspace.id, name, "provisioning", null, "creating"));
+      await provisioning.close();
+      service.close();
+      service = new EventService(root);
+      provisioning = new WorkspaceProvisioning(service, root, client);
+      expect(current()).toMatchObject({
+        spriteStatus: "error",
+        spriteName: name,
+        spriteCreationFailure: kind,
+      });
+      expect(current().spriteError).toContain(spriteCreationMessages[kind]);
+      expect(current().spriteError).toContain("interrupted");
+      expect(head()).toBe(originalHead);
+      // An existing same-identity Sprite may later reconnect; success clears cause.
+      exec.mockResolvedValue(ok(Buffer.from("")));
+      unwrap(await provisioning.start(current()));
+      await provisioning.wait(workspace.id);
+      expect(current()).toMatchObject({
+        spriteStatus: "ready",
+        spriteCreationFailure: null,
+        spriteError: null,
+        spriteName: name,
+      });
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(upload).toHaveBeenCalledTimes(1);
+    } finally {
+      await provisioning.close();
+      service.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it("does not invent a cause or allocate a replacement for a legacy absent reservation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-legacy-cause-"));
+  const service = new EventService(root);
+  const client = new SpriteClient();
+  const owner = {
+    id: "legacy-owner",
+    name: "Owner",
+    email: "legacy@example.test",
+    emailVerified: true as const,
+  };
+  const event = unwrap(
+    service.createEvent(owner, {
+      name: "Legacy cause",
+      date: "2026-10-03",
+      timezone: "America/Chicago",
+      location: "Test",
+      capacity: 10,
+      budget: 0,
+      templateId: "blank",
+    }),
+  );
+  const workspace = unwrap(
+    service.createTeam(owner, {
+      eventId: event.id,
+      name: "Legacy team",
+      projectId: "data-starter",
+    }),
+  ).workspace;
+  const name = `civic-spark-${workspace.id}`;
+  unwrap(
+    service.setSprite(
+      workspace.id,
+      name,
+      "error",
+      "The reserved Sprite could not reconnect. Retry after checking provider access; it will not be replaced.",
+      "creating",
+    ),
+  );
+  const create = vi.spyOn(client, "create");
+  vi.spyOn(client, "exec").mockResolvedValue(fail("Old reconnect failure"));
+  vi.spyOn(client, "inspectReservation").mockResolvedValue("missing");
+  const upload = vi.spyOn(client, "uploadBundle");
+  const provisioning = new WorkspaceProvisioning(service, root, client);
+  try {
+    for (let retry = 0; retry < 2; retry++) {
+      unwrap(await provisioning.start(unwrap(service.workspace(owner, workspace.id))));
+      await provisioning.wait(workspace.id);
+      const current = unwrap(service.workspace(owner, workspace.id));
+      expect(current.spriteName).toBe(name);
+      expect(current.spriteCreationFailure).toBeUndefined();
+      expect(current.spriteError).toContain("reserved Sprite is absent");
+      expect(current.spriteError).toContain("event admin to investigate");
+      expect(current.spriteError).not.toMatch(/quota|limit|credentials|provider access/);
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+  } finally {
+    await provisioning.close();
+    service.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 it("persists real provisioning phases, deduplicates starts, exposes errors and safely resumes after interruption", async () => {
   const root = mkdtempSync(join(tmpdir(), "civic-spark-provision-"));
   const { app, service, authentication } = await createApp(
@@ -78,7 +249,8 @@ it("persists real provisioning phases, deduplicates starts, exposes errors and s
     await vi.waitFor(async () =>
       expect(await status()).toMatchObject({
         spriteStatus: "error",
-        spriteError: expect.stringContaining("Provider connection failed"),
+        spriteError: expect.stringContaining("Workspace creation could not be confirmed"),
+        spriteCreationFailure: "unknown",
       }),
     );
     expect((await app.inject({ method: "POST", url, headers })).statusCode).toBe(202);
