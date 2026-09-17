@@ -33,22 +33,29 @@ export function WorkspacePreparation({
     if (next.spriteStatus === "ready") await changed.current();
     return next;
   }, [participant.id]);
-  const start = useCallback(async () => {
-    setStarting(true);
-    setError("");
-    try {
-      await api(`/workspaces/${participant.id}/sprite`, "POST");
-      await readStatus();
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Preparation could not start. Retry when connected.",
-      );
-    } finally {
-      setStarting(false);
-    }
-  }, [participant.id, readStatus]);
+  const start = useCallback(
+    async (explicitRetry = false) => {
+      setStarting(true);
+      setError("");
+      try {
+        await api(
+          `/workspaces/${participant.id}/sprite`,
+          "POST",
+          explicitRetry ? { action: "retry-initial-creation" } : undefined,
+        );
+        await readStatus();
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Preparation could not start. Retry when connected.",
+        );
+      } finally {
+        setStarting(false);
+      }
+    },
+    [participant.id, readStatus],
+  );
   useEffect(() => {
     if (!attempted.current && participant.spriteStatus === "local" && !eventClosed) {
       attempted.current = true;
@@ -152,7 +159,7 @@ export function WorkspacePreparation({
             className="button primary"
             type="button"
             disabled={starting || eventClosed}
-            onClick={() => void start()}
+            onClick={() => void start(true)}
           >
             {failed || error ? "Retry preparation" : "Start workspace"}
           </button>

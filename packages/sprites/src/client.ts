@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { z } from "zod";
 import {
   type SpriteCreationFailure,
+  type SpriteProviderBinding,
   spriteCreationMessages,
 } from "../../domain/src/provisioning.ts";
 import type { FileContent, Result } from "../../domain/src/types.ts";
@@ -189,7 +190,23 @@ export class SpriteClient {
       throw new Error("Invalid provider origin");
     return { token, url: new URL(name ? `/v1/sprites/${name}` : "/v1/sprites", base) };
   }
-  /** Metadata only; a missing or uncertain reservation never authorizes creation. */
+  provisioningBinding(): SpriteProviderBinding | null {
+    try {
+      const { token, url } = this.provisioningEndpoint();
+      return {
+        org: this.org as string,
+        apiOrigin: url.origin,
+        // Bind the credential's provider account, allowing ordinary token rotation.
+        // No credential or token-derived secret is persisted or sent to browsers.
+        account: createHash("sha256")
+          .update(token.split("/")[1] as string)
+          .digest("hex"),
+      };
+    } catch {
+      return null;
+    }
+  }
+  /** Metadata only; callers separately authorize any initial-creation retry. */
   async inspectReservation(name: string): Promise<"present" | "missing" | "unknown"> {
     if (!spriteNamePattern.test(name)) return "unknown";
     let release: (() => void) | undefined;
@@ -220,7 +237,7 @@ export class SpriteClient {
       release?.();
     }
   }
-  async create(name: string): Promise<SpriteCreateResult> {
+  async create(name: string, beforeDispatch?: () => Promise<void>): Promise<SpriteCreateResult> {
     if (!spriteNamePattern.test(name)) return fail("Invalid Civic Spark Sprite name.");
     const failure = (kind: SpriteCreationFailure): SpriteCreateResult => ({
       ok: false,
@@ -232,6 +249,8 @@ export class SpriteClient {
     // structured provider codes, so a failure remains unknown, never guessed.
     if (!process.env.SPRITE_TOKEN) {
       try {
+        // A guarded retry must never fall back to unaudited CLI authentication.
+        if (beforeDispatch) return failure("unknown");
         const result = await this.command(["create", "--skip-console", name]);
         return result.ok ? ok(name) : failure("unknown");
       } catch {
@@ -256,6 +275,13 @@ export class SpriteClient {
       lease = this.lease(name);
       release = await this.commands.acquire(lease?.signal);
       lease?.signal.throwIfAborted();
+      await beforeDispatch?.();
+      lease?.signal.throwIfAborted();
+      // Revalidation may await session storage; never cross a provider/credential
+      // change between admission and this actual dispatch.
+      const current = this.provisioningEndpoint();
+      if (current.token !== endpoint.token || current.url.href !== endpoint.url.href)
+        return failure("unknown");
       // One POST, no automatic retries or fallback mutation after an uncertain response.
       dispatched = true;
       const response = await this.request(endpoint.url, {

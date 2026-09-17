@@ -9,6 +9,16 @@ export const spriteCreationFailureSchema = z.enum([
 ]);
 export type SpriteCreationFailure = z.infer<typeof spriteCreationFailureSchema>;
 
+export const initialCreationSchema = z.object({
+  name: z.string(),
+  org: z.string().min(1),
+  apiOrigin: z.url(),
+  account: z.string().regex(/^[a-f0-9]{64}$/),
+  state: z.enum(["creating", "sealed"]),
+});
+export type InitialCreation = z.infer<typeof initialCreationSchema>;
+export type SpriteProviderBinding = Pick<InitialCreation, "org" | "apiOrigin" | "account">;
+
 // Only these application-owned messages may represent a provider creation failure.
 // Never persist or render provider messages, command output or credential values.
 export const spriteCreationMessages: Record<SpriteCreationFailure, string> = {

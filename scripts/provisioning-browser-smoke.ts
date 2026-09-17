@@ -59,6 +59,11 @@ export async function verifyProvisioning() {
   await page.route("**/api/workspaces/*/sprite", async (route) => {
     if (route.request().method() === "POST") {
       posts += 1;
+      assert.deepEqual(
+        route.request().postDataJSON() ?? {},
+        posts === 1 ? {} : { action: "retry-initial-creation" },
+        "Only an explicit button action requests initial-creation retry",
+      );
       if (posts === 1)
         return route.fulfill({
           status: 409,

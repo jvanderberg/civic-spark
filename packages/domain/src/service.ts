@@ -46,6 +46,7 @@ import {
   runtimeSchema,
   type WorkspaceRuntime,
 } from "./lifecycle.ts";
+import type { SpriteProviderBinding } from "./provisioning.ts";
 import {
   type Event,
   type EventInput,
@@ -856,6 +857,12 @@ export class EventService {
     }
   }
   // Internal provisioning methods; callers must authorize with workspace() first.
+  initialCreation(id: string) {
+    return this.engine.initialCreation(id);
+  }
+  reserveInitialCreation(id: string, name: string, binding: SpriteProviderBinding) {
+    return this.engine.reserveInitialCreation(id, name, binding);
+  }
   workspacePath(id: string) {
     return this.engine.workspacePath(id);
   }

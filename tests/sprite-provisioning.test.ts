@@ -171,3 +171,69 @@ it("does not guess provider codes or expose secrets from actual adversarial CLI 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it.each(["revoked", "lease-aborted", "credential-changed"] as const)(
+  "revalidates queued creation immediately before dispatch when %s",
+  async (action) => {
+    vi.stubEnv("SPRITE_TOKEN", token);
+    vi.stubEnv("CIVIC_SPARK_MAX_COMMANDS", "1");
+    vi.stubEnv("CIVIC_SPARK_SPRITE_API_URL", "https://provider.example.test");
+    let resume!: () => void;
+    let arrived!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      arrived = resolve;
+    });
+    const controller = new AbortController();
+    const release = vi.fn();
+    const request = vi.fn<typeof fetch>().mockImplementation(async () => {
+      arrived();
+      await gate;
+      return Response.json({}, { status: 404 });
+    });
+    const client = new SpriteClient(
+      "test-org",
+      () => ({ signal: controller.signal, release }),
+      request,
+    );
+    const inspection = client.inspectReservation(name);
+    await entered;
+    const guard = vi.fn(async () => {
+      if (action === "revoked") throw Error(secret);
+      if (action === "credential-changed") vi.stubEnv("SPRITE_TOKEN", "test-org/other/token/value");
+    });
+    const creating = client.create(name, guard);
+    expect(guard).not.toHaveBeenCalled();
+    if (action === "lease-aborted") controller.abort();
+    resume();
+    await inspection;
+    expect(await creating).toEqual({
+      ok: false,
+      status: 502,
+      creationFailure: "unknown",
+      error: spriteCreationMessages.unknown,
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0]?.[1]?.method).toBe("GET");
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(guard).toHaveBeenCalledTimes(action === "lease-aborted" ? 0 : 1);
+  },
+);
+
+it("binds initial evidence to the provider account while allowing token rotation", () => {
+  const f = fixture(() => {
+    throw Error("No network");
+  });
+  const binding = f.client.provisioningBinding();
+  expect(binding).toMatchObject({ org: "test-org", apiOrigin: "https://provider.example.test" });
+  expect(JSON.stringify(binding)).not.toMatch(/private-token|token-id|org-id/);
+  vi.stubEnv("SPRITE_TOKEN", "test-org/org-id/new-token/rotated-secret");
+  expect(f.client.provisioningBinding()).toEqual(binding);
+  vi.stubEnv("SPRITE_TOKEN", "test-org/other-account/new-token/rotated-secret");
+  expect(f.client.provisioningBinding()).not.toEqual(binding);
+  vi.stubEnv("SPRITE_TOKEN", "");
+  expect(f.client.provisioningBinding()).toBeNull();
+  expect(f.request).not.toHaveBeenCalled();
+});

@@ -828,6 +828,10 @@ export async function createApp(
     return provisioning.status(workspace.value);
   });
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/sprite", async (r, reply) => {
+    const input = z
+      .object({ action: z.literal("retry-initial-creation").optional() })
+      .strict()
+      .parse(r.body ?? {});
     const workspace = service.workspace(actor(r.actor), r.params.id, true, true);
     if (!workspace.ok) return send(reply, workspace);
     if (!spritesEnabled)
@@ -836,8 +840,10 @@ export async function createApp(
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
     const waking = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!waking.ok) return send(reply, waking);
-    const result = await provisioning.start(workspace.value, () =>
-      authorizePreparation(r, r.params.id),
+    const result = await provisioning.start(
+      workspace.value,
+      () => authorizePreparation(r, r.params.id),
+      input.action === "retry-initial-creation",
     );
     if (result.ok) return reply.code(result.value.preparing ? 202 : 200).send(result.value);
     return send(reply, result);

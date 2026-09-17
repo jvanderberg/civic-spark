@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -292,6 +292,10 @@ it("the checkout script is repeatable and preserves existing edits; unrelated pr
       .replaceAll("/tmp/civic-spark-seed.bundle", bundle)
       .replaceAll("/home/sprite", root);
     const run = () => spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    symlinkSync(join(root, "missing-private-project"), join(root, "project"));
+    expect(run().status).not.toBe(0);
+    expect(lstatSync(join(root, "project")).isSymbolicLink()).toBe(true);
+    rmSync(join(root, "project"));
     expect(run().status).toBe(0);
     writeFileSync(join(root, "project", "README.md"), "Participant edit\n");
     expect(run().status).toBe(0);

@@ -16,6 +16,11 @@ import {
 import { commitChanges } from "../../workspace/src/share.ts";
 import { FILE_LIMIT, projectPath } from "../../workspace/src/types.ts";
 import {
+  type InitialCreation,
+  initialCreationSchema,
+  type SpriteProviderBinding,
+} from "./provisioning.ts";
+import {
   type Contribution,
   createEventSchema,
   type Event,
@@ -63,6 +68,9 @@ export class WorkspaceEngine {
     );
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS publication_intents (workspace TEXT NOT NULL, commit_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(workspace, commit_id))",
+    );
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS initial_sprite_creation (workspace TEXT PRIMARY KEY, body TEXT NOT NULL)",
     );
     const row = this.db.prepare("SELECT body FROM state WHERE id=1").get();
     this.state = row
@@ -667,6 +675,24 @@ export class WorkspaceEngine {
       return ok(git(this.repoPath(id), ["archive", "--format=zip", "--prefix=project/", "main"]));
     });
   }
+  initialCreation(id: string): InitialCreation | null {
+    const row = this.db
+      .prepare("SELECT body FROM initial_sprite_creation WHERE workspace=?")
+      .get(id);
+    return row ? initialCreationSchema.parse(JSON.parse(String(row.body))) : null;
+  }
+  reserveInitialCreation(id: string, name: string, binding: SpriteProviderBinding) {
+    const p = this.state.participants.find((p) => p.id === id);
+    if (!p || p.spriteName !== null || p.spriteStatus !== "local" || name !== `civic-spark-${id}`)
+      throw new Error("Initial creation requires a never-reserved workspace.");
+    const next = initialCreationSchema.parse({ name, ...binding, state: "creating" });
+    const existing = this.initialCreation(id);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(next))
+      throw new Error("Initial creation provider binding changed.");
+    this.db
+      .prepare("INSERT OR IGNORE INTO initial_sprite_creation(workspace,body) VALUES(?,?)")
+      .run(id, JSON.stringify(next));
+  }
   setSprite(
     id: string,
     name: string,
@@ -677,6 +703,15 @@ export class WorkspaceEngine {
   ): Result<Participant> {
     const p = this.state.participants.find((p) => p.id === id);
     if (!p) return fail("Participant not found", 404);
+    // An irreversible barrier precedes any checkout/private-work access. A crash
+    // between this write and the phase write must deny recreation, never reopen it.
+    if (status === "ready" || (phase && ["checkout", "verifying", "ready"].includes(phase))) {
+      const initial = this.initialCreation(id);
+      if (initial?.state === "creating")
+        this.db
+          .prepare("UPDATE initial_sprite_creation SET body=? WHERE workspace=?")
+          .run(JSON.stringify({ ...initial, state: "sealed" }), id);
+    }
     p.spriteName = name;
     p.spriteStatus = status;
     p.spriteError = error;

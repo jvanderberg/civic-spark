@@ -12,6 +12,8 @@
 - [x] Classify documented provider concurrent-limit and creation-rate codes separately; distinguish access/service/unknown outcomes without relaying provider diagnostics or guessing from stderr.
 - [x] Retain reserved identity and fail closed on absent/unknown resources; show an honest admin-investigation message after confirmed absence.
 - [x] Complete local check (381 tests), full mobile and dedicated provisioning browser verification; inspect both-theme phone/desktop/short screenshots and console errors.
+- [x] Add a separate prospective explicit-owner initial-creation retry with durable provider binding, irreversible checkout barrier, exact-name404, late authorization/generation/lease checks and existing-project preservation. Legacy phase/activity cannot establish eligibility; document existing separately authorized operator recovery.
+- [x] Complete follow-up local verification: full check (410 tests), full mobile, independent provisioning browser, both-theme phone/desktop/short screenshots and clean unexpected console. The original diagnostics commit remains separate; no live recovery or deployment.
 - [ ] Root integration/review and dedicated deployed acceptance; no live repair, replacement, deployment or provider-capacity conclusion from this workstream.
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
