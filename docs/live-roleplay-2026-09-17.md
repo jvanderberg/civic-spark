@@ -31,13 +31,27 @@ Emails use roleplay-20260917-pNN@example.test. Test identity names are labeled F
 
 ## Progress
 
-- P01 Avery and P05 Morgan launched as independent Luna leads with prose instructions, full-access permissions and interactive Playwright tools.
-- Remaining participants are planned, not yet executed.
-- No new-roleplay completion or product result is claimed yet.
+Three independent Luna leads created their assigned teams, read the briefs and submitted one MVP request each through the Agent UI. No lead has Shared, no collaborator has started, and no MVP completion is claimed. Further model requests are held after the same failure affected all three runs.
 
-## Observations
+| Participant | Team | Observed result |
+|---|---|---|
+| P01 Avery | Field test 01 — Assessment fairness | Failed after visible Working for 4m21s; Ready afterward; 13 changes at follow-up. Last conversation text: Now write App.tsx. No continuation sent. |
+| P05 Morgan | Field test 02 — Tax dollars | Failed after visible Working for 4m20s; Ready afterward, Send disabled; 10 changes. Last activity preparing PieChart.ts after fetching CSVs and scaffolding. No retry. |
+| P09 Riley | Field test 03 — Safe school cycling | Failed after approximately 4m37s; Ready afterward; 9 changes at follow-up. Last activity editing src/App.tsx. No retry. |
 
-Pending actual participant reports. Each participant maintains a separate local log under artifacts/roleplay-20260917; this document collects verified findings and outcomes. Secrets and browser authentication state are excluded.
+The other 37 participants remain planned, not executed. Existing real participants remain outside the exercise.
+
+## Blocking finding: all three MVP turns fail
+
+Exact visible error in all three browser sessions:
+
+> The Sprite could not reach the provider. Check its network connection and retry.
+
+All three produced partial project files before failing. Their agent connection indicators subsequently showed Ready. This establishes a repeated model-turn failure, not its root cause. Similar elapsed times suggest investigating a shared timeout or connection limit; no server/provider diagnosis has been performed and no attribution is established.
+
+Partial work and browser sessions are preserved. No repeated paid prompts, automatic Share, backend repair or state manipulation has been performed. The roleplay is held at this blocker rather than counted as successful or replaced with scripted test results.
+
+Evidence: artifacts/roleplay-20260917/screenshots/p01-provider-error.png, p01-provider-error-partial.png, p05-provider-error.png and p09-provider-error.png. Individual participant notes remain alongside these local artifacts. Screenshots and notes exclude credentials.
 
 ## Abandoned pilot
 
