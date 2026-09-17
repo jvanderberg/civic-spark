@@ -74,9 +74,7 @@ export function AdminProjects({
           ...(draft.id ? { expectedRevision: draft.revision } : {}),
         },
       );
-      setNotice(
-        `${draft.id ? "Saved" : "Created"} ${draft.name.trim()}. Teams can now choose this project.`,
-      );
+      setNotice(`${draft.id ? "Saved" : "Created"} ${draft.name.trim()}.`);
       setDraft(null);
       setOpen(false);
       await refresh();
@@ -104,10 +102,6 @@ export function AdminProjects({
           <Plus size={15} /> Create project
         </button>
       </div>
-      <p className="small-text muted">
-        Catalog changes appear on project and team cards. New teams receive the latest brief in
-        PROJECT.md. Existing team files and Git history stay unchanged.
-      </p>
       {notice && <p role="status">{notice}</p>}
       {draft && !open && (
         <button type="button" className="button" onClick={() => setOpen(true)}>
@@ -145,11 +139,6 @@ export function AdminProjects({
             }}
           >
             <div className="project-editor-fields">
-              <p>
-                {draft.id
-                  ? "Update the event catalog name and brief."
-                  : `Add a brief and data links for teams in ${event.name}.`}
-              </p>
               {error && (
                 <p className="error" role="alert">
                   {error}
@@ -198,12 +187,8 @@ export function AdminProjects({
                   maxLength={10000}
                   rows={10}
                   disabled={busy}
-                  aria-describedby="project-brief-help"
                 />
               </Field>
-              <p id="project-brief-help">
-                New teams receive this brief in PROJECT.md. Existing team files stay unchanged.
-              </p>
             </div>
             <div className="form-actions">
               <button
