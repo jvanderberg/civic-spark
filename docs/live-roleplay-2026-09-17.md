@@ -111,3 +111,10 @@ The integrated owner-recovery and redundant-write fixes passed 480 tests and the
 All nine failed-initial personas were resumed for actual browser recovery after deployment. Riley/p09 was separately authorized to explicitly rebuild the confirmed-missing test Sprite from already-shared teamGit. Deployment/source verification is not a claim that these browser recoveries have succeeded; persona logs supply those outcomes. Original user workspace d416 remains distinct from p40 and requires its owner to confirm the shared-only recovery.
 
 All12 leads now have documented manually Shared MVP baselines. The final over-time lead used the explicit agent conflict-resolution workflow, preserved both histories, reviewed the merge, and then manually Shared. This establishes lead publication progress, not full correctness of all demos or completed contribution work for all40 attendees.
+
+
+## Observed creation confirmation failure
+
+Observer/preview release `3b49122` deployed with exact hashes verified and health200. Quinn/p10 made exactly one normal browser Resume at the existing reservation; no duplicate creation was requested. The sanitized outbound diagnostic recorded HTTP201 after81,996ms, matching requested resource name, valid object/string field types and no abort. Application confirmation was false because the response organization string matched neither configured slug nor token-account component. This directly establishes an application identity-contract rejection after provider creation, not a quota error or timeout for this attempt. The created resource is preserved; correction and existing-resource reconnect acceptance remain pending. Other earlier120-second failures may have different timing and are not retroactively explained solely by this one observation.
+
+Evidence: `artifacts/roleplay-20260917/p10-create-observer.jsonl` and p10's browser log. No provider credentials, raw response body or participant file contents were logged.
