@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { GitQueue, gitAsync } from "../../git/src/async.ts";
+import { gitJob } from "../../git/src/jobs.ts";
 import {
   git,
   initializeTeam,
@@ -47,18 +49,24 @@ const initialState: State = {
 const stamp = () => new Date().toISOString();
 
 export class WorkspaceEngine {
+  private publications = new GitQueue();
   private db: DatabaseSync;
   private state: State;
+  private persistedState = "";
   constructor(readonly root: string) {
     mkdirSync(root, { recursive: true });
     this.db = new DatabaseSync(join(root, "state.sqlite"));
     this.db.exec(
       "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL)",
     );
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS publication_intents (workspace TEXT NOT NULL, commit_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(workspace, commit_id))",
+    );
     const row = this.db.prepare("SELECT body FROM state WHERE id=1").get();
     this.state = row
       ? stateSchema.parse(JSON.parse(String(row.body)))
       : structuredClone(initialState);
+    this.persistedState = JSON.stringify(this.state);
   }
   close() {
     this.db.close();
@@ -67,11 +75,20 @@ export class WorkspaceEngine {
     return structuredClone(this.state);
   }
   private save() {
-    this.db
-      .prepare(
-        "INSERT INTO state(id,body) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
-      )
-      .run(JSON.stringify(this.state));
+    const body = JSON.stringify(this.state);
+    try {
+      this.db
+        .prepare(
+          "INSERT INTO state(id,body) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+        )
+        .run(body);
+      this.persistedState = body;
+    } catch (error) {
+      // ENOSPC/SQLITE_FULL cannot leave an uncommitted role, binding or event
+      // mutation visible in memory. Roll back to the last durable snapshot.
+      this.state = JSON.parse(this.persistedState) as State;
+      throw error;
+    }
   }
   private record(eventId: string, message: string) {
     this.state.activity.unshift({ id: randomUUID(), eventId, message, createdAt: stamp() });
@@ -361,6 +378,121 @@ export class WorkspaceEngine {
     });
   }
   // source is a trusted local checkout/quarantine repository, never a browser-provided URL.
+  async publishPrepared(
+    id: string,
+    title: string,
+    revision: string,
+    source: string,
+    commit: string,
+    authorize: () => Promise<Result<unknown>>,
+  ): Promise<Result<Contribution>> {
+    const participant = this.state.participants.find((p) => p.id === id);
+    if (!participant) return fail("Workspace not found", 404);
+    const p = structuredClone(participant);
+    return this.publications
+      .run(p.teamId, async () => {
+        try {
+          const initial = await authorize();
+          if (!initial.ok) return initial;
+          const prior = this.state.contributions.find(
+            (c) => c.participantId === id && c.commit === commit && c.status === "accepted",
+          );
+          if (prior) return ok(structuredClone(prior));
+          const repo = this.repoPath(p.teamId);
+          const row = this.db
+            .prepare("SELECT body FROM publication_intents WHERE workspace=? AND commit_id=?")
+            .get(id, commit);
+          let intent: { main: string; contribution: Contribution };
+          if (row) intent = JSON.parse(String(row.body)) as typeof intent;
+          else {
+            const contributionId = randomUUID();
+            const prepared = await gitJob({
+              operation: "prepare",
+              source,
+              repo,
+              commit,
+              ref: `refs/civic-spark/prepared/${contributionId}`,
+            });
+            const access = await authorize();
+            if (!access.ok) return access;
+            if (!prepared.main || !prepared.diff) throw new Error("Incomplete Git preparation");
+            intent = {
+              main: prepared.main,
+              contribution: {
+                id: contributionId,
+                eventId: p.eventId,
+                teamId: p.teamId,
+                participantId: id,
+                title,
+                commit,
+                previewRevision: revision,
+                status: "accepted",
+                createdAt: stamp(),
+                diff: prepared.diff,
+              },
+            };
+            // Durable intent precedes publication. Restart never resumes it automatically.
+            this.db
+              .prepare("INSERT INTO publication_intents(workspace,commit_id,body) VALUES(?,?,?)")
+              .run(id, commit, JSON.stringify(intent));
+          }
+          const current = (await gitAsync(repo, ["rev-parse", "main"])).toString().trim();
+          let alreadyPublished = current === commit;
+          if (!alreadyPublished && current !== intent.main) {
+            try {
+              await gitAsync(repo, ["merge-base", "--is-ancestor", commit, current]);
+              alreadyPublished = true;
+            } catch {
+              /* Diverged, never force or rewrite. */
+            }
+          }
+          const access = await authorize(); // Immediately before the asynchronous compare-and-swap.
+          if (!access.ok) return access;
+          if (!alreadyPublished) {
+            if (current !== intent.main)
+              return fail(
+                "Your local commit is saved, but the team repository changed. Get team updates before sharing again.",
+                409,
+              );
+            try {
+              await gitAsync(repo, ["update-ref", "refs/heads/main", commit, intent.main]);
+            } catch {
+              // A transport/process failure is uncertain, not permission to repeat a write.
+              const observed = (await gitAsync(repo, ["rev-parse", "main"])).toString().trim();
+              if (observed !== commit)
+                return fail(
+                  "Publication could not be confirmed. Your local commit is saved; retry Share to inspect the recorded outcome.",
+                  503,
+                );
+            }
+          }
+          // The Git commit is durable even if metadata storage fails. Keep the intent
+          // so an explicit retry can reconcile it without re-publishing or rewriting.
+          const contribution = intent.contribution;
+          this.state.contributions.push(contribution);
+          this.record(p.eventId, `${p.name} shared “${contribution.title}”.`);
+          this.db
+            .prepare("DELETE FROM publication_intents WHERE workspace=? AND commit_id=?")
+            .run(id, commit);
+          await gitAsync(repo, [
+            "update-ref",
+            "-d",
+            `refs/civic-spark/prepared/${contribution.id}`,
+            commit,
+          ]).catch(() => {});
+          return ok(structuredClone(contribution));
+        } catch (error) {
+          return fail(
+            error instanceof Error
+              ? error.message
+              : "Sharing could not complete; your local commit is preserved.",
+            409,
+          );
+        }
+      })
+      .catch(() => fail("Git is busy. Retry shortly; your local commit is preserved.", 503));
+  }
+
   publishSnapshot(
     id: string,
     title: string,

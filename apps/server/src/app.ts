@@ -18,7 +18,7 @@ import {
 } from "../../../packages/domain/src/lifecycle.ts";
 import { EventService } from "../../../packages/domain/src/service.ts";
 import { createEventSchema, type Result } from "../../../packages/domain/src/types.ts";
-import { git } from "../../../packages/git/src/repository.ts";
+import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 import {
   SpriteLifecycle,
@@ -32,7 +32,7 @@ import {
 import { registerAdminRoutes } from "./admin.ts";
 import { AgentSessions } from "./agents.ts";
 import { createAuthentication } from "./auth.ts";
-import { clientAddress, storageReady, validateDeployment } from "./deployment.ts";
+import { clientAddress, storageHeadroom, storageReady, validateDeployment } from "./deployment.ts";
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
 import { WorkspaceLifecycle } from "./lifecycle.ts";
@@ -206,6 +206,17 @@ export async function createApp(
     request.actor = parsed.success ? parsed.data : null;
     if (request.url.split("?")[0] !== "/api/session" && !request.actor)
       return reply.code(401).send({ error: "Verify your email to sign in and continue" });
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+      try {
+        const declared = Number(request.headers["content-length"] ?? 0);
+        storageHeadroom(root, Number.isFinite(declared) && declared > 0 ? declared : 0);
+      } catch {
+        return reply.code(503).header("Retry-After", "10").send({
+          error:
+            "Server storage is nearly full or unavailable. Your request has not started; retry after the operator restores space.",
+        });
+      }
+    }
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof z.ZodError)
@@ -688,6 +699,14 @@ export async function createApp(
         revision: z.string().regex(/^[a-f0-9]{64}$/),
       })
       .parse(r.body);
+    const sessionActive = async () => {
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(r.headers),
+        query: { disableCookieCache: true },
+      });
+      if (!session || (!unverifiedSignIn && !session.user.emailVerified)) return false;
+      return (prototype ? session.user.email.toLowerCase() : session.user.id) === actor(r.actor).id;
+    };
     const p = service.workspace(actor(r.actor), r.params.id, true);
     if (!p.ok) return send(reply, p);
     if (sharing.has(r.params.id))
@@ -700,7 +719,13 @@ export async function createApp(
       if (p.value.spriteStatus === "local")
         return send(
           reply,
-          service.shareLocal(actor(r.actor), r.params.id, input.title, input.revision),
+          await service.shareLocalAsync(
+            actor(r.actor),
+            r.params.id,
+            input.title,
+            input.revision,
+            sessionActive,
+          ),
         );
       if (p.value.spriteStatus !== "ready" || !p.value.spriteName)
         return reply
@@ -718,19 +743,20 @@ export async function createApp(
         throw new Error("Invalid contribution transfer");
       writeFileSync(bundle, data, { mode: 0o600 });
       const repo = join(temp, "repository.git");
-      git(temp, ["init", "--bare", repo]);
-      git(repo, ["bundle", "verify", bundle]);
-      git(repo, ["fetch", bundle, `${result.value.ref}:refs/heads/incoming`]);
-      const commit = git(repo, ["rev-parse", "refs/heads/incoming"]).toString().trim();
+      await gitAsync(temp, ["init", "--bare", repo]);
+      await gitAsync(repo, ["bundle", "verify", bundle]);
+      await gitAsync(repo, ["fetch", bundle, `${result.value.ref}:refs/heads/incoming`]);
+      const commit = (await gitAsync(repo, ["rev-parse", "refs/heads/incoming"])).toString().trim();
       if (commit !== result.value.commit || result.value.revision !== input.revision)
         throw new Error("Invalid contribution transfer");
-      const published = service.publishSnapshot(
+      const published = await service.publishSnapshotAsync(
         actor(r.actor),
         r.params.id,
         input.title,
         input.revision,
         repo,
         commit,
+        sessionActive,
       );
       if (!published.ok) return send(reply, published);
       const acknowledged = await client.acknowledgeShare(

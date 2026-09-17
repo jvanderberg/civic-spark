@@ -6,8 +6,15 @@
   "spriteOrg": "choose-your-sprites-org",
   "emailProvider": "resend",
   "emailFrom": "Civic Spark <signin@your-verified-domain.example>",
-  "proxyCidrs": ["172.19.0.0/16"],
+  "proxyCidrs": [
+    "172.19.0.0/16"
+  ],
   "volumeGb": 10,
-  "maxSprites": 100,
-  "maxProvisioning": 2
+  "previewPoolSize": 60,
+  "maxProvisioning": 2,
+  "volumeAutoExtend": {
+    "enabled": false
+  },
+  "managementCpus": 2,
+  "managementMemoryMb": 2048
 }

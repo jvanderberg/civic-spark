@@ -18,11 +18,21 @@ import {
   manifestSchema,
   TEXT_BODY_LIMIT,
 } from "../../workspace/src/types.ts";
+import { CommandBusy, CommandQueue } from "./command-queue.ts";
 
 const execute = promisify(execFile);
 const spriteNamePattern = /^civic-spark-[a-z0-9-]{1,45}$/;
 export type SpriteLease = { signal: AbortSignal; release(): void };
 export class SpriteClient {
+  private commands = new CommandQueue(
+    z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(64)
+      .parse(process.env.CIVIC_SPARK_MAX_COMMANDS ?? "16"),
+  );
+  private reads = new Map<string, Promise<Result<unknown>>>();
   constructor(
     private org = process.env.CIVIC_SPARK_SPRITE_ORG,
     private acquire?: (name: string, passive?: boolean) => SpriteLease,
@@ -41,6 +51,7 @@ export class SpriteClient {
   ): Promise<Result<Buffer>> {
     let lease: SpriteLease | undefined;
     let closed: Promise<void> | undefined;
+    let releaseCommand: (() => void) | undefined;
     try {
       const name = args.includes("-s")
         ? args[args.indexOf("-s") + 1]
@@ -48,6 +59,8 @@ export class SpriteClient {
           ? args.at(-1)
           : undefined;
       if (name) lease = this.acquire?.(name);
+      releaseCommand = await this.commands.acquire(lease?.signal);
+      lease?.signal.throwIfAborted();
       const pending = execute("sprite", this.args(args), {
         timeout,
         maxBuffer,
@@ -58,7 +71,8 @@ export class SpriteClient {
       pending.child.stdin?.end(input);
       const { stdout } = await pending;
       return ok(stdout);
-    } catch {
+    } catch (error) {
+      if (error instanceof CommandBusy) return fail(error.message, 429);
       return fail(
         "Sprite command failed. Check your CLI login and connectivity; no account credentials were logged.",
         502,
@@ -66,6 +80,7 @@ export class SpriteClient {
     } finally {
       await closed;
       lease?.release();
+      releaseCommand?.();
     }
   }
   async create(name: string): Promise<Result<string>> {
@@ -100,7 +115,26 @@ export class SpriteClient {
       ...args,
     ]);
   }
-  private async fileOperation<T>(
+  private fileOperation<T>(
+    name: string,
+    payload: { operation: string; [key: string]: unknown },
+    schema: z.ZodType<T>,
+    scriptName = "files.py",
+    upload?: { local: string; remote: string },
+  ): Promise<Result<T>> {
+    if (!upload && ["list", "changes", "manifest", "status", "logs"].includes(payload.operation)) {
+      const key = JSON.stringify([name, scriptName, payload]);
+      const pending = this.reads.get(key);
+      if (pending) return pending as Promise<Result<T>>;
+      const request = this.performFileOperation(name, payload, schema, scriptName).finally(() =>
+        this.reads.delete(key),
+      );
+      this.reads.set(key, request);
+      return request;
+    }
+    return this.performFileOperation(name, payload, schema, scriptName, upload);
+  }
+  private async performFileOperation<T>(
     name: string,
     payload: { operation: string; [key: string]: unknown },
     schema: z.ZodType<T>,

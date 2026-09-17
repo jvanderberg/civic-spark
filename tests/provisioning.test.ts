@@ -65,7 +65,12 @@ it("persists real provisioning phases, deduplicates starts, exposes errors and s
       (await app.inject({ url, headers: { ...headers, cookie: other.cookie } })).statusCode,
     ).toBe(404);
     expect((await app.inject({ method: "POST", url, headers })).statusCode).toBe(202);
-    expect(await status()).toMatchObject({ spriteStatus: "provisioning", spritePhase: "creating" });
+    await vi.waitFor(async () =>
+      expect(await status()).toMatchObject({
+        spriteStatus: "provisioning",
+        spritePhase: "creating",
+      }),
+    );
     expect((await app.inject({ method: "POST", url, headers })).statusCode).toBe(202);
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith(`civic-spark-${id}`);

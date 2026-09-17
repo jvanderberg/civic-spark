@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { z } from "zod";
+import { gitAsync } from "../../git/src/async.ts";
 import {
   type historyQuerySchema,
   repositoryFile,
@@ -12,6 +13,7 @@ import {
   restoreRepository,
   restoreRepositoryFile,
 } from "../../git/src/history.ts";
+import { gitJob } from "../../git/src/jobs.ts";
 import { git } from "../../git/src/repository.ts";
 import { WorkspaceFiles } from "../../workspace/src/files.ts";
 import {
@@ -54,6 +56,7 @@ export class EventService {
   private engine: WorkspaceEngine;
   private db: DatabaseSync;
   private state: AccessState;
+  private persistedState = "";
   constructor(readonly root: string) {
     mkdirSync(root, { recursive: true });
     this.engine = new WorkspaceEngine(root);
@@ -68,6 +71,7 @@ export class EventService {
     this.state = row
       ? accessStateSchema.parse(JSON.parse(String(row.body)))
       : { version: 1, users: [], eventMembers: [], memberships: [] };
+    this.persistedState = JSON.stringify(this.state);
   }
   checkHealth() {
     this.db.prepare("SELECT 1").get();
@@ -247,11 +251,20 @@ export class EventService {
     this.db.close();
   }
   private save() {
-    this.db
-      .prepare(
-        "INSERT INTO access_state(id,body) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
-      )
-      .run(JSON.stringify(this.state));
+    const body = JSON.stringify(this.state);
+    try {
+      this.db
+        .prepare(
+          "INSERT INTO access_state(id,body) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+        )
+        .run(body);
+      this.persistedState = body;
+    } catch (error) {
+      // ENOSPC/SQLITE_FULL cannot leave an uncommitted role, binding or event
+      // mutation visible in memory. Roll back to the last durable snapshot.
+      this.state = JSON.parse(this.persistedState) as AccessState;
+      throw error;
+    }
   }
   private remember(actor: Identity) {
     const user = identitySchema.parse(actor);
@@ -571,6 +584,18 @@ export class EventService {
       return fail("The team repository is unavailable.", 503);
     }
   }
+  async teamReferenceAsync(actor: Identity, id: string, write = false) {
+    const p = this.workspace(actor, id, write);
+    if (!p.ok) return p;
+    try {
+      const repo = this.engine.repoPath(p.value.teamId);
+      const remote = (await gitAsync(repo, ["rev-parse", "main"])).toString().trim();
+      const fresh = this.workspace(actor, id, write);
+      return fresh.ok ? ok({ workspace: fresh.value, repo, remote }) : fresh;
+    } catch {
+      return fail("The team repository is unavailable.", 503);
+    }
+  }
   localTeamStatus(actor: Identity, id: string, remote: string) {
     const p = this.workspace(actor, id);
     if (!p.ok) return p;
@@ -610,6 +635,51 @@ export class EventService {
   shareLocal(actor: Identity, id: string, title: string, revision: string) {
     const p = this.workspace(actor, id, true);
     return p.ok ? this.engine.shareLocal(id, title, revision) : p;
+  }
+  async shareLocalAsync(
+    actor: Identity,
+    id: string,
+    title: string,
+    revision: string,
+    authorized: () => Promise<boolean> = async () => true,
+  ) {
+    const access = this.workspace(actor, id, true);
+    if (!access.ok) return access;
+    if (access.value.spriteStatus !== "local") return fail("Use the Sprite Git adapter", 409);
+    try {
+      const source = this.workspacePath(id);
+      const prepared = await gitJob({ operation: "commit", root: source, title, revision });
+      if (!prepared.commit) throw new Error("Incomplete local Git commit");
+      const result = await this.publishSnapshotAsync(
+        actor,
+        id,
+        title,
+        revision,
+        source,
+        prepared.commit,
+        authorized,
+      );
+      if (result.ok)
+        await gitAsync(source, ["update-ref", "refs/civic-spark/base", prepared.commit]);
+      return result;
+    } catch {
+      return fail("Sharing could not complete. Your local commit is preserved; retry Share.", 503);
+    }
+  }
+  publishSnapshotAsync(
+    actor: Identity,
+    id: string,
+    title: string,
+    revision: string,
+    source: string,
+    commit: string,
+    authorized: () => Promise<boolean> = async () => true,
+  ) {
+    return this.engine.publishPrepared(id, title, revision, source, commit, async () => {
+      if (!(await authorized()))
+        return fail("Sign in again before sharing. Your local commit is preserved.", 401);
+      return this.workspace(actor, id, true);
+    });
   }
   publishSnapshot(
     actor: Identity,

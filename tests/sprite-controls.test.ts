@@ -339,7 +339,7 @@ it("reopens a deleted reservation only from shared main, preserving history/iden
   }
 });
 
-it("frees confirmed-deleted capacity, then applies normal limits to explicit owner recovery", async () => {
+it("admits additional Sprites and explicit deleted-Sprite recovery without an allocation quota", async () => {
   const f = fixture();
   vi.stubEnv("CIVIC_SPARK_MAX_SPRITES", "1");
   const another = unwrap(
@@ -356,15 +356,16 @@ it("frees confirmed-deleted capacity, then applies normal limits to explicit own
   const inspect = vi.fn().mockResolvedValue("missing" as const);
   const provisioning = new WorkspaceProvisioning(f.service, f.path, client, inspect);
   try {
-    expect(provisioning.start(another)).toMatchObject({ ok: false, status: 409 });
     unwrap(await f.action("delete"));
     unwrap(provisioning.start(another));
     await provisioning.wait(another.id);
     expect(create).toHaveBeenCalledExactlyOnceWith(`civic-spark-${another.id}`);
     unwrap(f.service.wakeWorkspace(actor, f.workspace.id));
-    expect(provisioning.start(f.current())).toMatchObject({ ok: false, status: 409 });
-    expect(inspect).not.toHaveBeenCalled();
-    expect(f.service.runtime(f.workspace.id).deletion?.replacementReserved).toBe(false);
+    unwrap(provisioning.start(f.current()));
+    await provisioning.wait(f.workspace.id);
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(f.service.runtime(f.workspace.id).deletion).toBeNull();
   } finally {
     await provisioning.close();
     f.coordinator.close();
@@ -517,17 +518,14 @@ it.each(["wake", "sprite"] as const)(
       expect(destroy.json()).toEqual({ failures: 0 });
       const post = () =>
         app.inject({ method: "POST", url: `/api/workspaces/${own.id}/${route}`, headers });
-      vi.stubEnv("CIVIC_SPARK_MAX_SPRITES", "1");
-      expect((await post()).statusCode).toBe(409);
-      expect(service.runtime(own.id).held).toBe(true);
-      vi.stubEnv("CIVIC_SPARK_MAX_SPRITES", "invalid");
+      vi.stubEnv("CIVIC_SPARK_MAX_PROVISIONING", "invalid");
       const invalid = await post();
       expect(invalid.statusCode).toBe(503);
       expect(invalid.json()).toEqual({
         error: "Workspace preparation could not start. Check installation configuration and retry.",
       });
       expect(service.runtime(own.id).held).toBe(true);
-      vi.stubEnv("CIVIC_SPARK_MAX_SPRITES", "100");
+      vi.stubEnv("CIVIC_SPARK_MAX_PROVISIONING", "2");
       vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "different-org");
       expect((await post()).statusCode).toBe(409);
       expect(service.runtime(own.id).held).toBe(true);

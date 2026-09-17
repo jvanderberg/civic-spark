@@ -28,7 +28,7 @@ const input = setupSchema.parse({
   spriteOrg: "fixture",
   authMode: "demo",
   proxyCidrs: ["172.19.0.0/16"],
-  maxSprites: 2,
+  previewPoolSize: 2,
   previewIngress: true,
 });
 const directories: string[] = [];
@@ -135,7 +135,7 @@ it("plans stable full capacity, retains unrelated receipt fields, grows without 
   expect(new Set(origins).size).toBe(2);
   expect(planPreviewPool(input, dir)).toEqual(origins);
   expect(JSON.parse(readFileSync(join(dir, "receipt.json"), "utf8")).operatorNote).toBe("retain");
-  expect(planPreviewPool({ ...input, maxSprites: 3 }, dir).slice(0, 2)).toEqual(origins);
+  expect(planPreviewPool({ ...input, previewPoolSize: 3 }, dir).slice(0, 2)).toEqual(origins);
   expect(() => planPreviewPool(input, dir)).toThrow("shrink");
   expect(() => planPreviewPool({ ...input, org: "different" }, dir)).toThrow("match");
 });

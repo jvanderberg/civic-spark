@@ -49,7 +49,7 @@ function read(input: Setup, directory: string) {
       throw new PreviewSetupError("Preview receipt contains an invalid or duplicate origin");
     names.add(slot.app);
   }
-  if (slots.length > input.maxSprites)
+  if (slots.length > input.previewPoolSize)
     throw new PreviewSetupError(
       "Cannot shrink the preview origin pool; retain its capacity and existing bindings",
     );
@@ -65,7 +65,7 @@ export function previewPoolForAction(input: Setup, directory: string, action: st
 export function planPreviewPool(input: Setup, directory: string): string[] {
   const { path, receipt, slots } = read(input, directory);
   const previous = slots.length;
-  while (slots.length < input.maxSprites) {
+  while (slots.length < input.previewPoolSize) {
     const app = `${input.app.slice(0, 35)}-preview-${slots.length + 1}-${randomBytes(5).toString("hex")}`;
     slots.push({ app, origin: `https://${app}.fly.dev`, created: false });
   }
@@ -209,7 +209,7 @@ export function requirePreviewPoolReady(input: Setup, directory: string) {
   const { slots } = read(input, directory);
   const fingerprint = ingressSourceHash();
   if (
-    slots.length !== input.maxSprites ||
+    slots.length !== input.previewPoolSize ||
     slots.some((slot) => !slot.created || !slot.machineId || slot.sourceHash !== fingerprint)
   )
     throw new PreviewSetupError(
