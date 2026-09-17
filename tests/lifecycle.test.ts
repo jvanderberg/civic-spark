@@ -48,7 +48,6 @@ it("authorizes event inventory and pause, blocks every workspace route and keeps
     undefined,
     "email",
     undefined,
-    undefined,
     runtime,
   );
   let closed = false;
@@ -246,7 +245,6 @@ it("pause-all is distinct from event pause, retains failures, and wakes the same
     "http://127.0.0.1:4310",
     undefined,
     "email",
-    undefined,
     undefined,
     runtime,
   );

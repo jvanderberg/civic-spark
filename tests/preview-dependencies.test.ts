@@ -9,6 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { request } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -45,23 +46,43 @@ async function fixture(real = false, timeout = 300) {
       "PROJECT = pathlib.Path('/home/sprite/project')",
       `PROJECT = pathlib.Path(${JSON.stringify(project)})`,
     );
-  const tmux = `#!/usr/bin/env python3
-import os, sys, signal, subprocess, pathlib
-pidfile = pathlib.Path(${JSON.stringify(join(root, "server.pid"))})
+  // Simulates the documented in-Sprite service contract; the app itself is real.
+  const provider = `#!/usr/bin/env python3
+import os, sys, signal, subprocess, pathlib, json
+root = pathlib.Path(${JSON.stringify(root)})
+definition = root/'service.json'
+pidfile = root/'server.pid'
 args = sys.argv[1:]
-if args[0] == 'has-session':
-    if not pidfile.exists(): sys.exit(1)
-    try: os.kill(int(pidfile.read_text()), 0)
-    except ProcessLookupError: sys.exit(1)
-if args[0] == 'kill-session' and pidfile.exists():
-    try: os.killpg(int(pidfile.read_text()), signal.SIGKILL)
-    except ProcessLookupError: pass
-    pidfile.unlink()
-if args[0] == 'new-session':
-    p = subprocess.Popen(['sh', '-c', args[-1]], cwd=args[args.index('-c') + 1], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+assert args.pop(0) == 'services'
+with (root/'service-calls').open('a') as log: log.write(json.dumps(args)+'\\n')
+if (root/'service-error').exists(): sys.exit(1)
+def stop():
+    if pidfile.exists():
+        try: os.killpg(int(pidfile.read_text()), signal.SIGKILL)
+        except ProcessLookupError: pass
+        pidfile.unlink()
+if args[0] == 'list':
+    value = json.loads(definition.read_text()) if definition.exists() else None
+    if value: value['state'] = {'status': 'running' if pidfile.exists() else ('failed' if (root/'stop-failed').exists() else 'stopped')}
+    print(json.dumps([value] if value else []))
+elif args[0] == 'stop': stop()
+elif args[0] in ['create', 'start']:
+    assert args[1] == 'civic-spark-web-preview'
+    if args[0] == 'create':
+        assert args[args.index('--cmd')+1] == '/bin/sh'
+        assert '--http-port' in args
+        stop()
+        value = {'name': args[1], 'cmd': '/bin/sh', 'args': [args[args.index('--args')+1]], 'http_port': int(args[args.index('--http-port')+1])}
+        definition.write_text(json.dumps(value))
+        if (root/'create-stopped').exists(): sys.exit(0)
+    value = json.loads(definition.read_text())
+    p = subprocess.Popen([value['cmd'], *value['args']], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     pidfile.write_text(str(p.pid))
+else: raise Exception('Unexpected service operation')
 `;
-  writeFileSync(join(bin, "tmux"), tmux);
+  writeFileSync(join(bin, "sprite-env"), provider);
+  chmodSync(join(bin, "sprite-env"), 0o755);
+  writeFileSync(join(bin, "tmux"), "#!/bin/sh\nexit 1\n");
   chmodSync(join(bin, "tmux"), 0o755);
   if (!real) {
     writeFileSync(
@@ -112,7 +133,7 @@ if args[0] in ['ci', 'install']:
     p.stderr.on("data", (data) => {
       stderr += data;
     });
-    p.stdin.end(JSON.stringify({ operation, defaults }));
+    p.stdin.end(JSON.stringify({ operation, defaults, previewHost: "fixture-org.sprites.app" }));
     await new Promise<void>((done, reject) => {
       p.on("error", reject);
       p.on("close", () => done());
@@ -174,6 +195,9 @@ it("fresh checkout installs once, preserves files/config, detects changed manife
   expect((await f.run("status")).value.ready).toBe(false);
   expect(existsSync(join(f.runtime, "environment.json"))).toBe(false);
   expect((await f.run("start")).value).toMatchObject({ ready: true, phase: "ready" });
+  expect(readFileSync(join(f.runtime, "preview-service.sh"), "utf8")).toContain(
+    "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=fixture-org.sprites.app",
+  );
   expect(f.calls()).toHaveLength(1);
   expect(f.calls()[0]?.[0]).toBe("ci");
   expect(readFileSync(join(f.project, "package.json"))).toEqual(original);
@@ -272,6 +296,21 @@ it("trusted fresh shared Vite clone becomes Ready with real npm ci, unchanged tr
   expect(await (await fetch(`http://127.0.0.1:${f.defaults.port}`)).text()).toContain(
     "Shared Vite demo",
   );
+  const hostStatus = (host: string) =>
+    new Promise<number>((resolve, reject) => {
+      const req = request(
+        `http://127.0.0.1:${f.defaults.port}`,
+        { headers: { host } },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+  expect(await hostStatus("fixture-org.sprites.app")).toBe(200);
+  expect(await hostStatus("unrelated.example.test")).toBe(403);
   const marker = readFileSync(join(f.runtime, "project-installed.json"), "utf8");
   expect((await f.run("restart")).value.ready).toBe(true);
   expect(readFileSync(join(f.runtime, "project-installed.json"), "utf8")).toBe(marker);
@@ -362,3 +401,88 @@ it("Launch repairs a cached Vite install missing its transitive bundler, then re
   expect(existsSync(join(f.project, "source-overwrite.txt"))).toBe(false);
   expect(existsSync(join(f.runtime, "node_modules"))).toBe(false);
 }, 60000);
+
+it.each(["stopped", "failed"])(
+  "explicit Stop with provider state %s leaves no running process; polling does not restart and Launch reuses the HTTP definition",
+  async (state) => {
+    const f = await fixture();
+    expect((await f.run("start")).value.ready).toBe(true);
+    const definition = readFileSync(join(f.root, "service.json"));
+    if (state === "failed") writeFileSync(join(f.root, "stop-failed"), "fixture provider state");
+    expect((await f.run("stop")).value).toMatchObject({
+      running: false,
+      ready: false,
+      phase: "stopped",
+    });
+    expect(existsSync(join(f.root, "server.pid"))).toBe(false);
+    for (const action of ["status", "logs", "status"]) {
+      expect((await f.run(action)).value).toMatchObject({ running: false, ready: false });
+    }
+    expect(readFileSync(join(f.root, "service.json"))).toEqual(definition);
+    expect((await f.run("start")).value.ready).toBe(true);
+    expect(readFileSync(join(f.root, "service.json"))).toEqual(definition);
+    expect(f.calls()).toHaveLength(1);
+  },
+);
+
+it("service inspection failure does not assume absence, replace configuration or publish a ready state", async () => {
+  const f = await fixture();
+  writeFileSync(join(f.root, "service-error"), "provider unavailable");
+  expect((await f.run("start")).ok).toBe(false);
+  expect(f.calls()).toHaveLength(0);
+  expect(existsSync(join(f.root, "service.json"))).toBe(false);
+  expect(existsSync(join(f.runtime, "environment.json"))).toBe(false);
+  rmSync(join(f.root, "service-error"));
+  expect((await f.run("start")).value.ready).toBe(true);
+});
+
+it("Launch updates the existing stopped named service definition when its configured port changes", async () => {
+  const f = await fixture();
+  expect((await f.run("start")).value.ready).toBe(true);
+  await f.run("stop");
+  const nextPort = await new Promise<number>((resolve) => {
+    const server = createServer();
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") throw Error();
+      server.close(() => resolve(address.port));
+    });
+  });
+  const updated = {
+    port: nextPort,
+    command: ["python3", "-m", "http.server", `${nextPort}`, "--bind", "127.0.0.1"],
+  };
+  writeFileSync(join(f.runtime, "environment.json"), JSON.stringify(updated));
+  expect((await f.run("start")).value).toMatchObject({ ready: true, port: nextPort });
+  expect((await fetch(`http://127.0.0.1:${nextPort}`)).status).toBe(200);
+  expect(JSON.parse(readFileSync(join(f.root, "service.json"), "utf8"))).toMatchObject({
+    name: "civic-spark-web-preview",
+    http_port: nextPort,
+  });
+  const calls = readFileSync(join(f.root, "service-calls"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as string[])
+    .filter((args) => args[0] === "create");
+  expect(calls).toHaveLength(2);
+  expect(new Set(calls.map((args) => args[1])).size).toBe(1);
+});
+
+it("explicit Launch starts an existing failed service when updating its definition does not restart it", async () => {
+  const f = await fixture();
+  expect((await f.run("start")).value.ready).toBe(true);
+  writeFileSync(join(f.root, "stop-failed"), "exit143");
+  await f.run("stop");
+  expect((await f.run("status")).value.running).toBe(false);
+  writeFileSync(join(f.root, "create-stopped"), "preserve stopped state on update");
+  expect((await f.run("start")).value.ready).toBe(true);
+  expect((await fetch(`http://127.0.0.1:${f.defaults.port}`)).status).toBe(200);
+  const calls = readFileSync(join(f.root, "service-calls"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as string[]);
+  expect(calls.filter((args) => args[0] === "start")).toEqual([
+    ["start", "civic-spark-web-preview", "--duration", "1s"],
+  ]);
+  expect(f.calls()).toHaveLength(1);
+});

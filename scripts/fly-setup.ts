@@ -3,15 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
-import { validatePreviewOriginTemplate } from "../apps/server/src/preview-config.ts";
 import { validateSpriteToken } from "../packages/sprites/src/credentials.ts";
-import {
-  PreviewSetupError,
-  previewPoolForAction,
-  previewRelaySecret,
-  provisionPreviewPool,
-  requirePreviewPoolReady,
-} from "./fly-preview-setup.ts";
 
 class SetupError extends Error {}
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -32,8 +24,6 @@ export const setupSchema = z
     spriteOrg: slug,
     authMode: z.enum(["email", "demo"]).default("email"),
     siteEventId: z.uuid().optional(),
-    previewIngress: z.boolean().default(false),
-    previewOriginTemplate: z.string().min(1).optional(),
     emailProvider: z.enum(["smtp", "resend"]).optional(),
     emailFrom: z
       .string()
@@ -58,7 +48,6 @@ export const setupSchema = z
       .default({ enabled: false }),
     managementCpus: z.number().int().min(1).max(8).default(1),
     managementMemoryMb: z.number().int().min(1024).max(32768).default(1024),
-    previewPoolSize: z.number().int().min(1).max(10000).default(60),
     maxProvisioning: z.number().int().min(1).max(20).default(2),
     smtpHost: z
       .string()
@@ -77,23 +66,6 @@ export const setupSchema = z
         path: ["volumeAutoExtend"],
         message: "The ceiling must allow at least one increment above the initial volume size",
       });
-    if (value.previewIngress && value.previewOriginTemplate)
-      ctx.addIssue({
-        code: "custom",
-        path: ["previewIngress"],
-        message: "Choose either the managed preview ingress pool or a preview origin template",
-      });
-    if (value.previewOriginTemplate) {
-      try {
-        validatePreviewOriginTemplate(value.previewOriginTemplate, value.origin);
-      } catch {
-        ctx.addIssue({
-          code: "custom",
-          path: ["previewOriginTemplate"],
-          message: "Use a separate HTTPS preview origin with one {workspace} hostname label",
-        });
-      }
-    }
     if (value.authMode === "email" && (!value.emailProvider || !value.emailFrom))
       ctx.addIssue({ code: "custom", message: "Email mode requires emailProvider and emailFrom" });
     if (value.emailProvider === "smtp" && (!value.smtpHost || !value.smtpPort))
@@ -102,7 +74,7 @@ export const setupSchema = z
 export type Setup = z.infer<typeof setupSchema>;
 const volumeName = "civic_spark_data";
 const quote = (value: string) => JSON.stringify(value);
-export function flyConfig(input: Setup, previewOriginPool: string[] = []) {
+export function flyConfig(input: Setup) {
   const growth = input.volumeAutoExtend;
   const autoExtend = growth.enabled
     ? `  auto_extend_size_threshold = ${growth.thresholdPercent}\n  auto_extend_size_increment = "${growth.incrementGb}GB"\n  auto_extend_size_limit = "${growth.ceilingGb}GB"\n`
@@ -122,10 +94,6 @@ export function flyConfig(input: Setup, previewOriginPool: string[] = []) {
     CIVIC_SPARK_MAX_PROVISIONING: String(input.maxProvisioning),
   };
   if (input.siteEventId) env.CIVIC_SPARK_SITE_EVENT_ID = input.siteEventId;
-  if (previewOriginPool.length)
-    env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL = JSON.stringify(previewOriginPool);
-  if (input.previewOriginTemplate)
-    env.CIVIC_SPARK_PREVIEW_ORIGIN_TEMPLATE = input.previewOriginTemplate;
   if (input.authMode === "email")
     Object.assign(env, {
       CIVIC_SPARK_EMAIL_PROVIDER: input.emailProvider,
@@ -365,24 +333,22 @@ async function main() {
   const [action, path, ...flags] = process.argv.slice(2);
   if (!action || !path || flags.some((flag) => flag !== "--ambient"))
     throw new SetupError(
-      "Usage: npx tsx scripts/fly-setup.ts plan|auth|provision|preview-provision|secrets|verify-sprites|deploy <public-config.json> [--ambient]",
+      "Usage: npx tsx scripts/fly-setup.ts plan|auth|provision|secrets|verify-sprites|deploy <public-config.json> [--ambient]",
     );
   const input = setupSchema.parse(JSON.parse(readFileSync(path, "utf8")));
   const directory = resolve(repositoryRoot, ".data/fly", input.app);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const config = resolve(directory, "fly.toml");
-  const previewPool = previewPoolForAction(input, directory, action);
-  writeFileSync(config, flyConfig(input, previewPool), { mode: 0o600 });
+  writeFileSync(config, flyConfig(input), { mode: 0o600 });
   chmodSync(config, 0o600);
   if (action === "plan") {
     console.log(`Configuration written: ${config}\nNo cloud resources changed.`);
     console.log(
       `Persistent volume: ${input.volumeGb} GB initially. Auto-extension: ${input.volumeAutoExtend.enabled ? `${input.volumeAutoExtend.thresholdPercent}% used, +${input.volumeAutoExtend.incrementGb} GB, ceiling ${input.volumeAutoExtend.ceilingGb} GB` : "disabled"}. Management: ${input.managementCpus} shared CPUs / ${input.managementMemoryMb} MB.`,
     );
-    if (input.previewIngress)
-      console.log(
-        `Permanent preview origins: ${input.previewPoolSize} total. For 60 additional personal workspaces, retain all existing origins and add at least 60 slots. Origins are never recycled; this is separate from Sprite allocation. Run provision, then preview-provision explicitly to prepare the planned pool. Owned wildcard DNS/TLS with previewOriginTemplate avoids a preallocated pool.`,
-      );
+    console.log(
+      "Public previews use each existing Sprite HTTPS URL. No preview apps, Machines, domains, origin pools or extra ports are provisioned.",
+    );
     return;
   }
   if (action === "auth") {
@@ -409,26 +375,10 @@ async function main() {
     console.log("App and single volume are ready; no deployment performed.");
     return;
   }
-  if (action === "preview-provision") {
-    if (!input.previewIngress)
-      throw new SetupError("Set previewIngress to true before provisioning preview capacity");
-    authorizeExisting(input, resolve(directory, "receipt.json"));
-    const secrets = z.record(z.string(), z.string()).parse(JSON.parse(readFileSync(0, "utf8")));
-    const relay = previewRelaySecret(directory);
-    const envelope = secretInput(input, { ...secrets, CIVIC_SPARK_PREVIEW_RELAY_SECRET: relay });
-    provisionPreviewPool(input, directory, relay, runFly);
-    runFly(["secrets", "import", "--app", input.app, "--stage"], envelope);
-    console.log(
-      "Preview capacity provisioned; gateway credentials staged. Deploy the management app when active turns are idle.",
-    );
-    return;
-  }
   if (action === "secrets") {
     authorizeExisting(input, resolve(directory, "receipt.json"));
     // JSON arrives on stdin from a password manager or private file outside this repository.
     const secrets = z.record(z.string(), z.string()).parse(JSON.parse(readFileSync(0, "utf8")));
-    if (input.previewIngress)
-      secrets.CIVIC_SPARK_PREVIEW_RELAY_SECRET = previewRelaySecret(directory);
     runFly(["secrets", "import", "--app", input.app, "--stage"], secretInput(input, secrets));
     console.log("Secrets staged; deploy to activate. No secret values logged.");
     return;
@@ -450,7 +400,6 @@ async function main() {
     return;
   }
   if (action === "deploy") {
-    if (input.previewIngress) requirePreviewPoolReady(input, directory);
     if (!existsSync(resolve(directory, "receipt.json")))
       throw new SetupError("Run provision with the original setup receipt before deploying");
     const { volumes } = authorizeExisting(input, resolve(directory, "receipt.json"));
@@ -481,7 +430,7 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
   main().catch((error: unknown) => {
     console.error(
-      error instanceof SetupError || error instanceof PreviewSetupError
+      error instanceof SetupError
         ? error.message
         : "Invalid configuration or unreadable input. Check setup JSON, secret names and file permissions; provider diagnostics and secret values were suppressed.",
     );

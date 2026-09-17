@@ -37,7 +37,87 @@ export class SpriteClient {
   constructor(
     private org = process.env.CIVIC_SPARK_SPRITE_ORG,
     private acquire?: (name: string, passive?: boolean) => SpriteLease,
+    private request: typeof fetch = fetch,
   ) {}
+  /** Provider metadata only: no guessed hostname or browser-visible organization token. */
+  async previewUrl(
+    name: string,
+    access: "public" | "publish" | "inspect" = "public",
+    beforePublish?: () => Promise<void>,
+  ): Promise<Result<{ url: string }>> {
+    if (!spriteNamePattern.test(name)) return fail("Invalid workspace name");
+    let lease: SpriteLease | undefined;
+    let release: (() => void) | undefined;
+    try {
+      lease = this.lease(name);
+      release = await this.commands.acquire(lease?.signal);
+      const token = process.env.SPRITE_TOKEN;
+      if (!token) throw Error();
+      const base = new URL(process.env.CIVIC_SPARK_SPRITE_API_URL ?? "https://api.sprites.dev");
+      if (
+        base.protocol !== "https:" ||
+        base.username ||
+        base.password ||
+        base.search ||
+        base.hash ||
+        base.pathname !== "/"
+      )
+        throw Error();
+      const endpoint = new URL(`/v1/sprites/${name}`, base);
+      const call = async (method: "GET" | "PUT") => {
+        const response = await this.request(endpoint, {
+          method,
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          ...(method === "PUT"
+            ? { body: JSON.stringify({ url_settings: { auth: "public" } }) }
+            : {}),
+          redirect: "error",
+          signal: AbortSignal.any([AbortSignal.timeout(15000), ...(lease ? [lease.signal] : [])]),
+        });
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw Error();
+        }
+        const body = await response.text();
+        if (body.length > 65536) throw Error();
+        return z
+          .object({
+            name: z.literal(name),
+            url: z.url(),
+            url_settings: z.object({ auth: z.enum(["public", "sprite"]) }),
+          })
+          .parse(JSON.parse(body));
+      };
+      let metadata = await call("GET");
+      if (access === "publish" && metadata.url_settings.auth !== "public") {
+        await beforePublish?.();
+        lease?.signal.throwIfAborted();
+        metadata = await call("PUT");
+      }
+      const url = new URL(metadata.url);
+      if (
+        (access !== "inspect" && metadata.url_settings.auth !== "public") ||
+        url.protocol !== "https:" ||
+        url.username ||
+        url.password ||
+        url.port ||
+        url.pathname !== "/" ||
+        url.search ||
+        url.hash ||
+        !/^[a-z0-9-]+\.sprites\.app$/.test(url.hostname)
+      )
+        throw Error();
+      return ok({ url: url.origin });
+    } catch {
+      return fail(
+        "Public preview URL unavailable. Retry Launch after checking Sprite access.",
+        502,
+      );
+    } finally {
+      release?.();
+      lease?.release();
+    }
+  }
   lease(name: string, passive = false): SpriteLease | undefined {
     return this.acquire?.(name, passive);
   }
@@ -220,12 +300,14 @@ export class SpriteClient {
     name: string,
     operation: "start" | "restart" | "stop" | "status" | "logs",
     config?: { port: number; command: string[] },
+    previewHost?: string,
   ) {
     return this.fileOperation(
       name,
       {
         operation,
         ...config,
+        previewHost,
         defaults: JSON.parse(
           readFileSync(new URL("../../agents/runtime/environment.json", import.meta.url), "utf8"),
         ),

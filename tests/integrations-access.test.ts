@@ -86,7 +86,7 @@ it("a conflict ticket survives control-plane restart and only its owner can decl
     email: "other@example.test",
     emailVerified: true as const,
   };
-  let integrations = new WorkspaceIntegrations(service, root, new Set(), "http://127.0.0.1:4310");
+  let integrations = new WorkspaceIntegrations(service, root, new Set());
   try {
     const event = service.createEvent(owner, {
       name: "Test",
@@ -118,7 +118,7 @@ it("a conflict ticket survives control-plane restart and only its owner can decl
       }),
     );
     integrations.close();
-    integrations = new WorkspaceIntegrations(service, root, new Set(), "http://127.0.0.1:4310");
+    integrations = new WorkspaceIntegrations(service, root, new Set());
     expect(integrations.pending(id, owner)?.id).toBe(ticket);
     await expect(integrations.confirm(id, other, ticket, false)).rejects.toThrow();
     expect(integrations.pending(id, owner)?.status).toBe("confirmation");

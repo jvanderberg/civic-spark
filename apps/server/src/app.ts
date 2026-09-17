@@ -41,7 +41,6 @@ import { clientAddress, storageHeadroom, storageReady, validateDeployment } from
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
 import { WorkspaceLifecycle } from "./lifecycle.ts";
-import { type PreviewTransportFactory, spritePreviewTransport } from "./preview.ts";
 import { prototypeSignIn } from "./prototype-auth.ts";
 import { WorkspaceProvisioning } from "./provisioning.ts";
 import { registerTeamUpdateRoutes } from "./team-updates.ts";
@@ -67,7 +66,6 @@ export async function createApp(
     .enum(["email", "prototype", "demo"])
     .parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
   siteEventId = z.uuid().optional().parse(process.env.CIVIC_SPARK_SITE_EVENT_ID),
-  previewTransport?: PreviewTransportFactory,
   lifecycleProvider?: SpriteLifecycleProvider,
 ) {
   const deployment = validateDeployment(root, baseURL, authMode);
@@ -106,31 +104,7 @@ export async function createApp(
   const terminals = new TerminalSessions(allowed, client);
   const agents = new AgentSessions(client, allowed, (id) => lifecycle.touch(id));
   const sharing = new Set<string>();
-  const integrations = new WorkspaceIntegrations(
-    service,
-    root,
-    sharing,
-    baseURL,
-    client,
-    async (name, port) => {
-      const lease = lifecycle.acquire(name);
-      try {
-        const transport = await (previewTransport
-          ? previewTransport(name, port)
-          : spritePreviewTransport(name, port, lease.signal));
-        if (lease.signal.aborted) {
-          transport.close();
-          lease.signal.throwIfAborted();
-        }
-        return transport;
-      } finally {
-        lease.release();
-      }
-    },
-  );
-  app.addHook("onReady", async () => {
-    integrations.previews.attach(app.server);
-  });
+  const integrations = new WorkspaceIntegrations(service, root, sharing, client);
   const lifecycle: WorkspaceLifecycle = new WorkspaceLifecycle(
     service,
     lifecycleProvider ?? new SpriteLifecycle(),
@@ -142,10 +116,7 @@ export async function createApp(
     (id) => agents.isWorking(id),
     (id) =>
       terminals.recentlyUsed(id, lifecycle.idleMinutes * 60000) ||
-      agents.isPreparing(
-        service.provisioningRecords().find((w) => w.id === id)?.spriteName ?? "",
-      ) ||
-      integrations.previews.inUse(id, lifecycle.idleMinutes * 60000),
+      agents.isPreparing(service.provisioningRecords().find((w) => w.id === id)?.spriteName ?? ""),
     (id) => provisioning.wait(id),
   );
   const provisioning: WorkspaceProvisioning = new WorkspaceProvisioning(service, root, client);
@@ -601,7 +572,7 @@ export async function createApp(
       if (input.action === "open")
         return await integrations.openPreview(r.params.id, owner, authorized);
       if (!(await authorized())) throw new Error("Workspace access ended.");
-      return await integrations.preview(r.params.id, owner, input.action);
+      return await integrations.preview(r.params.id, owner, input.action, undefined, authorized);
     } catch (e) {
       return reply
         .code(409)

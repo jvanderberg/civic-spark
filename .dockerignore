@@ -19,7 +19,6 @@ deploy/**
 !deploy/fly/
 deploy/fly/**
 !deploy/fly/Dockerfile
-!deploy/fly/preview-ingress.Dockerfile
 !deploy/fly/entrypoint.sh
 !deploy/fly/prepare-backup-input.sh
 !deploy/fly/install-sprite.mjs

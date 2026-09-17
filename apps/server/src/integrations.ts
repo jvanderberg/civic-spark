@@ -19,7 +19,6 @@ import type { EventService } from "../../../packages/domain/src/service.ts";
 import type { Result } from "../../../packages/domain/src/types.ts";
 import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
-import { type PreviewTransportFactory, WorkspacePreviews } from "./preview.ts";
 
 const requestSchema = z.object({
   id: z.uuid(),
@@ -59,33 +58,14 @@ function unwrap<T>(value: Result<T>): T {
 export class WorkspaceIntegrations {
   private relays = new Map<string, Relay>();
   private directory: string;
-  readonly previews: WorkspacePreviews;
   constructor(
     private service: EventService,
     root: string,
     private busy: Set<string>,
-    portal: string,
     private client = new SpriteClient(),
-    previewTransport?: PreviewTransportFactory,
   ) {
     this.directory = join(root, "agent-integrations");
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-    this.previews = new WorkspacePreviews(
-      portal,
-      previewTransport,
-      process.env.CIVIC_SPARK_PREVIEW_ORIGIN_TEMPLATE,
-      process.env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL
-        ? {
-            pool: z
-              .array(z.string())
-              .min(1)
-              .max(10000)
-              .parse(JSON.parse(process.env.CIVIC_SPARK_PREVIEW_ORIGIN_POOL)),
-            root,
-            relaySecret: process.env.CIVIC_SPARK_PREVIEW_RELAY_SECRET ?? "",
-          }
-        : undefined,
-    );
   }
   private path(id: string) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid workspace");
@@ -190,6 +170,7 @@ export class WorkspaceIntegrations {
                   request.port && request.command
                     ? { port: request.port, command: request.command }
                     : undefined,
+                  relay.authorized,
                 ),
               };
           } catch (error) {
@@ -222,31 +203,69 @@ export class WorkspaceIntegrations {
     owner: Identity,
     operation: "start" | "restart" | "stop" | "status" | "logs",
     config?: { port: number; command: string[] },
+    authorized: () => Promise<boolean> = async () => true,
   ) {
     unwrap(this.service.executionAllowed(id));
     const workspace = unwrap(this.service.workspace(owner, id, true));
     if (workspace.spriteStatus !== "ready" || !workspace.spriteName)
       throw new Error("Web preview needs a running Sprite.");
     const sprite = workspace.spriteName;
+    const generation = this.service.runtime(id).generation;
+    const validate = async () => {
+      if (!(await authorized())) throw new Error("Workspace access ended.");
+      const current = unwrap(this.service.workspace(owner, id, true));
+      unwrap(this.service.executionAllowed(id));
+      if (
+        current.spriteName !== sprite ||
+        current.spriteStatus !== "ready" ||
+        this.service.runtime(id).generation !== generation
+      )
+        throw new Error("Workspace changed. Retry the preview action.");
+    };
+    await validate();
     let cancellation: Promise<unknown> | undefined;
-    // Only an explicit, in-flight launch owns this check. Status polling never starts work.
-    const monitor = ["start", "restart"].includes(operation)
+    let checking = false;
+    let monitoring = true;
+    const launching = ["start", "restart"].includes(operation);
+    const cancel = () => {
+      if (!monitoring) return;
+      cancellation ??= this.client.preview(sprite, "stop").catch(() => undefined);
+    };
+    // Only an explicit, in-flight launch owns this check. Polling never starts work.
+    const monitor = launching
       ? setInterval(() => {
-          if (!this.service.workspace(owner, id, true).ok && !cancellation) {
-            this.previews.stop(id);
-            cancellation = this.client.preview(sprite, "stop").catch(() => undefined);
-          }
+          if (checking || cancellation) return;
+          checking = true;
+          void validate()
+            .catch(cancel)
+            .finally(() => {
+              checking = false;
+            });
         }, 250)
       : undefined;
     try {
-      const result = unwrap(await this.client.preview(sprite, operation, config));
-      if (!this.service.workspace(owner, id, true).ok && !cancellation)
-        cancellation = this.client.preview(sprite, "stop").catch(() => undefined);
-      unwrap(this.service.workspace(owner, id, true));
-      unwrap(this.service.executionAllowed(id));
-      if (operation === "stop" || operation === "restart") this.previews.stop(id);
+      const previewHost = launching
+        ? new URL(unwrap(await this.client.previewUrl(sprite, "inspect")).url).hostname
+        : undefined;
+      await validate();
+      const result = unwrap(await this.client.preview(sprite, operation, config, previewHost));
+      await validate();
+      if (launching && result.ready)
+        unwrap(await this.client.previewUrl(sprite, "publish", validate));
+      await validate();
       return result;
+    } catch (error) {
+      // A failed URL update is retryable with the same prepared service. Lost access drains it.
+      if (launching) {
+        try {
+          await validate();
+        } catch {
+          cancel();
+        }
+      }
+      throw error;
     } finally {
+      monitoring = false;
       clearInterval(monitor);
       await cancellation;
     }
@@ -255,13 +274,25 @@ export class WorkspaceIntegrations {
     unwrap(this.service.executionAllowed(id));
     const workspace = unwrap(this.service.workspace(owner, id, true));
     if (!workspace.spriteName) throw new Error("Web preview needs a running Sprite.");
-    if (!this.previews.configured)
-      throw new Error("Hosted preview is not configured for this installation.");
-    const status = await this.preview(id, owner, "status");
+    const sprite = workspace.spriteName;
+    const generation = this.service.runtime(id).generation;
+    const validate = async () => {
+      if (!(await authorized())) throw new Error("Workspace access ended.");
+      const current = unwrap(this.service.workspace(owner, id, true));
+      unwrap(this.service.executionAllowed(id));
+      if (current.spriteName !== sprite || this.service.runtime(id).generation !== generation)
+        throw new Error("Workspace changed. Retry Open preview.");
+    };
+    await validate();
+    const status = await this.preview(id, owner, "status", undefined, authorized);
     if (!status.ready)
       throw new Error("The web server is not ready. Launch it or inspect its logs.");
-    return this.previews.open(id, workspace.spriteName, status.port, authorized);
+    await validate();
+    const result = unwrap(await this.client.previewUrl(sprite));
+    await validate();
+    return result;
   }
+
   private async fetched(id: string, owner: Identity) {
     const team = unwrap(await this.service.teamReferenceAsync(owner, id, true));
     if (team.workspace.spriteStatus !== "ready" || !team.workspace.spriteName)
@@ -423,10 +454,8 @@ export class WorkspaceIntegrations {
       relay.process.kill();
       this.relays.delete(id);
     }
-    this.previews.stop(id);
   }
   close() {
     for (const id of this.relays.keys()) this.stop(id);
-    this.previews.close();
   }
 }

@@ -7,7 +7,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
-import { WorkspacePreviews } from "../apps/server/src/preview.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
@@ -28,16 +27,12 @@ const { app, service, authentication } = await createApp(root, false, address, u
 await app.listen({ host: "127.0.0.1", port });
 const upstream = httpServer((_req, response) => {
   response.setHeader("Content-Type", "text/html");
-  response.end("<!doctype html><h1>Private browser preview</h1>");
+  response.end("<!doctype html><h1>Public browser preview</h1>");
 });
 upstream.listen(0, "127.0.0.1");
 await once(upstream, "listening");
 const upstreamAddress = upstream.address();
 assert(upstreamAddress && typeof upstreamAddress !== "string");
-const previews = new WorkspacePreviews(address, async () => ({
-  port: upstreamAddress.port,
-  close() {},
-}));
 const browser = await chromium.launch();
 const context = await browser.newContext({
   viewport: { width: 1280, height: 800 },
@@ -75,7 +70,7 @@ try {
     }),
   );
   const id = team.workspace.id;
-  const opened = await previews.open(id, "civic-spark-test", 5173, async () => true);
+  const opened = { url: `http://localhost:${upstreamAddress.port}` };
   let running = false;
   let phase = "stopped";
   let failNext = false;
@@ -245,7 +240,7 @@ try {
   await page.getByRole("button", { name: "Open preview", exact: true }).click();
   const popup = await popupEvent;
   await popup
-    .getByRole("heading", { name: "Private browser preview" })
+    .getByRole("heading", { name: "Public browser preview" })
     .waitFor({ timeout: 5000 })
     .catch(async (error) => {
       console.log("Preview popup diagnostics", await popup.locator("body").innerText());
@@ -282,11 +277,10 @@ try {
   assert.equal(approved, true);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: Launch/Restart/Stop, real isolated popup authentication, light/dark/mobile controls, explicit conflict confirmation and agent handoff; no model calls.",
+    "PASS: Launch/Restart/Stop, real public popup with isolated origin, light/dark/mobile controls, explicit conflict confirmation and agent handoff; no model calls.",
   );
 } finally {
   await browser.close();
-  previews.close();
   upstream.closeAllConnections();
   upstream.close();
   await app.close();

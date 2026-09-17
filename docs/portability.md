@@ -28,3 +28,7 @@ Cloudflare also offers client certificate validation, but accepting our own even
 ## Runtime lifecycle policy
 
 Event execution gates and per-workspace holds persist through EventService independently of provider status. `SpriteLifecycleProvider` supplies named-resource inspection, non-destructive stop and explicit permanent deletion mechanics; its current HTTPS adapter uses `CIVIC_SPARK_SPRITE_API_URL`, while commands use the configured Sprite CLI organization. A second provider must implement non-destructive lifecycle operations and activity/wake semantics explicitly. Fly Machine stop is not a Sprite sleep operation. See [lifecycle contracts](sprite-lifecycle.md), including native idle and billing-data limits.
+
+## Public preview adapter
+
+The first runtime supplies a provider-reported per-Sprite HTTPS URL plus a managed HTTP service, public URL authentication and wake-on-visit. No Fly ingress resources or user domain are required. The management layer owns launch/session/event checks; direct public app requests intentionally bypass them. A replacement provider must supply equivalent unique-origin HTTP/WebSocket routing and document stop/idle/wake semantics. Native provider adapters, credentials and hostname validation stay in `packages/sprites`; participant code runs only in its runtime.

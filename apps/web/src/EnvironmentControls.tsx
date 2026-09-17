@@ -188,6 +188,7 @@ export function EnvironmentControls({
             </button>
           </div>
           {preview && <code>{preview.command.join(" ")}</code>}
+          <p>Previews are public and can wake on visits. After Stop or Pause, use Launch again.</p>
           <div className="environment-actions">
             <button
               type="button"

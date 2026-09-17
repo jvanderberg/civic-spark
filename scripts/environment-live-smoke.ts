@@ -11,8 +11,14 @@ import { git } from "../packages/git/src/repository.ts";
 import { SpriteClient } from "../packages/sprites/src/client.ts";
 
 const sprite = process.argv[process.argv.indexOf("--sprite") + 1];
-if (!sprite || !/^civic-spark-smoke-[a-z0-9-]+$/.test(sprite))
-  throw new Error("Use an existing dedicated --sprite civic-spark-smoke-NAME");
+if (
+  !sprite ||
+  !/^civic-spark-smoke-[a-z0-9-]+$/.test(sprite) ||
+  !process.argv.includes("--public-preview")
+)
+  throw new Error(
+    "Use an existing dedicated --sprite civic-spark-smoke-NAME --public-preview (leaves its native URL public)",
+  );
 const name = sprite;
 const root = mkdtempSync(join(tmpdir(), "civic-spark-environment-live-"));
 const remote = `/tmp/civic-spark-environment-${randomUUID()}`;
@@ -38,6 +44,7 @@ class FixtureSprite extends SpriteClient {
           "-s",
           name,
           "exec",
+          "--no-port-forward",
           ...(upload ? ["--file", `${upload}:${destination}`] : []),
           "--",
           "python3",
@@ -74,19 +81,24 @@ class FixtureSprite extends SpriteClient {
     _name: string,
     operation: Parameters<SpriteClient["preview"]>[1],
     config?: Parameters<SpriteClient["preview"]>[2],
+    previewHost?: string,
   ): ReturnType<SpriteClient["preview"]> {
-    return this.fixture("preview.py", { operation, ...config });
+    return this.fixture("preview.py", {
+      operation,
+      ...config,
+      previewHost,
+      defaults: JSON.parse(
+        readFileSync(
+          new URL("../packages/agents/runtime/environment.json", import.meta.url),
+          "utf8",
+        ),
+      ),
+    });
   }
 }
 const client = new FixtureSprite();
 const service = new EventService(root);
-const integrations = new WorkspaceIntegrations(
-  service,
-  root,
-  new Set(),
-  "http://127.0.0.1:4310",
-  client,
-);
+const integrations = new WorkspaceIntegrations(service, root, new Set(), client);
 try {
   assert(await new AgentSessions().prepare(name));
   const actor = {
@@ -124,6 +136,7 @@ try {
       "-s",
       name,
       "exec",
+      "--no-port-forward",
       "--file",
       `${seed}:${remote}.bundle`,
       "--",
@@ -238,28 +251,25 @@ try {
     actor,
     async () => service.workspace(actor, id, true).ok,
   );
-  const auth = await fetch(opened.url, { redirect: "manual" });
-  assert.equal(auth.status, 303);
-  const cookie = auth.headers.get("set-cookie")?.split(";")[0] ?? "";
   const origin = new URL(opened.url).origin;
-  const html = await fetch(origin, { headers: { cookie } });
+  const html = await fetch(origin);
   assert.equal(html.status, 200);
   assert.match(await html.text(), /Civic Spark live preview/);
-  const asset = await fetch(`${origin}/app.js`, { headers: { cookie } });
+  const asset = await fetch(`${origin}/app.js`);
   assert.equal(asset.status, 200);
   assert.match(await asset.text(), /asset loaded/);
   const restart = await integrations.preview(id, actor, "restart");
   assert.equal(restart.ready, true);
   assert.equal((await integrations.preview(id, actor, "stop")).running, false);
   console.log(
-    "PASS live Vite lifecycle: launch/readiness, idempotent launch, private preview HTML/assets, restart, stop. No model calls; only isolated fixture paths changed.",
+    "PASS live Vite lifecycle: launch/readiness, idempotent launch, public native preview HTML/assets, restart, stop. No model calls; only isolated fixture paths changed.",
   );
 } finally {
   integrations.close();
   await client.exec(name, [
     "python3",
     "-c",
-    "import pathlib,shutil,subprocess,sys; p,r,s=sys.argv[1:]; subprocess.run(['tmux','kill-session','-t',s],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); shutil.rmtree(p,ignore_errors=True); shutil.rmtree(r,ignore_errors=True); pathlib.Path(p+'.bundle').unlink(missing_ok=True)",
+    "import pathlib,shutil,subprocess,sys; p,r,s=sys.argv[1:]; subprocess.run(['sprite-env','services','stop',s],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); subprocess.run(['sprite-env','services','delete',s],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); shutil.rmtree(p,ignore_errors=True); shutil.rmtree(r,ignore_errors=True); pathlib.Path(p+'.bundle').unlink(missing_ok=True)",
     remote,
     runtime,
     session,

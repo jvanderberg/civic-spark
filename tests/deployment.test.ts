@@ -238,12 +238,14 @@ it("enforces canonical production origin, verified sessions, secure cookies, hea
     }
     expect(agent).toHaveBeenCalledTimes(1);
     expect(terminal).toHaveBeenCalledTimes(1);
-    const integrations = new WorkspaceIntegrations(service, root, new Set(), origin);
-    const preview = vi.spyOn(SpriteClient.prototype, "preview");
+    const integrations = new WorkspaceIntegrations(service, root, new Set());
+    const preview = vi
+      .spyOn(SpriteClient.prototype, "preview")
+      .mockResolvedValue({ ok: false, error: "Launch required", status: 409 });
     await expect(
       integrations.openPreview(team.value.workspace.id, signed.actor, async () => true),
-    ).rejects.toThrow("Hosted preview");
-    expect(preview).not.toHaveBeenCalled();
+    ).rejects.toThrow("Launch required");
+    expect(preview).toHaveBeenCalled();
     integrations.close();
   } finally {
     await app.close();
@@ -444,24 +446,14 @@ it("recovers durable provisioning, sessions and Git after restart without automa
   }
 });
 
-it("configures isolated wildcard preview routing without adding runtime resources", () => {
-  const configured = setupSchema.parse({
-    ...settings,
-    previewOriginTemplate: "https://{workspace}.preview.example.test",
-  });
-  const config = flyConfig(configured);
-  expect(config).toContain(
-    'CIVIC_SPARK_PREVIEW_ORIGIN_TEMPLATE = "https://{workspace}.preview.example.test"',
-  );
+it("uses native previews without required ingress, domain or pool configuration", () => {
+  const config = flyConfig(settings);
+  expect(config).not.toContain("CIVIC_SPARK_PREVIEW_");
   expect(config.match(/internal_port/g)).toHaveLength(1);
-  for (const template of [
-    "https://event.example.test",
-    "http://{workspace}.preview.example.test",
-    "https://{workspace}.event.example.test",
-    "https://{workspace}.preview.example.test/path",
-  ]) {
-    expect(setupSchema.safeParse({ ...settings, previewOriginTemplate: template }).success).toBe(
-      false,
-    );
-  }
+  for (const obsolete of [
+    { previewIngress: true },
+    { previewPoolSize: 60 },
+    { previewOriginTemplate: "https://{workspace}.preview.example.test" },
+  ])
+    expect(setupSchema.safeParse({ ...settings, ...obsolete }).success).toBe(false);
 });

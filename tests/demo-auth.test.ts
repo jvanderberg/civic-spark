@@ -107,7 +107,6 @@ it("requires explicit demo setup and no email credentials", () => {
   const demo = setupSchema.parse({
     ...input,
     authMode: "demo",
-    previewPoolSize: 8,
     maxProvisioning: 2,
   });
   expect(flyConfig(demo)).toContain('CIVIC_SPARK_AUTH_MODE = "demo"');

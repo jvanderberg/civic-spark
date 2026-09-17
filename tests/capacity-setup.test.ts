@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { PreviewOriginPool } from "../apps/server/src/preview-origins.ts";
-import { planPreviewPool } from "../scripts/fly-preview-setup.ts";
 import {
   authorizeExisting,
   flyConfig,
@@ -115,21 +114,15 @@ it("extends only the retained volume explicitly, tolerates bounded growth, and r
   ).toThrow("recorded app is missing");
   expect(mutations).toHaveLength(1);
 });
-it("plans and reuses 60 additional origins beyond eight permanent retained bindings without cloud calls", () => {
+it("native setup requires no preview allocation and preserves historical origin data", () => {
   const { root, receipt } = fixture();
-  const initial = { ...setup, previewIngress: true, previewPoolSize: 8 };
-  const old = planPreviewPool(initial, root);
-  const ledger = new PreviewOriginPool(old, root, setup.origin);
-  const workspaces = Array.from({ length: 8 }, () => randomUUID());
-  for (const id of workspaces) ledger.assign(id);
-  expect(() => ledger.assign(randomUUID())).toThrow("capacity");
-  const expanded = planPreviewPool({ ...initial, previewPoolSize: 68 }, root);
-  expect(planPreviewPool({ ...initial, previewPoolSize: 68 }, root)).toEqual(expanded);
-  expect(expanded.slice(0, 8)).toEqual(old);
-  const restarted = new PreviewOriginPool(expanded, root, setup.origin);
-  expect(workspaces.map((id) => restarted.assign(id))).toEqual(old);
-  const newOrigins = Array.from({ length: 60 }, () => restarted.assign(randomUUID()));
-  expect(new Set([...old, ...newOrigins]).size).toBe(68);
-  expect(() => restarted.assign(randomUUID())).toThrow("capacity");
+  const origins = Array.from({ length: 8 }, (_, i) => `https://retired-${i}.fly.dev`);
+  const ledger = new PreviewOriginPool(origins, root, setup.origin);
+  for (let i = 0; i < 8; i++) ledger.assign(randomUUID());
+  const before = readFileSync(join(root, "preview-origins.json"));
+  const config = flyConfig(setup);
+  expect(config).not.toMatch(/PREVIEW_ORIGIN|PREVIEW_PORT|PREVIEW_RELAY/);
+  expect(config.match(/internal_port/g)).toHaveLength(1);
+  expect(readFileSync(join(root, "preview-origins.json"))).toEqual(before);
   expect(JSON.parse(readFileSync(receipt, "utf8")).retained).toBe("operator field");
 });

@@ -45,34 +45,25 @@ export async function verifySpriteRows() {
   const states = new Map<string, string>();
   const stopped: string[] = [];
   const destroyed: string[] = [];
-  const { app, service } = await createApp(
-    root,
-    true,
-    origin,
-    undefined,
-    "prototype",
-    undefined,
-    undefined,
-    {
-      async inspect(name) {
-        return {
-          status: states.get(name) ?? "running",
-          createdAt: new Date(Date.now() - 25 * 3600000).toISOString(),
-          observedAt: new Date().toISOString(),
-          updatedAt: null,
-          error: null,
-        };
-      },
-      async stop(name) {
-        stopped.push(name);
-        states.set(name, "warm");
-      },
-      async destroy(name) {
-        destroyed.push(name);
-        states.set(name, "deleted");
-      },
+  const { app, service } = await createApp(root, true, origin, undefined, "prototype", undefined, {
+    async inspect(name) {
+      return {
+        status: states.get(name) ?? "running",
+        createdAt: new Date(Date.now() - 25 * 3600000).toISOString(),
+        observedAt: new Date().toISOString(),
+        updatedAt: null,
+        error: null,
+      };
     },
-  );
+    async stop(name) {
+      stopped.push(name);
+      states.set(name, "warm");
+    },
+    async destroy(name) {
+      destroyed.push(name);
+      states.set(name, "deleted");
+    },
+  });
   const actor = {
     id: "rows@example.test",
     email: "rows@example.test",

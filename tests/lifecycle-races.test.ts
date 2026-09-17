@@ -81,6 +81,10 @@ it.each(["manifest", "changes", "preview", "preview-delete"])(
     );
     chmodSync(join(bin, "sprite"), 0o755);
     vi.stubEnv("PATH", `${bin}:${process.env.PATH}`);
+    vi.spyOn(SpriteClient.prototype, "previewUrl").mockResolvedValue({
+      ok: true,
+      value: { url: "https://fixture-org.sprites.app" },
+    });
     const stop = vi.fn(async () => {
       expect(existsSync(exited)).toBe(true);
     });
@@ -90,7 +94,6 @@ it.each(["manifest", "changes", "preview", "preview-delete"])(
       "http://127.0.0.1:4310",
       undefined,
       "email",
-      undefined,
       undefined,
       { inspect: vi.fn(), stop, destroy: stop },
     );

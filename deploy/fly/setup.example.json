@@ -8,7 +8,6 @@
   "emailFrom": "Civic Spark <signin@your-verified-domain.example>",
   "proxyCidrs": ["172.19.0.0/16"],
   "volumeGb": 10,
-  "previewPoolSize": 60,
   "maxProvisioning": 2,
   "volumeAutoExtend": {
     "enabled": false

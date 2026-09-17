@@ -122,16 +122,7 @@ it("scopes individual HTTP actions to event admins and exactly one reservation, 
   vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
   const runtime = provider();
   const origin = "http://127.0.0.1:4310";
-  const setup = await createApp(
-    root(),
-    true,
-    origin,
-    undefined,
-    "email",
-    undefined,
-    undefined,
-    runtime,
-  );
+  const setup = await createApp(root(), true, origin, undefined, "email", undefined, runtime);
   const { service, app, authentication } = setup;
   try {
     const admin = await testIdentity(authentication, "Row admin");
@@ -475,16 +466,7 @@ it.each(["wake", "sprite"] as const)(
     vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
     const runtime = provider();
     const origin = "http://127.0.0.1:4310";
-    const setup = await createApp(
-      root(),
-      true,
-      origin,
-      undefined,
-      "email",
-      undefined,
-      undefined,
-      runtime,
-    );
+    const setup = await createApp(root(), true, origin, undefined, "email", undefined, runtime);
     const { service, app, authentication } = setup;
     const create = vi.spyOn(SpriteClient.prototype, "create").mockResolvedValue(ok("fixture"));
     const exec = vi.spyOn(SpriteClient.prototype, "exec").mockResolvedValue(ok(Buffer.alloc(0)));
@@ -581,7 +563,6 @@ it("rejects HTTP wake before any reservation or provider work when cloud workspa
     origin,
     undefined,
     "email",
-    undefined,
     undefined,
     runtime,
   );

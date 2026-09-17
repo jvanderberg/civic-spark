@@ -63,7 +63,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 - [x] Root integration/deployment of individual controls (`3cea3ec`), live eight-case UI acceptance and dedicated individual pause/reopen; no live deletion
 - [x] Durable pause-all workspace holds and event-wide execution pause; cancellation/drain, retryable partial stops, restart gates and on-demand same-Sprite wake
 - [x] Shared Git downloads remain available while paused; no private-source export or prototype fallback
-- [x] Release inactive polling and retained terminal bridges after configurable inactivity; active browser model Tasks holds, preview use and recent terminal input/output protection
+- [x] Release inactive polling and retained terminal bridges after configurable inactivity; active browser model Tasks holds and recent terminal input/output protection; native preview traffic uses provider activity tracking
 - [x] Explicit post-restore owner recovery from canonical shared Git after authenticated missing-resource reconciliation, preserving names/identities/preview origins
 - [x] Isolated domain/API/provider/race/recovery tests and phone/desktop lifecycle browser coverage; see [mechanics and limits](docs/sprite-lifecycle.md)
 - [x] Dedicated live provider exec-stop/pause-all/owner-wake and event-pause/shared-download/unpause acceptance; same Sprite retained, no participant-event pause or paid inference. VM sleep remains provider-controlled; see current handoff.
@@ -154,11 +154,11 @@ A native helper for syncing while the browser is closed is a possible later exte
 - [x] Canonical PROJECT.md reference and untrusted-data guidance in both browser/native harnesses; native Claude snapshot refresh verified across resume with a local API double
 - [ ] Rehearse native OpenCode resumed inference with project context on a dedicated Sprite; no paid inference in normal tests
 - [x] Agent guidance requires current-batch publication confirmation; conflict approval remains separate
-- [x] Configured Sprite web server Launch/Restart, actual readiness, logs and private local preview
+- [x] Configured Sprite web server Launch/Restart, actual readiness and logs; native public preview replaces the original private local gateway
 - [x] Explicit owner Launch prepares root npm project dependencies independently of coding harness/key/model, with locked installs, durable reuse, cancellation and progress; isolated Vite/API/browser fixtures (no live participant validation)
 - [x] Agent Git publication relay, clean rebase and owner-confirmed conflict resolution
-- [x] Private hosted preview routing: isolated HTTPS origins, one-time owner handshakes, session revocation, HTTP/assets/WebSocket HMR and durable never-reused origin-pool assignments; local TLS/relay/browser validation
-- [ ] Provision automatic Fly ingress pool and verify deployed acceptance; preserve one origin per workspace across restart/removal
+- [x] Historical private hosted gateway validated; superseded by public native service/URL below. Retained old origin assignments stay tombstones.
+- [x] Retire the rejected Fly ingress-pool path; native public Sprite URLs replace it without additional apps/Machines or recycled historical origins.
 - [ ] Verify deployed Open preview with a dedicated Sprite; preserve participant app/process/session state
 - [ ] Integration Sprite, configured checks and shared app preview
 - [ ] Enforced model budgets and deployment resource limits
@@ -176,7 +176,7 @@ A native helper for syncing while the browser is closed is a possible later exte
 
 The initial anonymous organizer rehearsal has been superseded. Its data remains on disk but is not assigned to authenticated users. The original Git bundle round-trip proof and provider-portability/mTLS design remain valid.
 
-Deployment setup, exact commands, constraints and validation gaps: [Fly deployment](docs/fly-deployment.md). Hosted previews require isolated HTTPS origin configuration and still await live acceptance; continuous hosted Git/mTLS, complete cross-store crash recovery and unattended-session/budget enforcement are not complete.
+Deployment setup, exact commands, constraints and validation gaps: [Fly deployment](docs/fly-deployment.md). Native public previews require provider service/URL acceptance; continuous hosted Git/mTLS, complete cross-store crash recovery and unattended-session/budget enforcement are not complete.
 
 ## Capacity and recovery for 60 concurrent participants (local work)
 
@@ -184,8 +184,17 @@ Deployment setup, exact commands, constraints and validation gaps: [Fly deployme
 - [x] Measure isolated 60-person polling/Share/replay baseline and target; run actual agent/terminal/private preview HTTP+WS bridges with provider transport doubles. See [evidence and limits](docs/capacity-resilience.md).
 - [x] Move costly Share preparation/validation off Node's request thread, add repository ordering and bounded worker/CLI/transfer pressure, optimize replay byte accounting, and persist/reconcile publication intents without automatic Share or history rewrite.
 - [x] Exercise revocation/pause/session loss, stale refs, failed metadata persistence, before/after-CAS restart, worker cancellation, OS writer-lock release and storage/body-pressure failures in isolated fixtures.
-- [x] Expose initial disk size, explicit native auto-extension threshold/increment/ceiling, repeatable same-volume growth/receipt drift checks and independent append-only preview origin capacity.
+- [x] Expose initial disk size, explicit native auto-extension threshold/increment/ceiling, repeatable same-volume growth/receipt drift checks and retained historical preview origin records.
 - [x] Complete local mobile, Share, team-update, provisioning and workspace browser verification with screenshots and clean consoles; provider transports use isolated fixtures.
 - [ ] Root integration review and dedicated deployment acceptance; no capacity changes deployed by this workstream.
 - [ ] Root-coordinated dedicated provider/resource rehearsal: actual 60-workspace CLI/process/network limits, maximum file-transfer bursts, live volume expansion and crash recovery. Local mocks do not certify live 60-person capacity.
 - [ ] Follow up synchronous admin/team Git and whole-state JSON persistence, full-history bundle growth/seed duplication, orphan/stale-lock reclamation and general cross-store recovery; no speculative full storage rewrite in this change.
+
+
+### Public native previews (replaces ingress pools and port-gateway proposal)
+
+- [x] Use the existing Sprite HTTP service/public HTTPS URL; preserve launch command, dependency preparation, stable identity and management owner/session/event gates.
+- [x] Retire ingress provisioning and required origin configuration; preserve old origin ledgers as tombstones.
+- [x] Keep five-minute idle connection release without service Stop; explicit admin Pause still stops the public service and requires owner Launch recovery.
+- [x] Complete local provider-contract, dependency, TLS Vite/HMR and mobile/browser validation: check 342 tests/58 files plus opt-in stream skip, full mobile/environment/direct-TLS browser, inspected screenshots and clean consoles; exact local commit supplied in handoff.
+- [ ] Root-owned dedicated provider acceptance: metadata/public URL and running anonymous HTTPS verified; same-name service update verified; explicit Stop produced failed/143, no process and later HTTP502. Loopback binding and explicit start recovery to anonymous HTTPS200 verified. Quiet native hibernation/wake, live Vite HMR and stable management restart remain separate acceptance.

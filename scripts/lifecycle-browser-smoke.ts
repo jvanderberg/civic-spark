@@ -32,33 +32,24 @@ export async function verifyLifecyclePortal() {
   const statuses = new Map<string, string>();
   let wakes = 0;
   let stops = 0;
-  const { app, service } = await createApp(
-    root,
-    true,
-    origin,
-    undefined,
-    "prototype",
-    undefined,
-    undefined,
-    {
-      async inspect(name) {
-        return {
-          status: statuses.get(name) ?? "running",
-          observedAt: new Date().toISOString(),
-          createdAt: "2026-09-16T00:00:00Z",
-          updatedAt: null,
-          error: null,
-        };
-      },
-      async destroy() {
-        throw new Error("Unexpected delete in bulk fixture");
-      },
-      async stop(name) {
-        stops++;
-        statuses.set(name, "warm");
-      },
+  const { app, service } = await createApp(root, true, origin, undefined, "prototype", undefined, {
+    async inspect(name) {
+      return {
+        status: statuses.get(name) ?? "running",
+        observedAt: new Date().toISOString(),
+        createdAt: "2026-09-16T00:00:00Z",
+        updatedAt: null,
+        error: null,
+      };
     },
-  );
+    async destroy() {
+      throw new Error("Unexpected delete in bulk fixture");
+    },
+    async stop(name) {
+      stops++;
+      statuses.set(name, "warm");
+    },
+  });
   const admin = {
     id: "admin@example.test",
     email: "admin@example.test",

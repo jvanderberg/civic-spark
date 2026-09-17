@@ -20,6 +20,9 @@ it.each([true, false])(
     const prepare = vi
       .spyOn(AgentSessions.prototype, "prepare")
       .mockRejectedValue(Error("Harness must not run"));
+    vi.spyOn(SpriteClient.prototype, "previewUrl").mockResolvedValue(
+      ok({ url: "https://fixture-org.sprites.app" }),
+    );
     const transport = vi.spyOn(SpriteClient.prototype, "preview").mockResolvedValue(
       ok({
         port: 5173,
@@ -78,6 +81,7 @@ it.each([true, false])(
         `civic-spark-${workspace.id}`,
         "start",
         undefined,
+        "fixture-org.sprites.app",
       );
       expect(prepare).not.toHaveBeenCalled();
       for (const identity of [admin, stranger])
@@ -129,6 +133,9 @@ it("sends only fixed preview code and committed defaults to the owner Sprite wit
         }),
       ),
     ),
+  );
+  vi.spyOn(SpriteClient.prototype, "previewUrl").mockResolvedValue(
+    ok({ url: "https://fixture-org.sprites.app" }),
   );
   const client = new SpriteClient();
   expect((await client.preview("civic-spark-owner-fixture", "start")).ok).toBe(true);
