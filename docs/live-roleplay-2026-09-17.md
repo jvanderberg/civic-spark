@@ -159,3 +159,9 @@ Deployment started after a fresh read-only check found 39 ready workspace record
 `24de48f` deployed successfully. Exact source hashes for provisioning, file checks and atomic checkout matched; health and preserved project/state checks passed. Quinn/p10 reopened the same existing workspace, verified the restored shared file tree, launched its managed preview and reviewed desktop/360px/390px. Only after that did the participant begin the assigned focused UI improvement. No Sprite deletion or replacement was needed.
 
 The other eight initial-provisioning participants were released in parallel through their normal browser workflows, with explicit file verification before any model prompt and no repeated prompts or blind resets. The completion count is 31 Shared contributions, including the transit UI reviewer’s `2bcad30`; the final nine are now authorized to complete their original roles autonomously.
+
+### All attendees reached model work
+
+All 40 personas now have browser evidence of usable shared project files and a submitted role-specific model request. Thirty-one have completed review and manual Share; the final nine are in model completion or review. The last provisioning failure was a provider HTTP 502 in 76 ms for p36, with no resource present afterward. One normal owner retry succeeded without deletion or identity replacement. No further runtime deployment is planned for this exercise.
+
+A management snapshot during final-cohort resumption returned health 200 in 166 ms, approximately 3.3 GiB available RAM and 9.3 GiB free volume space. This is a point-in-time observation, not a sustained 40-inference concurrency benchmark. The run included recovery holds and staggered work; completion counts must not be presented as a measured simultaneous 40-user capacity result.
