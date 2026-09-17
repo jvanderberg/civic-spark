@@ -47,6 +47,7 @@ import {
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
 import { WorkspaceLifecycle } from "./lifecycle.ts";
+import { inspectIdleWorkspaceForWake } from "./missing-workspace.ts";
 import { prototypeSignIn } from "./prototype-auth.ts";
 import { WorkspaceProvisioning } from "./provisioning.ts";
 import { registerTeamUpdateRoutes } from "./team-updates.ts";
@@ -402,6 +403,27 @@ export async function createApp(
         reply,
         fail("Confirm Rebuild from shared work to recover this missing workspace.", 409),
       );
+    const before = service.workspace(actor(r.actor), r.params.id, true, true);
+    if (!before.ok) return send(reply, before);
+    const runtime = service.runtime(r.params.id);
+    if (runtime.held && runtime.reason === "idle" && before.value.spriteStatus === "error")
+      return { awake: false, recoveryRequired: true };
+    const eventGeneration = service.execution(before.value.eventId).generation;
+    const inspected = await inspectIdleWorkspaceForWake(
+      service,
+      client,
+      actor(r.actor),
+      before.value,
+      () => authorizePreparation(r, r.params.id, true),
+      () => lifecycle.hasActiveWork(r.params.id),
+    );
+    if (!inspected.ok) return send(reply, inspected);
+    if (inspected.value.missing) return { awake: false, recoveryRequired: true };
+    if (
+      service.runtime(r.params.id).generation !== runtime.generation ||
+      service.execution(before.value.eventId).generation !== eventGeneration
+    )
+      return send(reply, fail("Workspace state changed. Refresh before resuming.", 409));
     const workspace = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!workspace.ok) return send(reply, workspace);
     const prepared = await provisioning.start(workspace.value, () =>

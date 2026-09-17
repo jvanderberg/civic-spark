@@ -40,6 +40,10 @@ export async function verifyProvisioning() {
   let spriteError: string | null = null;
   let failedRetry = false;
   let recoverMissing = false;
+  let idleHeld = false;
+  let missingOnWake = false;
+  let rejectWake = false;
+  let wakePosts = 0;
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error" && !message.text().includes("409 (Conflict)"))
@@ -51,12 +55,31 @@ export async function verifyProvisioning() {
     state.capabilities.sprites = true;
     for (const item of state.myWorkspaces) {
       item.spriteStatus = status;
+      if (item.runtime)
+        item.runtime = { ...item.runtime, held: idleHeld, reason: idleHeld ? "idle" : null };
       item.spritePhase = phase;
       item.spriteError = spriteError;
       item.spriteName = status === "local" ? null : "civic-spark-provision-fixture";
       workspace = item;
     }
     await route.fulfill({ response, json: state });
+  });
+  await page.route("**/api/workspaces/*/wake", async (route) => {
+    wakePosts++;
+    if (rejectWake)
+      return route.fulfill({
+        status: 409,
+        json: {
+          error: "The provider could not confirm this workspace’s status. Nothing was rebuilt.",
+        },
+      });
+    if (missingOnWake) {
+      status = "error";
+      spriteError = missingWorkspaceMessage;
+      recoverMissing = true;
+      return route.fulfill({ json: { awake: false, recoveryRequired: true } });
+    }
+    return route.fulfill({ json: { awake: true } });
   });
   await page.route("**/api/workspaces/*/sprite", async (route) => {
     if (route.request().method() === "POST") {
@@ -276,6 +299,84 @@ export async function verifyProvisioning() {
         });
       }
     }
+    // Previously ready, idle-held workspace: uncertainty retains Resume; a fresh
+    // authenticated missing observation hands off to explicit recovery instead.
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      for (const viewport of sizes) {
+        await page.setViewportSize(viewport);
+        status = "ready";
+        phase = "ready";
+        spriteError = null;
+        recoverMissing = false;
+        idleHeld = true;
+        missingOnWake = true;
+        rejectWake = true;
+        const beforePosts: number = posts;
+        await page.reload();
+        await page
+          .getByRole("alert")
+          .filter({ hasText: "could not confirm this workspace" })
+          .waitFor();
+        assert.equal(
+          await page.getByRole("button", { name: "Rebuild from shared work", exact: true }).count(),
+          0,
+        );
+        assert.equal(posts, beforePosts);
+        const resume = page.getByRole("button", { name: "Resume workspace", exact: true });
+        await resume.scrollIntoViewIfNeeded();
+        rejectWake = false;
+        if (viewport.width < 500) await resume.tap();
+        else {
+          await resume.focus();
+          await page.keyboard.press("Enter");
+        }
+        const rebuild = page.getByRole("button", { name: "Rebuild from shared work", exact: true });
+        await rebuild.waitFor();
+        assert.equal(
+          await page.getByRole("button", { name: "Resume workspace", exact: true }).count(),
+          0,
+        );
+        assert.equal(posts, beforePosts, "Resume observation never requests creation");
+        page.once("dialog", async (dialog) => {
+          assert(dialog.message().includes("Only work shared"));
+          await dialog.dismiss();
+        });
+        await rebuild.click();
+        assert.equal(posts, beforePosts);
+        page.once("dialog", async (dialog) => {
+          await dialog.accept();
+        });
+        await rebuild.click();
+        await page.waitForFunction(() => !document.querySelector("button:disabled.button.primary"));
+        assert.equal(posts, beforePosts + 1);
+        const beforeReload = wakePosts;
+        await page.reload();
+        await rebuild.waitFor();
+        assert.equal(posts, beforePosts + 1, "Reload only reads durable missing status");
+        assert.equal(wakePosts, beforeReload, "Missing status must not repeat Resume");
+        await rebuild.scrollIntoViewIfNeeded();
+        const box = await rebuild.boundingBox();
+        assert(box && box.height >= 44 && box.y >= 0 && box.y + box.height <= viewport.height + 1);
+        assert(
+          await page.evaluate(
+            () =>
+              document.documentElement.scrollWidth <= innerWidth &&
+              document.documentElement.scrollHeight <= innerHeight + 1,
+          ),
+        );
+        await page.screenshot({
+          path: join(
+            artifacts,
+            `provisioning-idle-missing-${viewport.width}x${viewport.height}-${colorScheme}.png`,
+          ),
+          animations: "disabled",
+        });
+      }
+    }
+    idleHeld = false;
+    missingOnWake = false;
+    rejectWake = false;
     const expectedPosts = posts;
     spriteError = null;
     phase = "ready";

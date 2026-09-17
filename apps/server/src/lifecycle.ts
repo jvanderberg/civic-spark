@@ -57,6 +57,14 @@ export class WorkspaceLifecycle {
     if (this.service.executionAllowed(id).ok)
       this.service.setRuntime(id, { lastUsedAt: new Date().toISOString() });
   }
+  hasActiveWork(id: string) {
+    const name = this.service.provisioningRecords().find((w) => w.id === id)?.spriteName;
+    return (
+      this.working(id) ||
+      this.protectedUse(id) ||
+      [...(this.operations.get(name ?? "") ?? [])].some((operation) => !operation.passive)
+    );
+  }
   releaseIdle(now = Date.now()) {
     for (const w of this.service.provisioningRecords()) {
       const runtime = this.service.runtime(w.id);

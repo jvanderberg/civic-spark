@@ -80,6 +80,8 @@ export function Workspace({
       await onChanged();
     } catch (error) {
       setWakeError(error instanceof Error ? error.message : "Could not resume the Sprite.");
+      // A concurrent Resume can have recorded fresh absence while this request failed.
+      await onChanged().catch(() => {});
     } finally {
       setWaking(false);
     }
@@ -269,7 +271,9 @@ export function Workspace({
     [text],
   );
   const lines = csv.data;
-  if (spritesEnabled && !remote && !blocked)
+  const idleRecovery =
+    participant.spriteStatus === "error" && participant.runtime?.reason === "idle";
+  if (spritesEnabled && !remote && !eventPaused && !waking && (!blocked || idleRecovery))
     return (
       <WorkspacePreparation
         participant={participant}

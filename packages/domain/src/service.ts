@@ -47,7 +47,7 @@ import {
   runtimeSchema,
   type WorkspaceRuntime,
 } from "./lifecycle.ts";
-import type { SpriteProviderBinding } from "./provisioning.ts";
+import { missingWorkspaceMessage, type SpriteProviderBinding } from "./provisioning.ts";
 import {
   type Event,
   type EventInput,
@@ -244,6 +244,31 @@ export class EventService {
     }
     return ok(workspaces);
   }
+  // Observation only: retain the idle hold and require a separate owner confirmation.
+  recordMissingWorkspace(actor: Identity, id: string, evidence: unknown) {
+    const parsed = missingWorkspaceEvidenceSchema.safeParse(evidence);
+    if (!parsed.success) return fail("Invalid missing workspace evidence", 409);
+    const proof = parsed.data;
+    const workspace = this.workspace(actor, id, true, true);
+    if (!workspace.ok) return workspace;
+    const runtime = this.runtime(id);
+    const age = Date.now() - Date.parse(proof.observedAt);
+    if (
+      workspace.value.spriteStatus !== "ready" ||
+      workspace.value.spriteName !== proof.name ||
+      runtime.generation !== proof.generation ||
+      this.execution(workspace.value.eventId).generation !== proof.eventGeneration ||
+      !runtime.held ||
+      runtime.reason !== "idle" ||
+      runtime.stopState === "pending" ||
+      runtime.deletion ||
+      age < 0 ||
+      age > 30000
+    )
+      return fail("Workspace state changed. Refresh before resuming.", 409);
+    const recorded = this.setSprite(id, proof.name, "error", missingWorkspaceMessage);
+    return recorded.ok ? this.workspace(actor, id, true, true) : recorded;
+  }
   // Internal provisioning transition after a fresh authenticated exact-name 404.
   // Reuses the durable deletion/replacement lifecycle without issuing DELETE or
   // claiming that the original workspace never held private work.
@@ -292,6 +317,8 @@ export class EventService {
       return fail("Sprite deletion needs to finish. Ask an event admin to retry.", 423);
     if (runtime.stopState === "pending")
       return fail("Sprite pause is still in progress. Retry shortly.", 423);
+    if (runtime.held && runtime.reason === "idle" && workspace.value.spriteStatus === "error")
+      return fail("Confirm Rebuild from shared work to recover this missing workspace.", 409);
     this.setRuntime(id, {
       held: false,
       reason: null,

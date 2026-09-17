@@ -6,6 +6,13 @@
 
 # Implementation plan
 
+## Previously ready workspace missing on Resume — local, pending integration
+
+- [x] Inspect authenticated metadata before releasing a ready workspace's idle hold; durable exact404 status offers existing owner-confirmed shared-only recovery without automatic creation.
+- [x] Preserve unknown/present resources and pending work; revalidate session, access, provider binding and event/runtime generations after inspection.
+- [x] HTTP/race tests, full check (563 passing tests) and dedicated provisioning browser verification, including phone/desktop/short viewports in both themes.
+- [ ] Full mobile aggregate is finishing its unchanged portal cases; root owns integration/deployment and live p09 acceptance.
+
 ## Vite 5 native preview compatibility — local, pending root integration
 
 - [x] Read-only p26 diagnosis: managed wrapper/process have the exact additional-host variable, but installed Vite5.4.21 ignores it; Vite8-only fixtures missed the failure.

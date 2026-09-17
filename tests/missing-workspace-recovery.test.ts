@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
+import { AgentSessions } from "../apps/server/src/agents.ts";
 import { createApp } from "../apps/server/src/app.ts";
 import { EventService } from "../packages/domain/src/service.ts";
 import { ok, type Result } from "../packages/domain/src/types.ts";
@@ -98,6 +99,12 @@ async function fixture() {
       : new Response(null, { status: 404 });
   };
   request.mockImplementation(async (url, init) => normalResponse(url, init));
+  const wake = (cookie = owner.cookie) =>
+    app.inject({ method: "POST", url: `/api/workspaces/${id}/wake`, headers: { cookie, origin } });
+  const readyIdle = () => {
+    unwrap(service.setSprite(id, name, "ready", null));
+    service.setRuntime(id, { held: true, reason: "idle" });
+  };
   const settle = () => expect.poll(() => record()?.spriteStatus).not.toBe("provisioning");
   return {
     root,
@@ -121,6 +128,8 @@ async function fixture() {
     post,
     normalResponse,
     settle,
+    wake,
+    readyIdle,
   };
 }
 
@@ -479,4 +488,178 @@ it("never dispatches create when the durable recovery write fails", async () => 
   expect(f.service.initialCreation(f.id)).toBeNull();
   expect(f.request.mock.calls.map(([, init]) => init?.method)).toEqual(["GET", "GET"]);
   expect(f.upload).not.toHaveBeenCalled();
+});
+
+it("HTTP Resume of a ready idle-held missing Sprite durably offers recovery; only owner confirmation rebuilds shared Git", async () => {
+  const f = await fixture();
+  f.readyIdle();
+  const shared = git(f.service.sharedWorkspaceRepository(f.id), ["rev-parse", "HEAD"])
+    .toString()
+    .trim();
+  const privateDir = f.service.workspacePath(f.id);
+  writeFileSync(join(privateDir, "unshared.txt"), "Unshared fixture stays private");
+  git(privateDir, ["add", "."]);
+  git(privateDir, ["commit", "-m", "Private fixture"]);
+  const privateHead = git(privateDir, ["rev-parse", "HEAD"]).toString().trim();
+  const held = f.service.runtime(f.id);
+  expect((await f.wake()).json()).toEqual({ awake: false, recoveryRequired: true });
+  expect(f.record()).toMatchObject({
+    spriteName: f.name,
+    spriteStatus: "error",
+    spriteError: expect.stringContaining("Unshared files"),
+  });
+  expect(f.service.runtime(f.id)).toEqual(held);
+  expect(f.service.initialCreation(f.id)).toBeNull();
+  expect(f.request.mock.calls.map(([, init]) => init?.method)).toEqual(["GET", "GET"]);
+  expect(f.command).not.toHaveBeenCalled();
+  expect(f.upload).not.toHaveBeenCalled();
+  const reopened = new EventService(f.root);
+  expect(reopened.provisioningRecords().find((w) => w.id === f.id)?.spriteStatus).toBe("error");
+  expect(reopened.runtime(f.id)).toEqual(held);
+  reopened.close();
+  for (let i = 0; i < 2; i++) {
+    const status = await f.app.inject({
+      url: `/api/workspaces/${f.id}/sprite`,
+      headers: { cookie: f.owner.cookie },
+    });
+    expect(status.json().preparationAction).toBe("recover-missing");
+    expect((await f.wake()).json()).toEqual({ awake: false, recoveryRequired: true });
+  }
+  expect((await f.post({})).statusCode).toBe(409);
+  expect(f.request).toHaveBeenCalledTimes(2);
+  const stale = f.body();
+  f.service.setRuntime(f.id, { generation: held.generation + 1 });
+  expect((await f.post(stale)).statusCode).toBe(409);
+  expect(f.request).toHaveBeenCalledTimes(2);
+  expect((await f.post()).statusCode).toBe(202);
+  await f.settle();
+  expect(f.record()).toMatchObject({ spriteName: f.name, spriteStatus: "ready" });
+  expect(f.service.runtime(f.id)).toMatchObject({ held: false, deletion: null });
+  expect(f.uploaded).toHaveLength(1);
+  expect(f.uploaded[0]).toContain(shared);
+  expect(f.uploaded[0]).not.toContain(privateHead);
+  expect(git(privateDir, ["rev-parse", "HEAD"]).toString().trim()).toBe(privateHead);
+  expect(f.request.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+});
+
+it.each(["401", "403", "503", "network", "malformed", "wrong-org", "list-404", "list-conflict"])(
+  "ready idle Resume fails closed for %s without marking missing or releasing the hold",
+  async (kind) => {
+    const f = await fixture();
+    f.readyIdle();
+    const held = f.service.runtime(f.id);
+    const original = f.record();
+    f.request.mockImplementation(async (url, init) => {
+      if (kind === "network") throw Error("private transport detail");
+      const list = Boolean(new URL(String(url)).search);
+      if (list) {
+        if (kind === "list-404") return new Response(null, { status: 404 });
+        if (kind === "list-conflict") return Response.json({ name: "wrong-org", sprites: [] });
+        return f.normalResponse(url, init);
+      }
+      if (kind === "malformed") return Response.json(null);
+      if (kind === "wrong-org") return Response.json({ name: f.name, organization: "wrong" });
+      return new Response(null, { status: Number(kind) });
+    });
+    expect((await f.wake()).statusCode).toBe(409);
+    expect(f.record()).toEqual(original);
+    expect(f.service.runtime(f.id)).toEqual(held);
+    expect(f.command).not.toHaveBeenCalled();
+    expect(f.upload).not.toHaveBeenCalled();
+    expect(f.request.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+  },
+);
+
+it("ready idle Resume preserves an existing Sprite and requires the exact current owner", async () => {
+  const f = await fixture();
+  f.readyIdle();
+  expect((await f.wake("")).statusCode).toBe(401);
+  expect((await f.wake(f.admin.cookie)).statusCode).toBe(404);
+  expect(f.request).not.toHaveBeenCalled();
+  f.request.mockImplementation(async (url, init) =>
+    new URL(String(url)).search
+      ? f.normalResponse(url, init)
+      : Response.json({ name: f.name, organization: "test-org" }),
+  );
+  f.command.mockResolvedValue(ok(Buffer.alloc(0)));
+  expect((await f.wake()).json()).toEqual({ awake: true });
+  expect(f.record()).toMatchObject({ spriteStatus: "ready", spriteError: null });
+  expect(f.service.runtime(f.id)).toMatchObject({ held: false, deletion: null });
+  expect(f.command).toHaveBeenCalledTimes(1);
+  expect(f.upload).not.toHaveBeenCalled();
+  expect(f.request.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+});
+
+it.each([
+  "signed-out",
+  "revoked",
+  "paused",
+  "event-generation",
+  "closed",
+  "stop-pending",
+  "generation",
+  "name",
+  "account",
+  "origin",
+  "org",
+  "active-turn",
+  "preparing",
+])("ready idle missing observation rejects the delayed404 race: %s", async (change) => {
+  const f = await fixture();
+  f.readyIdle();
+  const arrived = deferred(),
+    gate = deferred();
+  cleanup.push(gate.resolve);
+  f.request.mockImplementation(async (url, init) => {
+    if (!new URL(String(url)).search) {
+      arrived.resolve();
+      await gate.promise;
+    }
+    return f.normalResponse(url, init);
+  });
+  const pending = f.wake();
+  await arrived.promise;
+  if (change === "signed-out") {
+    const db = new DatabaseSync(join(f.root, "auth.sqlite"));
+    db.prepare("DELETE FROM session WHERE userId=?").run(f.owner.user.id);
+    db.close();
+  } else if (change === "revoked")
+    unwrap(f.service.removeMember(f.administrator, f.team.team.id, f.owner.user.id));
+  else if (change === "paused") unwrap(f.service.setExecution(f.administrator, f.event.id, true));
+  else if (change === "event-generation") {
+    unwrap(f.service.setExecution(f.administrator, f.event.id, true));
+    unwrap(f.service.setExecution(f.administrator, f.event.id, false));
+  } else if (change === "closed") {
+    unwrap(f.service.transition(f.administrator, f.event.id, "live"));
+    unwrap(f.service.transition(f.administrator, f.event.id, "closed"));
+  } else if (change === "stop-pending") f.service.setRuntime(f.id, { stopState: "pending" });
+  else if (change === "generation") f.service.setRuntime(f.id, { generation: 1 });
+  else if (change === "name") unwrap(f.service.setSprite(f.id, "civic-spark-other", "ready", null));
+  else if (change === "account")
+    vi.stubEnv("SPRITE_TOKEN", "test-org/other-account/token-id/private-token");
+  else if (change === "origin")
+    vi.stubEnv("CIVIC_SPARK_SPRITE_API_URL", "https://other.example.test");
+  else if (change === "org") vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "wrong-org");
+  else if (change === "active-turn")
+    vi.spyOn(AgentSessions.prototype, "isWorking").mockReturnValue(true);
+  else vi.spyOn(AgentSessions.prototype, "isPreparing").mockReturnValue(true);
+  gate.resolve();
+  expect((await pending).statusCode).toBeGreaterThanOrEqual(400);
+  expect(f.record()?.spriteStatus).toBe("ready");
+  expect(f.service.runtime(f.id)).toMatchObject({ held: true, deletion: null });
+  expect(f.command).not.toHaveBeenCalled();
+  expect(f.upload).not.toHaveBeenCalled();
+  expect(f.request.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+});
+
+it("pending agent work blocks idle-held absence inspection without stopping or resubmitting it", async () => {
+  const f = await fixture();
+  f.readyIdle();
+  const stop = vi.spyOn(AgentSessions.prototype, "stop");
+  vi.spyOn(AgentSessions.prototype, "isWorking").mockReturnValue(true);
+  expect((await f.wake()).statusCode).toBe(409);
+  expect(f.request).not.toHaveBeenCalled();
+  expect(stop).not.toHaveBeenCalled();
+  expect(f.record()?.spriteStatus).toBe("ready");
+  expect(f.service.runtime(f.id).held).toBe(true);
 });
