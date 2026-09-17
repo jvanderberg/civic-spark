@@ -35,7 +35,10 @@ export const createEventSchema = z.object({
   budget: z.number().min(0).max(10000),
   templateId: z.enum(["blank", "diod"]),
 });
+export const defaultProjectBriefGuidance =
+  "Describe the problem and who it helps. Explain the outcome or demo you want to build, what is in scope, and how you will know it succeeded. Include useful data links, access requirements, and any constraints.";
 export const eventSchema = createEventSchema.extend({
+  projectBriefGuidance: z.string().max(5000).default(defaultProjectBriefGuidance),
   id: z.string(),
   status: z.enum(["draft", "registration", "live", "closed"]),
   createdAt: z.string(),

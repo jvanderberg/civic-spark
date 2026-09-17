@@ -16,6 +16,7 @@ import { FILE_LIMIT, projectPath } from "../../workspace/src/types.ts";
 import {
   type Contribution,
   createEventSchema,
+  defaultProjectBriefGuidance,
   type Event,
   type EventInput,
   type FileContent,
@@ -91,6 +92,7 @@ export class WorkspaceEngine {
     if (!template) return fail("Template not found", 404);
     const event: Event = {
       ...parsed.data,
+      projectBriefGuidance: defaultProjectBriefGuidance,
       id: randomUUID(),
       status: "draft",
       createdAt: stamp(),
