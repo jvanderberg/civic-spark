@@ -12,6 +12,7 @@ import { SpriteClient } from "../packages/sprites/src/client.ts";
 import { WorkspaceFiles } from "../packages/workspace/src/files.ts";
 import { waitEditorText } from "./browser-editor.ts";
 import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
+import { verifyRuntimeIdentity } from "./runtime-identity-browser-smoke.ts";
 
 const unwrap = <T>(result: Result<T>) => {
   if (!result.ok) throw Error(result.error);
@@ -255,6 +256,7 @@ export async function verifySpriteReset() {
     else process.env.SPRITE_TOKEN = env.token;
     rmSync(root, { recursive: true, force: true });
   }
+  await verifyRuntimeIdentity();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
   await verifySpriteReset();
