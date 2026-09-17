@@ -1,3 +1,7 @@
+# Admin project copy cleanup LIVE
+
+Runtime `c51fe12` pushed/deployed. Removed catalog/Git/PROJECT.md implementation prose from Admin Projects and editor, redundant intro and extra success explanation; removed obsolete aria-describedby. Copy only, no behavior/data change. Check299/55, full mobile and specialized admin passed; phone screenshots reviewed. Four allocations idle before deployment. Live source/health/all16projecthashes/participantreservation/Machine/volume/receipt passed; eight viewport/theme read-only editor checks confirm copy absent and controls reachable, zero writes/errors. Evidence live artifacts/admin-copy-deploy. Capacity worker f3758e32 remains isolated active work, no capacity cloud deployment yet.
+
 # Event settings and participant creation LIVE — September 16, 2026
 
 Runtime `15c32b4` is pushed to main and live at https://civic-spark.fly.dev. Admin → Event details edits metadata, schedule and new-project guidance; Projects Create project and team New project share that guidance and preserve team drafts. Root combined event chain da2c7be/3bf6475/8d40b3a with participant1477c36, preserving all three dirty guards, refresh generation, delayed response identity guards and stable-ID deduplication.
