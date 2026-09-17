@@ -2,6 +2,11 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Editable event settings
+
+- [ ] Add event-admin editing for event name, date/time/timezone, location, other existing event details and schedule with persisted validated service writes, stale-edit protection and live-view refresh.
+- [ ] Verify admin/participant scopes and mobile/draft behavior, integrate and deploy without changing the live event content during tests.
+
 ## Persistent workspace connections
 
 - [x] Keep Agent/Terminal connections independent of view visibility after lazy first activation; preserve bounded retries and explicit disconnect/access/lifecycle gates.
