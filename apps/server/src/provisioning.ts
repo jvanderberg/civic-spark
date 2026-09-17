@@ -7,6 +7,7 @@ import {
   recoveryPermission,
 } from "../../../packages/backup/src/recovery.ts";
 import type { Workspace } from "../../../packages/domain/src/access-types.ts";
+import type { WorkspaceRuntime } from "../../../packages/domain/src/lifecycle.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
 import { fail, ok, type Result, type SpritePhase } from "../../../packages/domain/src/types.ts";
 import { gitAsync } from "../../../packages/git/src/async.ts";
@@ -81,10 +82,10 @@ export class WorkspaceProvisioning {
   ): Promise<Result<{ preparing: boolean }>> {
     const pending = this.starts.get(workspace.id);
     if (pending) return pending;
+    const expected = this.service.runtime(workspace.id);
     const started = this.prepare(workspace, authorize)
       .catch(() => {
-        if (this.service.runtime(workspace.id).deletion)
-          this.service.setRuntime(workspace.id, { held: true, reason: "admin" });
+        this.restoreRecoveryHold(workspace.id, expected);
         return fail(
           "Workspace preparation could not start. Check installation configuration and retry.",
           503,
@@ -94,15 +95,25 @@ export class WorkspaceProvisioning {
     this.starts.set(workspace.id, started);
     return started;
   }
+  private restoreRecoveryHold(id: string, expected: WorkspaceRuntime) {
+    const current = this.service.runtime(id);
+    // Undo only this recovery attempt's wake, never a newer lifecycle decision.
+    if (
+      expected.deletion &&
+      current.generation === expected.generation &&
+      JSON.stringify(current.deletion) === JSON.stringify(expected.deletion)
+    )
+      this.service.setRuntime(id, { held: true, reason: "admin" });
+  }
   private async prepare(
     workspace: Workspace,
     authorize: () => Promise<Result<Workspace>>,
   ): Promise<Result<{ preparing: boolean }>> {
     const allowed = this.service.executionAllowed(workspace.id);
     if (!allowed.ok) return allowed;
+    let expected = this.service.runtime(workspace.id);
     const denied = (error: string, status: number) => {
-      if (this.service.runtime(workspace.id).deletion)
-        this.service.setRuntime(workspace.id, { held: true, reason: "admin" });
+      this.restoreRecoveryHold(workspace.id, expected);
       return fail(error, status);
     };
     let recovery: ReturnType<WorkspaceProvisioning["needsRecovery"]>;
@@ -119,21 +130,22 @@ export class WorkspaceProvisioning {
     const limits = this.limits();
     if (new Set([...this.jobs.keys(), ...this.starts.keys()]).size >= limits.concurrent)
       return denied("Workspace preparation is busy. Retry shortly.", 429);
-    const deletion = this.service.runtime(workspace.id).deletion;
+    const deletion = expected.deletion;
     const dir = this.service.workspacePath(workspace.id);
-    const generation = this.service.runtime(workspace.id).generation;
+    const generation = expected.generation;
     // Reject unshared local edits before reserving any provider identity or phase.
     // The in-memory start entry deduplicates/bounds this asynchronous preflight.
     if (!recovery && (await gitAsync(dir, ["status", "--porcelain"])).toString().trim())
       return fail("Share saved changes before preparing your Sprite", 409);
     const fresh = await authorize();
-    if (!fresh.ok) return fresh;
+    if (!fresh.ok) return denied(fresh.error, fresh.status);
     if (
       fresh.value.spriteName !== workspace.spriteName ||
       fresh.value.spriteStatus !== workspace.spriteStatus ||
-      this.service.runtime(workspace.id).generation !== generation
+      this.service.runtime(workspace.id).generation !== generation ||
+      JSON.stringify(this.service.runtime(workspace.id).deletion) !== JSON.stringify(deletion)
     )
-      return fail("Workspace state changed. Refresh and retry preparation.", 409);
+      return denied("Workspace state changed. Refresh and retry preparation.", 409);
     const name = workspace.spriteName ?? `civic-spark-${workspace.id}`;
     const bundle = join(this.root, `${workspace.id}.bundle`);
     const phase = (next: SpritePhase) => {
@@ -144,7 +156,7 @@ export class WorkspaceProvisioning {
     };
     try {
       if (deletion?.state === "deleted" && !deletion.replacementReserved)
-        this.service.setRuntime(workspace.id, {
+        expected = this.service.setRuntime(workspace.id, {
           deletion: { ...deletion, replacementReserved: true },
         });
       phase("bundling");

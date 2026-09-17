@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -27,6 +28,7 @@ const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 async function fixture(spritesEnabled = false) {
@@ -549,3 +551,138 @@ it("deduplicates deferred HTTP preflights and counts them against transient conc
   );
   expect(create).toHaveBeenCalledTimes(1);
 });
+
+for (const route of ["wake", "sprite"] as const) {
+  it.each(["signed-out", "revoked", "newer-hold", "newer-release", "newer-deletion"] as const)(
+    `preserves deleted recovery hold and permits authorized retry through HTTP ${route} after %s`,
+    async (action) => {
+      vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
+      vi.stubEnv("SPRITE_TOKEN", "fixture-org/fixture-id/fixture-token/fixture-only");
+      const f = await fixture(true);
+      const id = f.workspace.id;
+      const name = `civic-spark-${id}`;
+      unwrap(f.service.setSprite(id, name, "error", "Deleted fixture"));
+      f.service.setRuntime(id, {
+        generation: 10,
+        held: true,
+        reason: "admin",
+        stopState: "stopped",
+        deletion: {
+          state: "deleted",
+          changedAt: "2026-09-16T00:00:00.000Z",
+          replacementReserved: false,
+          error: null,
+          org: "fixture-org",
+          apiOrigin: "https://api.sprites.dev",
+        },
+      });
+      const command = vi
+        .spyOn(SpriteClient.prototype, "command")
+        .mockRejectedValue(new Error("No provider calls allowed"));
+      const create = vi.spyOn(SpriteClient.prototype, "create").mockResolvedValue(ok(name));
+      const upload = vi
+        .spyOn(SpriteClient.prototype, "uploadBundle")
+        .mockResolvedValue(ok(Buffer.alloc(0)));
+      vi.spyOn(SpriteClient.prototype, "files").mockResolvedValue(ok(["README.md"]));
+      const metadata = vi.fn<typeof fetch>(async (url) =>
+        String(url).includes("?")
+          ? Response.json({ sprites: [], has_more: false, next_continuation_token: null })
+          : new Response(null, { status: 404 }),
+      );
+      vi.stubGlobal("fetch", metadata);
+      const auth = f.authentication.auth.api;
+      const original = auth.getSession.bind(auth);
+      let resume!: () => void;
+      let ready!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      cleanups.push(() => resume());
+      const deferred = vi.spyOn(auth, "getSession").mockImplementation(async (input) => {
+        if (input?.query?.disableCookieCache) {
+          ready();
+          await gate;
+        }
+        return original(input);
+      });
+      const url = `/api/workspaces/${id}/${route}`;
+      const headers = { cookie: f.memberCookie, origin: "http://127.0.0.1:4310" };
+      const pending = Promise.resolve(f.app.inject({ method: "POST", url, headers }));
+      await started;
+      const awake = f.service.runtime(id);
+      expect(awake).toMatchObject({
+        held: false,
+        generation: 11,
+        deletion: { state: "deleted", replacementReserved: false },
+      });
+      if (action === "signed-out") {
+        const db = new DatabaseSync(join(f.root, "auth.sqlite"));
+        db.prepare("DELETE FROM session WHERE userId=?").run(f.member.id);
+        db.close();
+      } else if (action === "revoked")
+        unwrap(f.service.removeMember(f.owner, f.team.team.id, f.member.id));
+      else if (action === "newer-deletion") {
+        if (!awake.deletion) throw new Error("Missing fixture deletion");
+        f.service.setRuntime(id, {
+          deletion: { ...awake.deletion, changedAt: "2026-09-16T01:00:00.000Z" },
+        });
+      } else
+        f.service.setRuntime(id, {
+          generation: awake.generation + 1,
+          held: action === "newer-hold",
+          reason: action === "newer-hold" ? "admin" : null,
+        });
+      const newer = f.service.runtime(id);
+      resume();
+      expect((await pending).statusCode).toBe(
+        action === "signed-out"
+          ? 401
+          : action === "revoked"
+            ? 404
+            : action === "newer-hold"
+              ? 423
+              : 409,
+      );
+      const failed = f.service.runtime(id);
+      if (action === "signed-out" || action === "revoked")
+        expect(failed).toEqual({ ...newer, held: true, reason: "admin" });
+      else expect(failed).toEqual(newer); // No overwrite of newer lifecycle/deletion state.
+      expect(failed.held).toBe(!["newer-release", "newer-deletion"].includes(action));
+      expect(failed.deletion?.replacementReserved).toBe(false);
+      expect(f.service.provisioningRecords().find((w) => w.id === id)).toMatchObject({
+        spriteName: name,
+        spriteStatus: "error",
+        spriteError: "Deleted fixture",
+      });
+      expect(command).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(upload).not.toHaveBeenCalled();
+      expect(metadata).not.toHaveBeenCalled();
+      deferred.mockRestore();
+      if (action === "revoked") unwrap(f.service.joinTeam(f.member, f.team.team.id));
+      if (action === "signed-out") {
+        const context = await f.authentication.auth.$context;
+        const session = await context.internalAdapter.createSession(f.member.id);
+        const signature = createHmac("sha256", context.secret)
+          .update(session.token)
+          .digest("base64");
+        headers.cookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(`${session.token}.${signature}`)}`;
+      }
+      expect((await f.app.inject({ method: "POST", url, headers })).statusCode).toBe(202);
+      await vi.waitFor(() =>
+        expect(unwrap(f.service.workspace(f.member, id))).toMatchObject({
+          spriteStatus: "ready",
+          spriteError: null,
+        }),
+      );
+      expect(f.service.runtime(id)).toMatchObject({ held: false, deletion: null });
+      expect(create).toHaveBeenCalledExactlyOnceWith(name);
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(command).not.toHaveBeenCalled();
+      expect(readFileSync(join(f.dir, "fixture.txt"), "utf8")).toBe("Private local change\n");
+    },
+  );
+}
