@@ -6,6 +6,14 @@
 
 # Implementation plan
 
+## Vite 5 native preview compatibility — local, pending root integration
+
+- [x] Read-only p26 diagnosis: managed wrapper/process have the exact additional-host variable, but installed Vite5.4.21 ignores it; Vite8-only fixtures missed the failure.
+- [x] Add a private config adapter for plain root npm Vite5 launch scripts, retaining project config/plugins/reloads and exact-host restrictions without participant edits or upgrades.
+- [x] Check readiness using the saved native Host; public-host403 is an error. Polling never repairs/restarts the server.
+- [x] Complete full check (487 tests), final pinned Vite5 regression, full mobile and both specialized preview browser checks; inspect host-error screenshots in both themes at phone/desktop/short widths.
+- [ ] Root integration/review and authorized live Restart acceptance; no live mutations or deployment by this workstream.
+
 ## Management disk writes — local, pending root integration
 
 - [x] Audit polling/request persistence, health probes, the writer lock, activity timestamps and synchronous Git; retain correctness/durability and existing policy/provider behavior.

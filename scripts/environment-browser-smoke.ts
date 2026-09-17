@@ -74,6 +74,7 @@ try {
   let running = false;
   let phase = "stopped";
   let failNext = false;
+  let previewError = "Dependency installation failed. Check registry access, then retry Launch.";
   let generation = 0;
   let conflict = false;
   let approved = false;
@@ -119,9 +120,7 @@ try {
         running,
         ready: phase === "ready",
         phase,
-        ...(phase === "error"
-          ? { error: "Dependency installation failed. Check registry access, then retry Launch." }
-          : {}),
+        ...(phase === "error" ? { error: previewError } : {}),
         port: 5173,
         command: [
           "npm",
@@ -195,6 +194,7 @@ try {
       [390, 844],
       [1280, 800],
       [844, 360],
+      [390, 300],
     ]) {
       assert(width && height);
       await page.setViewportSize({ width, height });
@@ -223,8 +223,32 @@ try {
       await page.screenshot({ path: join(artifacts, `environment-ready-${width}-${theme}.png`) });
       await page.getByRole("button", { name: "Stop", exact: true }).click();
       await page.getByRole("button", { name: "Launch", exact: true }).waitFor();
+      previewError =
+        "The web server rejected its public preview hostname. Check its allowed hosts and restart.";
+      failNext = true;
+      await page.getByRole("button", { name: "Launch", exact: true }).click();
+      const failure = page.getByRole("alert").filter({ hasText: previewError });
+      await failure.waitFor();
+      assert.equal(
+        await page.getByRole("button", { name: "Open preview", exact: true }).count(),
+        0,
+      );
+      const retry = page.getByRole("button", { name: "Launch", exact: true });
+      await retry.scrollIntoViewIfNeeded();
+      const retryBounds = await retry.boundingBox();
+      assert(retryBounds && retryBounds.y >= 0 && retryBounds.y + retryBounds.height <= height);
+      await failure.scrollIntoViewIfNeeded();
+      const failureBounds = await failure.boundingBox();
+      assert(
+        failureBounds && failureBounds.y >= 0 && failureBounds.y + failureBounds.height <= height,
+      );
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await page.screenshot({
+        path: join(artifacts, `environment-host-rejected-${width}x${height}-${theme}.png`),
+      });
     }
   }
+  previewError = "Dependency installation failed. Check registry access, then retry Launch.";
   failNext = true;
   await page.getByRole("button", { name: "Launch", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "Dependency installation failed" }).waitFor();

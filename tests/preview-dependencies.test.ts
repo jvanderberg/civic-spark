@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
+import WebSocket from "ws";
 
 const execute = promisify(execFile);
 const cleanups: (() => Promise<void>)[] = [];
@@ -22,7 +23,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 const source = readFileSync(new URL("../packages/sprites/src/preview.py", import.meta.url), "utf8");
-async function fixture(real = false, timeout = 300) {
+async function fixture(real = false, timeout = 300, viteVersion?: string) {
   const root = mkdtempSync(join(tmpdir(), "civic-spark-preview-deps-"));
   const project = join(root, "project"),
     runtime = join(root, "runtime"),
@@ -119,7 +120,7 @@ if args[0] in ['ci', 'install']:
     SPRITE_TOKEN: "do-not-inherit",
   };
   let interrupt: (() => void) | undefined;
-  const run = async (operation: string) => {
+  const run = async (operation: string, previewHost: string | null = "fixture-org.sprites.app") => {
     const p = spawn("python3", ["-c", script], { env, stdio: ["pipe", "pipe", "pipe"] });
     if (operation === "start")
       interrupt = () => {
@@ -133,7 +134,9 @@ if args[0] in ['ci', 'install']:
     p.stderr.on("data", (data) => {
       stderr += data;
     });
-    p.stdin.end(JSON.stringify({ operation, defaults, previewHost: "fixture-org.sprites.app" }));
+    p.stdin.end(
+      JSON.stringify({ operation, defaults, ...(previewHost === null ? {} : { previewHost }) }),
+    );
     await new Promise<void>((done, reject) => {
       p.on("error", reject);
       p.on("close", () => done());
@@ -164,8 +167,9 @@ if args[0] in ['ci', 'install']:
     ...(real
       ? {
           devDependencies: {
-            vite: JSON.parse(readFileSync(resolve("node_modules/vite/package.json"), "utf8"))
-              .version,
+            vite:
+              viteVersion ??
+              JSON.parse(readFileSync(resolve("node_modules/vite/package.json"), "utf8")).version,
           },
         }
       : {}),
@@ -485,4 +489,234 @@ it("explicit Launch starts an existing failed service when updating its definiti
     ["start", "civic-spark-web-preview", "--duration", "1s"],
   ]);
   expect(f.calls()).toHaveLength(1);
+});
+
+it("Vite 5.4.21 recovers exact native-host access through managed Restart while preserving async project config", async () => {
+  const f = await fixture(true, 300, "5.4.21");
+  f.write(
+    "index.html",
+    '<!doctype html><h1>Vite 5 shared demo</h1><script type="module" src="/main.js"></script>',
+  );
+  f.write(
+    "main.js",
+    'console.log("managed fixture"); if (import.meta.hot) import.meta.hot.accept();',
+  );
+  const config = `import { defineConfig } from "vite";
+export default defineConfig(async ({ command, mode }) => ({
+  server: { allowedHosts: ["existing.example.test"] },
+  plugins: [{ name: "original-config", configureServer(server) {
+    server.middlewares.use("/original-config", (_req, res) => { res.end(command + ":" + mode); });
+  } }],
+}));
+`;
+  f.write("vite.config.ts", config);
+  await execute(
+    "npm",
+    ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"],
+    { cwd: f.project },
+  );
+  await execute("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: f.project });
+  const manifest = readFileSync(join(f.project, "package.json"));
+  const lock = readFileSync(join(f.project, "package-lock.json"));
+  const get = (host: string, path = "/") =>
+    new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = request(
+        `http://127.0.0.1:${f.defaults.port}${path}`,
+        { headers: { host } },
+        (response) => {
+          let body = "";
+          response.on("data", (data) => {
+            body += data;
+          });
+          response.on("end", () => resolve({ status: response.statusCode ?? 0, body }));
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+  // Real pre-fix behavior: the exact environment hook reaches Vite 5 but is ignored.
+  const baseline = spawn("npm", f.defaults.command.slice(1), {
+    cwd: f.project,
+    detached: true,
+    stdio: "ignore",
+    env: {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: "fixture-org.sprites.app",
+    },
+  });
+  try {
+    await expect
+      .poll(
+        async () => {
+          try {
+            return (await get("localhost")).status;
+          } catch {
+            return 0;
+          }
+        },
+        { timeout: 10000 },
+      )
+      .toBe(200);
+    expect((await get("fixture-org.sprites.app")).status).toBe(403);
+  } finally {
+    if (baseline.pid) process.kill(-baseline.pid, "SIGKILL");
+    await new Promise<void>((resolve) => baseline.once("close", () => resolve()));
+  }
+  const started = await f.run("restart");
+  expect(started, JSON.stringify({ started, logs: await f.run("logs") })).toMatchObject({
+    ok: true,
+    value: { ready: true, phase: "ready", command: f.defaults.command },
+  });
+  expect((await get("fixture-org.sprites.app")).body).toContain("Vite 5 shared demo");
+  expect((await get("fixture-org.sprites.app", "/main.js")).status).toBe(200);
+  expect((await get("fixture-org.sprites.app", "/original-config")).body).toBe("serve:development");
+  expect((await get("existing.example.test")).status).toBe(200);
+  for (const host of [
+    "unrelated.example.test",
+    "other.sprites.app",
+    "sub.fixture-org.sprites.app",
+  ]) {
+    expect((await get(host)).status).toBe(403);
+  }
+  const client = (await get("fixture-org.sprites.app", "/@vite/client")).body;
+  const token = /const wsToken = "([^"]+)"/.exec(client)?.[1];
+  expect(token).toBeTruthy();
+  const socket = new WebSocket(`ws://127.0.0.1:${f.defaults.port}/?token=${token}`, "vite-hmr", {
+    headers: { host: "fixture-org.sprites.app", origin: "http://fixture-org.sprites.app" },
+  });
+  try {
+    const connected = await new Promise<string>((resolve, reject) => {
+      socket.once("message", (data) => resolve(data.toString()));
+      socket.once("error", reject);
+    });
+    expect(JSON.parse(connected)).toEqual({ type: "connected" });
+    const update = new Promise<string>((resolve) =>
+      socket.once("message", (data) => resolve(data.toString())),
+    );
+    f.write(
+      "main.js",
+      'console.log("edited fixture"); if (import.meta.hot) import.meta.hot.accept();',
+    );
+    expect(JSON.parse(await update)).toMatchObject({ type: "update" });
+  } finally {
+    socket.terminate();
+  }
+  const installed = readFileSync(join(f.runtime, "project-installed.json"));
+  expect((await f.run("status", null)).value).toMatchObject({ ready: true, phase: "ready" });
+  expect((await f.run("restart")).value.ready).toBe(true);
+  expect(readFileSync(join(f.runtime, "project-installed.json"))).toEqual(installed);
+  expect(readFileSync(join(f.project, "package.json"))).toEqual(manifest);
+  expect(readFileSync(join(f.project, "package-lock.json"))).toEqual(lock);
+  expect(readFileSync(join(f.project, "vite.config.ts"), "utf8")).toBe(config);
+  expect(JSON.parse(readFileSync(join(f.runtime, "environment.json"), "utf8"))).toEqual(f.defaults);
+  expect(existsSync(join(f.project, "source-overwrite.txt"))).toBe(false);
+  expect(statSync(join(f.runtime, "preview-vite.config.mjs")).mode & 0o777).toBe(0o600);
+  // Explicit config still receives its mode and original plugins/settings.
+  f.write("custom.config.ts", config);
+  writeFileSync(
+    join(f.runtime, "environment.json"),
+    JSON.stringify({
+      ...f.defaults,
+      command: [...f.defaults.command, "--config", "custom.config.ts", "--mode", "alternate"],
+    }),
+  );
+  expect((await f.run("restart")).value.ready).toBe(true);
+  expect((await get("fixture-org.sprites.app", "/original-config")).body).toBe("serve:alternate");
+  // Preserve Vite's automatic reload of the original config and its imports.
+  f.write("config-message.ts", 'export const suffix = ":before";');
+  const watched =
+    'import { suffix } from "./config-message";\n' +
+    config.replace('command + ":" + mode', 'command + ":" + mode + suffix');
+  f.write("custom.config.ts", watched);
+  await expect
+    .poll(
+      async () => {
+        try {
+          return (await get("fixture-org.sprites.app", "/original-config")).body;
+        } catch {
+          return "";
+        }
+      },
+      { timeout: 10000 },
+    )
+    .toBe("serve:alternate:before");
+  f.write("config-message.ts", 'export const suffix = ":after";');
+  await expect
+    .poll(
+      async () => {
+        try {
+          return (await get("fixture-org.sprites.app", "/original-config")).body;
+        } catch {
+          return "";
+        }
+      },
+      { timeout: 10000 },
+    )
+    .toBe("serve:alternate:after");
+
+  // Do not change an existing project's deliberately disabled host check into an invalid array.
+  f.write("custom.config.ts", config.replace('["existing.example.test"]', "true"));
+  expect((await f.run("restart")).value.ready).toBe(true);
+  expect((await get("unrelated.example.test")).status).toBe(200);
+  f.write("custom.config.ts", config);
+  // No project config is also valid, without creating one in the checkout.
+  await f.run("stop");
+  rmSync(join(f.project, "vite.config.ts"));
+  rmSync(join(f.project, "custom.config.ts"));
+  writeFileSync(join(f.runtime, "environment.json"), JSON.stringify(f.defaults));
+  expect((await f.run("start")).value.ready).toBe(true);
+  expect((await get("fixture-org.sprites.app")).status).toBe(200);
+  expect((await get("unrelated.example.test")).status).toBe(403);
+  expect(existsSync(join(f.project, "vite.config.ts"))).toBe(false);
+
+  // Unsupported compound scripts retain their meaning and cannot falsely report Ready.
+  const changed = JSON.parse(manifest.toString());
+  changed.scripts.dev = "vite --clearScreen false";
+  f.write("package.json", changed);
+  const blocked = await f.run("restart");
+  expect(blocked).toMatchObject({
+    ok: false,
+    error: expect.stringContaining("public preview hostname"),
+  });
+  expect((await f.run("status", null)).value).toMatchObject({
+    ready: false,
+    phase: "error",
+    running: false,
+  });
+  // A legacy running service must also fail the public Host check on status-only reads.
+  await execute("sprite-env", ["services", "start", "civic-spark-web-preview"], { env: f.env });
+  await expect
+    .poll(
+      async () => {
+        try {
+          return (await get("localhost")).status;
+        } catch {
+          return 0;
+        }
+      },
+      { timeout: 10000 },
+    )
+    .toBe(200);
+  expect((await f.run("status", null)).value).toMatchObject({
+    ready: false,
+    phase: "error",
+    running: true,
+  });
+}, 60000);
+
+it.each([
+  ".sprites.app",
+  ".fixture.sprites.app",
+  "*.sprites.app",
+  "fixture.sprites.app.evil.test",
+  "fixture.sprites.app/path",
+  "fixture.sprites.app:443",
+])("rejects non-exact preview host %s without starting a service", async (host) => {
+  const f = await fixture();
+  expect(await f.run("start", host)).toMatchObject({
+    ok: false,
+    error: "Invalid preview hostname",
+  });
+  expect(existsSync(join(f.root, "service.json"))).toBe(false);
 });

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shlex
 import signal
 import socket
@@ -20,6 +21,7 @@ SESSION = 'civic-spark-web-preview'
 CONFIG = ROOT / 'environment.json'
 LOG = ROOT / 'preview.log'
 STATE = ROOT / 'preview-state.json'
+HOST = ROOT / 'preview-host.json'
 MARKER = ROOT / 'project-installed.json'
 CANCEL = ROOT / 'preview-cancel'
 INSTALL_TIMEOUT = 300
@@ -109,6 +111,72 @@ def locked(file):
         return True
 
 
+def valid_host(value):
+    return isinstance(value, str) and re.fullmatch(r'[a-z0-9][a-z0-9-]*\.sprites\.app', value) is not None
+
+
+def server_command(config):
+    command = list(config['command'])
+    package = saved(PROJECT / 'node_modules/vite/package.json')
+    # Vite 5's host check does not consume the environment hook used by newer releases.
+    # Adapt a plain npm Vite script through its public config API, in private
+    # runtime files only. Other commands keep their configured behavior.
+    if not preview_host or not str(package.get('version', '')).startswith('5.'):
+        return command
+    scripts = saved(PROJECT / 'package.json').get('scripts', {})
+    if (len(command) < 3 or command[:2] != ['npm', 'run'] or
+        scripts.get(command[2], '').strip() != 'vite' or
+        (len(command) > 3 and command[3] != '--')):
+        return command
+    args = command[4:]
+    original_config = None
+    remaining = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in ['--config', '-c']:
+            index += 1
+            if index == len(args):
+                raise ValueError('The Vite config option needs a file path.')
+            original_config = args[index]
+        elif arg.startswith('--config='):
+            original_config = arg.split('=', 1)[1]
+        else:
+            remaining.append(arg)
+        index += 1
+    # The standard managed command has no positional Vite root. Keep custom
+    # roots/compound scripts untouched rather than changing their config search.
+    options = {'--host', '--port', '--base', '--mode', '-m', '--logLevel', '-l', '--clearScreen'}
+    index = 0
+    while index < len(remaining):
+        arg = remaining[index]
+        if arg in options:
+            index += 2
+        elif arg.startswith('-'):
+            index += 1
+        else:
+            return command
+    path = ROOT / 'preview-vite.config.mjs'
+    source = ("export default async (environment) => {\n"
+              "  const entry = " + json.dumps((PROJECT / 'node_modules/vite/dist/node/index.js').as_uri()) + ";\n"
+              "  const { loadConfigFromFile, mergeConfig } = await import(entry);\n"
+              "  const loaded = await loadConfigFromFile(environment, " +
+              (json.dumps(original_config) if original_config is not None else 'undefined') +
+              ", " + json.dumps(str(PROJECT)) + ");\n"
+              "  const server = loaded?.config?.server?.allowedHosts === true ? {} : { allowedHosts: [" +
+              json.dumps(preview_host) + "] };\n"
+              "  return mergeConfig(loaded?.config ?? {}, { server, plugins: [{\n"
+              "    name: 'civic-spark-preview-config',\n"
+              "    configResolved(config) {\n"
+              "      config.configFileDependencies.push(...(loaded?.dependencies ?? []));\n"
+              "    },\n"
+              "  }] });\n"
+              "};\n")
+    path.write_text(source)
+    path.chmod(0o600)
+    return command[:3] + ['--', *remaining, '--config', str(path)]
+
+
 def status(config):
     with (ROOT / 'preview.lock').open('a') as lock:
         preparing = locked(lock)
@@ -118,10 +186,18 @@ def status(config):
     ready = False
     if running and current != 'installing':
         try:
-            with urllib.request.urlopen('http://127.0.0.1:' + str(config['port']) + '/', timeout=2) as response:
+            host = preview_host or saved(HOST).get('hostname')
+            if host is not None and not valid_host(host):
+                raise ValueError('Invalid preview hostname')
+            request = urllib.request.Request('http://127.0.0.1:' + str(config['port']) + '/',
+                                             headers={'Host': host} if host else {})
+            with urllib.request.urlopen(request, timeout=2) as response:
                 ready = 200 <= response.status < 500
         except urllib.error.HTTPError as error:
-            ready = error.code < 500
+            if error.code == 403 and host:
+                value = {'phase': 'error', 'error': 'The web server rejected its public preview hostname. Check its allowed hosts and restart.'}
+            else:
+                ready = error.code < 500
         except (OSError, urllib.error.URLError):
             pass
     if ready:
@@ -289,6 +365,7 @@ def launch(request, config):
         # Initialize from committed defaults only on explicit Launch. Never overwrite configuration.
         if not CONFIG.exists() or 'port' in request:
             save(CONFIG, config)
+        save(HOST, {'hostname': preview_host})
         LOG.write_text(''); LOG.chmod(0o600)
         phase('installing')
         try:
@@ -299,7 +376,7 @@ def launch(request, config):
             # env -i prevents provider/agent credentials entering the public app.
             wrapper = ROOT / 'preview-service.sh'
             command = shlex.join(['env', '-i', *[key + '=' + value for key, value in environment().items()],
-                                  *config['command']])
+                                  *server_command(config)])
             wrapper.write_text('#!/bin/sh\ncd ' + shlex.quote(str(PROJECT)) + '\nexec ' + command +
                                ' >>' + shlex.quote(str(LOG)) + ' 2>&1\n')
             wrapper.chmod(0o700)
@@ -318,6 +395,8 @@ def launch(request, config):
                 if value['ready']:
                     phase('ready')
                     return
+                if value.get('phase') == 'error':
+                    raise ValueError(value['error'])
                 if not service_running():
                     break
                 time.sleep(0.3)
@@ -349,7 +428,7 @@ def main():
     (ROOT / 'preview-empty.npmrc').write_text('')
     request = json.loads(sys.stdin.read(65536))
     preview_host = request.get('previewHost')
-    if preview_host is not None and (not isinstance(preview_host, str) or not preview_host or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789.-' for c in preview_host)):
+    if preview_host is not None and not valid_host(preview_host):
         raise ValueError('Invalid preview hostname')
     config = configuration(request)
     operation = request['operation']
