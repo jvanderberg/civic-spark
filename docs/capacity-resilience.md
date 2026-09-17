@@ -6,7 +6,7 @@ This is isolated local evidence, not certification that the live one-shared-CPU/
 
 `npm run test:capacity -- artifacts/capacity/target-final.json` creates disposable real SQLite accounts/sessions, 12 Git teams, and 60 concurrent personal workspace clients. It sends portal polls every 15 seconds and files/changes/team-status/provisioning/preview polls every five seconds for 30 seconds, with staggered starts. Provider responses have a fixed 25 ms in-process delay. The fixture then submits 60 explicit Share requests against real Git on the actual HTTP route and measures 60 conversation replays. All data is synthetic. `CIVIC_SPARK_LOAD_SECONDS=60` extends the polling scenario. The fixture event owner creates all 12 teams, so it also retains 11 additional inactive memberships; these are not additional concurrent clients.
 
-Same-machine Node 22.23.2/macOS results, baseline versus final source:
+Same-machine Node 22.23.2/macOS results, baseline versus capacity checkpoint `82861c7` (before the narrow provisioning-preflight follow-up):
 
 | Measurement | Baseline | Final target |
 | --- | ---: | ---: |
@@ -48,6 +48,8 @@ Git workers have a 30-second execution deadline and kill/drain their process gro
 `tests/capacity-resilience.test.ts` exercises the actual HTTP Share path with deferred workers, membership revocation, event pause, session revocation, authorization immediately before CAS, stale shared refs, lost CAS responses, and metadata write failures. Isolated SQLite triggers inject a full-disk write failure; no host filesystem is filled. Restart fixtures retain intents both before CAS and after successful CAS with failed metadata persistence. Paused retry remains blocked; explicit authorized retry retains the exact local/shared commit and avoids a duplicate publication. Separate real subprocess SIGKILL testing proves the OS releases the single-writer SQLite lock. Worker cancellation drains a slot and permits a clean retry. This is phase fault injection plus real lock-process death, not a power-loss durability certification.
 
 Setup tests exercise explicit same-volume extension, repeatability, bounded auto-growth, disabled expansion after growth, wrong-volume/shrink/oversize drift, receipt-field preservation and 60 new permanent preview bindings after eight retained ones. Queue tests cover bounded concurrency, cancellation, timeout recovery and read isolation/coalescing. Existing owner/lifecycle/provisioning/history tests remain required.
+
+Provisioning preflight rejects dirty local work with HTTP 409 before reserving a Sprite name or changing its local status. An actual HTTP regression then Shares the preserved edits and retries preparation successfully. Deferred preflights deduplicate and count against transient concurrency; session/owner/pause and workspace generation/state are revalidated before reservation. Deferred revocation, sign-out, pause, generation changes and Git-check failure leave the workspace local without a Sprite. Provider reconnect/create uncertainty remains fail-closed; a failed provider probe is never treated as proof of absence.
 
 ## Setup for a 60-person rehearsal
 

@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import { fromNodeHeaders } from "better-auth/node";
-import Fastify, { type FastifyReply } from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   demoIdentitySchema,
@@ -20,6 +20,7 @@ import { EventService } from "../../../packages/domain/src/service.ts";
 import {
   createEventSchema,
   eventSettingsSchema,
+  fail,
   type Result,
 } from "../../../packages/domain/src/types.ts";
 import { gitAsync } from "../../../packages/git/src/async.ts";
@@ -400,6 +401,19 @@ export async function createApp(
     const input = lifecycleActionSchema.parse(r.body);
     return send(reply, await lifecycle.change(actor(r.actor), r.params.id, input.action));
   });
+  const authorizePreparation = async (r: FastifyRequest, id: string) => {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(r.headers),
+      query: { disableCookieCache: true },
+    });
+    if (
+      !session ||
+      (!unverifiedSignIn && !session.user.emailVerified) ||
+      (prototype ? session.user.email.toLowerCase() : session.user.id) !== actor(r.actor).id
+    )
+      return fail("Sign in again before preparing your workspace.", 401);
+    return service.workspace(actor(r.actor), id, true);
+  };
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/wake", async (r, reply) => {
     if (!spritesEnabled)
       return reply
@@ -407,7 +421,9 @@ export async function createApp(
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
     const workspace = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!workspace.ok) return send(reply, workspace);
-    const prepared = provisioning.start(workspace.value);
+    const prepared = await provisioning.start(workspace.value, () =>
+      authorizePreparation(r, r.params.id),
+    );
     if (!prepared.ok) return send(reply, prepared);
     if (prepared.value.preparing) return reply.code(202).send(prepared.value);
     if (workspace.value.spriteName && workspace.value.spriteStatus === "ready") {
@@ -849,7 +865,9 @@ export async function createApp(
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
     const waking = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!waking.ok) return send(reply, waking);
-    const result = provisioning.start(workspace.value);
+    const result = await provisioning.start(workspace.value, () =>
+      authorizePreparation(r, r.params.id),
+    );
     if (result.ok) return reply.code(result.value.preparing ? 202 : 200).send(result.value);
     return send(reply, result);
   });

@@ -160,11 +160,11 @@ it("restores paused state, then explicitly recreates a confirmed missing reserva
   const provisioning = new WorkspaceProvisioning(f.service, f.data, client, inspect);
   try {
     expect(inspect).not.toHaveBeenCalled();
-    expect(provisioning.start(f.current())).toMatchObject({ ok: false, status: 423 });
+    expect(await provisioning.start(f.current())).toMatchObject({ ok: false, status: 423 });
     expect(create).not.toHaveBeenCalled();
     unwrap(f.service.setExecution(f.owner, f.event.id, false));
     unwrap(f.service.wakeWorkspace(f.owner, f.workspace.id));
-    unwrap(provisioning.start(f.current()));
+    unwrap(await provisioning.start(f.current()));
     await provisioning.wait(f.workspace.id);
     expect(f.current()).toMatchObject({
       id: f.workspace.id,
@@ -272,7 +272,7 @@ it("rechecks recovery on every retry, never overwrites a surviving Sprite, and r
   const provisioning = new WorkspaceProvisioning(f.service, f.data, client, inspect);
   try {
     const retry = async () => {
-      unwrap(provisioning.start(f.current()));
+      unwrap(await provisioning.start(f.current()));
       await provisioning.wait(f.workspace.id);
     };
     unwrap(f.service.setExecution(f.owner, f.event.id, false));

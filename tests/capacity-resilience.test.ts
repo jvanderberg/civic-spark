@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +11,7 @@ import * as deployment from "../apps/server/src/deployment.ts";
 import { acquireWriter } from "../apps/server/src/deployment.ts";
 import { WorkspaceProvisioning } from "../apps/server/src/provisioning.ts";
 import { EventService } from "../packages/domain/src/service.ts";
-import type { Result } from "../packages/domain/src/types.ts";
+import { ok, type Result } from "../packages/domain/src/types.ts";
 import * as asyncGit from "../packages/git/src/async.ts";
 import * as jobs from "../packages/git/src/jobs.ts";
 import { git } from "../packages/git/src/repository.ts";
@@ -26,12 +26,19 @@ const unwrap = <T>(r: Result<T>) => {
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-async function fixture() {
+async function fixture(spritesEnabled = false) {
   const root = mkdtempSync(join(tmpdir(), "civic-spark-resilience-"));
   cleanups.push(() => rmSync(root, { recursive: true, force: true }));
-  const instance = await createApp(root, false, "http://127.0.0.1:4310", undefined, "email");
+  const instance = await createApp(
+    root,
+    spritesEnabled,
+    "http://127.0.0.1:4310",
+    undefined,
+    "email",
+  );
   cleanups.push(() => instance.app.close());
   const { service, authentication, app } = instance;
   const owner = await testIdentity(authentication, "Capacity Owner");
@@ -74,6 +81,8 @@ async function fixture() {
     ...instance,
     root,
     owner: owner.actor,
+    ownerCookie: owner.cookie,
+    memberCookie: member.cookie,
     member: member.actor,
     event,
     team,
@@ -372,12 +381,171 @@ it("handles provisioning error-persistence failure without an unhandled rejectio
     if (args[2] === "error") throw new Error("Injected disk full while recording provider failure");
     return original(...args);
   });
-  unwrap(provisioning.start(workspace));
+  unwrap(await provisioning.start(workspace));
   await expect(provisioning.wait(workspace.id)).rejects.toThrow("disk full");
   await provisioning.close();
   storage.mockRestore();
   const saved = unwrap(f.service.workspace(f.owner, workspace.id));
   expect(saved.spriteName).toBe(`civic-spark-${workspace.id}`);
   expect(provisioning.status(saved).spriteStatus).toBe("error");
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+it("rejects dirty local HTTP preparation without reservation, then permits Share and a fresh successful prepare", async () => {
+  const f = await fixture(true);
+  const command = vi
+    .spyOn(SpriteClient.prototype, "command")
+    .mockRejectedValue(new Error("No provider calls allowed"));
+  const create = vi
+    .spyOn(SpriteClient.prototype, "create")
+    .mockResolvedValue(ok(`civic-spark-${f.workspace.id}`));
+  const upload = vi
+    .spyOn(SpriteClient.prototype, "uploadBundle")
+    .mockResolvedValue(ok(Buffer.alloc(0)));
+  vi.spyOn(SpriteClient.prototype, "files").mockResolvedValue(ok(["fixture.txt"]));
+  const url = `/api/workspaces/${f.workspace.id}/sprite`;
+  const headers = { cookie: f.memberCookie, origin: "http://127.0.0.1:4310" };
+  const before = unwrap(f.service.workspace(f.member, f.workspace.id));
+  const denied = await f.app.inject({ method: "POST", url, headers });
+  expect(denied.statusCode).toBe(409);
+  expect(denied.json().error).toContain("Share saved changes");
+  const after = unwrap(f.service.workspace(f.member, f.workspace.id));
+  expect({ ...after, runtime: undefined }).toEqual({ ...before, runtime: undefined });
+  expect(after).toMatchObject({ spriteStatus: "local", spriteName: null });
+  expect(create).not.toHaveBeenCalled();
+  expect(upload).not.toHaveBeenCalled();
+  expect(command).not.toHaveBeenCalled();
+  expect(readFileSync(join(f.dir, "fixture.txt"), "utf8")).toBe("Private local change\n");
+  expect((await f.share()).statusCode).toBe(200);
+  const shared = f.head();
+  expect(git(f.dir, ["rev-parse", "HEAD"]).toString().trim()).toBe(shared);
+  expect((await f.app.inject({ method: "POST", url, headers })).statusCode).toBe(202);
+  await vi.waitFor(async () =>
+    expect((await f.app.inject({ url, headers })).json()).toMatchObject({ spriteStatus: "ready" }),
+  );
+  expect(create).toHaveBeenCalledExactlyOnceWith(`civic-spark-${f.workspace.id}`);
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(command).not.toHaveBeenCalled(); // No reconnect probe for a never-reserved Sprite.
+  expect(f.head()).toBe(shared);
+  expect(readFileSync(join(f.dir, "fixture.txt"), "utf8")).toBe("Private local change\n");
+});
+
+it.each(["revoked", "paused", "signed-out", "generation", "git-failed"] as const)(
+  "revalidates deferred provisioning preflight without reservation when %s",
+  async (action) => {
+    const f = await fixture(true);
+    rmSync(join(f.dir, "fixture.txt"));
+    const command = vi
+      .spyOn(SpriteClient.prototype, "command")
+      .mockRejectedValue(new Error("No provider calls allowed"));
+    const original = asyncGit.gitAsync;
+    let resume!: () => void;
+    let ready!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    cleanups.push(() => resume());
+    vi.spyOn(asyncGit, "gitAsync").mockImplementation(async (cwd, args, signal) => {
+      const result = await original(cwd, args, signal);
+      if (cwd === f.dir && args[0] === "status") {
+        ready();
+        await gate;
+        if (action === "git-failed") throw new Error("Git preflight failed");
+      }
+      return result;
+    });
+    const pending = Promise.resolve(
+      f.app.inject({
+        method: "POST",
+        url: `/api/workspaces/${f.workspace.id}/sprite`,
+        headers: { cookie: f.memberCookie, origin: "http://127.0.0.1:4310" },
+      }),
+    );
+    await started;
+    expect(f.service.provisioningRecords().find((w) => w.id === f.workspace.id)).toMatchObject({
+      spriteStatus: "local",
+      spriteName: null,
+    });
+    if (action === "revoked") unwrap(f.service.removeMember(f.owner, f.team.team.id, f.member.id));
+    else if (action === "paused") unwrap(f.service.setExecution(f.owner, f.event.id, true));
+    else if (action === "generation")
+      f.service.setRuntime(f.workspace.id, {
+        generation: f.service.runtime(f.workspace.id).generation + 1,
+      });
+    else if (action === "signed-out") {
+      const db = new DatabaseSync(join(f.root, "auth.sqlite"));
+      db.prepare("DELETE FROM session WHERE userId=?").run(f.member.id);
+      db.close();
+    }
+    resume();
+    expect((await pending).statusCode).toBe(
+      action === "revoked"
+        ? 404
+        : action === "paused"
+          ? 423
+          : action === "signed-out"
+            ? 401
+            : action === "git-failed"
+              ? 503
+              : 409,
+    );
+    expect(f.service.provisioningRecords().find((w) => w.id === f.workspace.id)).toMatchObject({
+      spriteStatus: "local",
+      spriteName: null,
+    });
+    expect(command).not.toHaveBeenCalled();
+  },
+);
+
+it("deduplicates deferred HTTP preflights and counts them against transient concurrency", async () => {
+  vi.stubEnv("CIVIC_SPARK_MAX_PROVISIONING", "1");
+  const f = await fixture(true);
+  rmSync(join(f.dir, "fixture.txt"));
+  const create = vi
+    .spyOn(SpriteClient.prototype, "create")
+    .mockResolvedValue(ok(`civic-spark-${f.workspace.id}`));
+  vi.spyOn(SpriteClient.prototype, "uploadBundle").mockResolvedValue(ok(Buffer.alloc(0)));
+  vi.spyOn(SpriteClient.prototype, "files").mockResolvedValue(ok(["README.md"]));
+  const original = asyncGit.gitAsync;
+  let resume!: () => void;
+  let ready!: () => void;
+  let checks = 0;
+  const gate = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  cleanups.push(() => resume());
+  vi.spyOn(asyncGit, "gitAsync").mockImplementation(async (cwd, args, signal) => {
+    const result = await original(cwd, args, signal);
+    if (cwd === f.dir && args[0] === "status") {
+      checks++;
+      ready();
+      await gate;
+    }
+    return result;
+  });
+  const url = `/api/workspaces/${f.workspace.id}/sprite`;
+  const headers = { cookie: f.memberCookie, origin: "http://127.0.0.1:4310" };
+  const first = Promise.resolve(f.app.inject({ method: "POST", url, headers }));
+  await started;
+  const second = Promise.resolve(f.app.inject({ method: "POST", url, headers }));
+  const busy = await f.app.inject({
+    method: "POST",
+    url: `/api/workspaces/${f.team.workspace.id}/sprite`,
+    headers: { ...headers, cookie: f.ownerCookie },
+  });
+  expect(busy.statusCode).toBe(429);
+  resume();
+  expect((await first).statusCode).toBe(202);
+  expect((await second).statusCode).toBe(202);
+  expect(checks).toBe(1);
+  await vi.waitFor(() =>
+    expect(unwrap(f.service.workspace(f.member, f.workspace.id)).spriteStatus).toBe("ready"),
+  );
   expect(create).toHaveBeenCalledTimes(1);
 });

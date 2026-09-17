@@ -14,6 +14,7 @@ import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 
 export class WorkspaceProvisioning {
   private jobs = new Map<string, Promise<void>>();
+  private starts = new Map<string, Promise<Result<{ preparing: boolean }>>>();
   constructor(
     private service: EventService,
     private root: string,
@@ -74,19 +75,29 @@ export class WorkspaceProvisioning {
         )
       : null;
   }
-  start(workspace: Workspace): Result<{ preparing: boolean }> {
-    try {
-      return this.prepare(workspace);
-    } catch {
-      if (this.service.runtime(workspace.id).deletion)
-        this.service.setRuntime(workspace.id, { held: true, reason: "admin" });
-      return fail(
-        "Workspace preparation could not start. Check installation configuration and retry.",
-        503,
-      );
-    }
+  start(
+    workspace: Workspace,
+    authorize: () => Promise<Result<Workspace>> = async () => ok(workspace),
+  ): Promise<Result<{ preparing: boolean }>> {
+    const pending = this.starts.get(workspace.id);
+    if (pending) return pending;
+    const started = this.prepare(workspace, authorize)
+      .catch(() => {
+        if (this.service.runtime(workspace.id).deletion)
+          this.service.setRuntime(workspace.id, { held: true, reason: "admin" });
+        return fail(
+          "Workspace preparation could not start. Check installation configuration and retry.",
+          503,
+        );
+      })
+      .finally(() => this.starts.delete(workspace.id));
+    this.starts.set(workspace.id, started);
+    return started;
   }
-  private prepare(workspace: Workspace): Result<{ preparing: boolean }> {
+  private async prepare(
+    workspace: Workspace,
+    authorize: () => Promise<Result<Workspace>>,
+  ): Promise<Result<{ preparing: boolean }>> {
     const allowed = this.service.executionAllowed(workspace.id);
     if (!allowed.ok) return allowed;
     const denied = (error: string, status: number) => {
@@ -106,10 +117,23 @@ export class WorkspaceProvisioning {
     if (workspace.spriteStatus === "ready" && !recovery) return ok({ preparing: false });
     if (this.jobs.has(workspace.id)) return ok({ preparing: true });
     const limits = this.limits();
-    if (this.jobs.size >= limits.concurrent)
+    if (new Set([...this.jobs.keys(), ...this.starts.keys()]).size >= limits.concurrent)
       return denied("Workspace preparation is busy. Retry shortly.", 429);
     const deletion = this.service.runtime(workspace.id).deletion;
     const dir = this.service.workspacePath(workspace.id);
+    const generation = this.service.runtime(workspace.id).generation;
+    // Reject unshared local edits before reserving any provider identity or phase.
+    // The in-memory start entry deduplicates/bounds this asynchronous preflight.
+    if (!recovery && (await gitAsync(dir, ["status", "--porcelain"])).toString().trim())
+      return fail("Share saved changes before preparing your Sprite", 409);
+    const fresh = await authorize();
+    if (!fresh.ok) return fresh;
+    if (
+      fresh.value.spriteName !== workspace.spriteName ||
+      fresh.value.spriteStatus !== workspace.spriteStatus ||
+      this.service.runtime(workspace.id).generation !== generation
+    )
+      return fail("Workspace state changed. Refresh and retry preparation.", 409);
     const name = workspace.spriteName ?? `civic-spark-${workspace.id}`;
     const bundle = join(this.root, `${workspace.id}.bundle`);
     const phase = (next: SpritePhase) => {
@@ -134,8 +158,6 @@ export class WorkspaceProvisioning {
     const job = Promise.resolve().then(async () => {
       const client = this.client;
       try {
-        if (!recovery && (await gitAsync(dir, ["status", "--porcelain"])).toString().trim())
-          throw new Error("Share saved changes before preparing your Sprite");
         if (recovery) {
           await gitAsync(this.service.sharedWorkspaceRepository(workspace.id), [
             "bundle",
@@ -231,9 +253,11 @@ export class WorkspaceProvisioning {
     return ok({ preparing: true });
   }
   async wait(id: string) {
+    await this.starts.get(id);
     await this.jobs.get(id);
   }
   async close() {
+    await Promise.allSettled(this.starts.values());
     await Promise.allSettled(this.jobs.values());
   }
 }

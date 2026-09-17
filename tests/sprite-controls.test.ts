@@ -306,7 +306,7 @@ it("reopens a deleted reservation only from shared main, preserving history/iden
   try {
     unwrap(await f.action("delete"));
     const oldGeneration = f.service.runtime(f.workspace.id).generation;
-    expect(provisioning.start(f.current())).toMatchObject({ ok: false, status: 423 });
+    expect(await provisioning.start(f.current())).toMatchObject({ ok: false, status: 423 });
     unwrap(f.service.setExecution(actor, f.event.id, true));
     expect(f.service.wakeWorkspace(actor, f.workspace.id)).toMatchObject({
       ok: false,
@@ -315,7 +315,7 @@ it("reopens a deleted reservation only from shared main, preserving history/iden
     expect(create).not.toHaveBeenCalled();
     unwrap(f.service.setExecution(actor, f.event.id, false));
     unwrap(f.service.wakeWorkspace(actor, f.workspace.id));
-    unwrap(provisioning.start(f.current()));
+    unwrap(await provisioning.start(f.current()));
     await provisioning.wait(f.workspace.id);
     expect(f.current()).toMatchObject({
       id: f.workspace.id,
@@ -357,11 +357,11 @@ it("admits additional Sprites and explicit deleted-Sprite recovery without an al
   const provisioning = new WorkspaceProvisioning(f.service, f.path, client, inspect);
   try {
     unwrap(await f.action("delete"));
-    unwrap(provisioning.start(another));
+    unwrap(await provisioning.start(another));
     await provisioning.wait(another.id);
     expect(create).toHaveBeenCalledExactlyOnceWith(`civic-spark-${another.id}`);
     unwrap(f.service.wakeWorkspace(actor, f.workspace.id));
-    unwrap(provisioning.start(f.current()));
+    unwrap(await provisioning.start(f.current()));
     await provisioning.wait(f.workspace.id);
     expect(inspect).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledTimes(2);
@@ -404,7 +404,7 @@ it.each(["pause", "pause-sprites", "pause-event"] as const)(
     );
     try {
       unwrap(f.service.wakeWorkspace(actor, f.workspace.id));
-      unwrap(provisioning.start(f.current()));
+      unwrap(await provisioning.start(f.current()));
       await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
       const pause =
         bulk === "pause"
@@ -454,7 +454,7 @@ it("does not replace a present resource after an interrupted rebuild, and rechec
   try {
     unwrap(f.service.wakeWorkspace(actor, f.workspace.id));
     for (let n = 0; n < 3; n++) {
-      unwrap(provisioning.start(f.current()));
+      unwrap(await provisioning.start(f.current()));
       await provisioning.wait(f.workspace.id);
     }
     expect(inspect).toHaveBeenCalledTimes(3);
