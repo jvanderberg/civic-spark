@@ -106,7 +106,7 @@ The integrated owner-recovery and redundant-write fixes passed 480 tests and the
 
 ## Recovery release deployed
 
-`49fd716` is deployed on the existing dedicated-CPU Machine and volume. Exact deployed hashes for provider metadata, recovery, provisioning, asynchronous health and recovery UI matched; HTTPS health returned200 in243ms. Final validation: combined510 tests, final ownership-guard focused136 tests, full combined mobile, clean context156 inputs, independent scoped clearance. The final guard rejects conflicting ownership on the requested target row even when the list-level identity matches; unrelated contradictory row claims do not override the authenticated organization identity.
+`49fd716` is deployed on the existing dedicated-CPU Machine and volume. Exact deployed hashes for provider metadata, recovery, provisioning, asynchronous health and recovery UI matched; HTTPS health returned 200 in243ms. Final validation: combined510 tests, final ownership-guard focused136 tests, full combined mobile, clean context156 inputs, independent scoped clearance. The final guard rejects conflicting ownership on the requested target row even when the list-level identity matches; unrelated contradictory row claims do not override the authenticated organization identity.
 
 All nine failed-initial personas were resumed for actual browser recovery after deployment. Riley/p09 was separately authorized to explicitly rebuild the confirmed-missing test Sprite from already-shared teamGit. Deployment/source verification is not a claim that these browser recoveries have succeeded; persona logs supply those outcomes. Original user workspace d416 remains distinct from p40 and requires its owner to confirm the shared-only recovery.
 
@@ -127,3 +127,9 @@ The complete provider list proved p10's exact resource membership using matching
 The participant audit established20 personas with documented Shared contributions (12 leads and8 collaborators), and23 personas who submitted at least one model request—not23 total turns. Eleven participants whose old logs awaited a lead MVP or unfinished-turn review were resumed after all12 leads Shared. Nine initial-provisioning personas remain blocked; four of their resources plus p10 were confirmed created and must be preserved. Previously-ready Riley/p09 remains a separate missing-resource recovery case.
 
 Deployment was deferred because seven real model turns were active, falling to five on the next check. New submissions are held while existing turns finish. The management upgrade and deployed preview correction remain healthy; p26's actual native preview now renders and its controls work at desktop/360/390 without a project edit or new model call.
+
+## Recovery release deployed; browser acceptance in progress
+
+Release `da2aa9d` deployed after the final preflight found 37 ready workspace records, zero working turns and two confirmed missing resources. Combined validation passed 605 tests (two opt-in skips), lint/types/build and 158-input packaging. Exact deployed hashes for provider identity checks, missing-workspace recovery and UI matched; health returned 200, all 16 project hashes and team/workspace counts were preserved, with the same Machine and volume.
+
+Quinn/p10 is released for one normal browser reconnect to the existing provider-created resource. Riley/p09 separately tests the owner-confirmed recovery control for a previously-ready missing resource. Neither is claimed recovered until browser readiness is observed. Eleven non-creation-blocked collaborators have been released to review and Share their existing work, checking transcripts before any continuation so completed paid prompts are not repeated.
