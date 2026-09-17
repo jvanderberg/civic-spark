@@ -30,7 +30,15 @@ import {
   type SpriteCreateLogger,
 } from "./create-diagnostics.ts";
 import { validateSpriteToken } from "./credentials.ts";
-import { spriteOrganizationListSchema, spriteResourceSchema } from "./metadata.ts";
+import {
+  certifiesSpriteResource,
+  listWitnessesTarget,
+  resourceAgreesWithWitness,
+  type SpriteOrganizationList,
+  spriteMembershipPath,
+  spriteOrganizationListSchema,
+  spriteResourceCandidateSchema,
+} from "./metadata.ts";
 import { boundedProviderJson, classifyCreationFailure } from "./provisioning.ts";
 
 const execute = promisify(execFile);
@@ -48,12 +56,17 @@ export class SpriteClient {
   );
   private reads = new Map<string, Promise<Result<unknown>>>();
   private transfers = new CommandQueue(2);
+  private org: string | undefined;
+  private readonly usesConfiguredOrg: boolean;
   constructor(
-    private org = process.env.CIVIC_SPARK_SPRITE_ORG,
+    org?: string,
     private acquire?: (name: string, passive?: boolean) => SpriteLease,
     private request: typeof fetch = fetch,
     private createLogger: SpriteCreateLogger = logSpriteCreate,
-  ) {}
+  ) {
+    this.usesConfiguredOrg = org === undefined;
+    this.org = org ?? process.env.CIVIC_SPARK_SPRITE_ORG;
+  }
   /** Provider metadata only: no guessed hostname or browser-visible organization token. */
   async previewUrl(
     name: string,
@@ -186,6 +199,8 @@ export class SpriteClient {
     }
   }
   private provisioningEndpoint(name?: string) {
+    if (this.usesConfiguredOrg && this.org !== process.env.CIVIC_SPARK_SPRITE_ORG)
+      throw Error("Provider organization configuration changed");
     const token = validateSpriteToken(process.env.SPRITE_TOKEN, this.org);
     const base = new URL(process.env.CIVIC_SPARK_SPRITE_API_URL ?? "https://api.sprites.dev");
     if (
@@ -222,13 +237,31 @@ export class SpriteClient {
     signal?: AbortSignal,
   ) {
     const { token, url } = this.provisioningEndpoint(name);
-    const get = (target: URL) =>
-      this.request(target, {
+    const environmentOrg = process.env.CIVIC_SPARK_SPRITE_ORG;
+    const boundOrg = this.org as string;
+    const checkBinding = () => {
+      signal?.throwIfAborted();
+      const current = this.provisioningEndpoint(name);
+      if (
+        current.token !== token ||
+        current.url.href !== url.href ||
+        this.org !== boundOrg ||
+        process.env.CIVIC_SPARK_SPRITE_ORG !== environmentOrg
+      )
+        throw Error("Provider binding changed");
+    };
+    const get = async (target: URL) => {
+      checkBinding();
+      const response = await this.request(target, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
         redirect: "error",
         signal: AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])]),
       });
+      checkBinding();
+      return response;
+    };
+    let organization: SpriteOrganizationList | undefined;
     if (authenticateOrganization) {
       const response = await get(new URL("/v1/sprites?max_results=1", url));
       if (response.status !== 200) {
@@ -239,20 +272,41 @@ export class SpriteClient {
         await boundedProviderJson(response),
       );
       if (!org.success) return "unknown" as const;
+      checkBinding();
+      organization = org.data;
     }
     const response = await get(url);
     if (response.status === 404) {
       await response.body?.cancel();
-      return "missing" as const;
+      checkBinding();
+      return listWitnessesTarget(organization, name) ? ("unknown" as const) : ("missing" as const);
     }
     if (response.status !== 200) {
       await response.body?.cancel();
       return "unknown" as const;
     }
-    const result = spriteResourceSchema(name, this.org as string).safeParse(
+    const result = spriteResourceCandidateSchema(name, boundOrg).safeParse(
       await boundedProviderJson(response),
     );
-    return result.success ? ("present" as const) : ("unknown" as const);
+    checkBinding();
+    if (!result.success || !resourceAgreesWithWitness(result.data, organization))
+      return "unknown" as const;
+    if (result.data.organization !== boundOrg) {
+      if (!result.data.id) return "unknown" as const;
+      const membership = await get(new URL(spriteMembershipPath(name), url));
+      if (membership.status !== 200) {
+        await membership.body?.cancel();
+        return "unknown" as const;
+      }
+      const certified = certifiesSpriteResource(
+        await boundedProviderJson(membership),
+        result.data,
+        boundOrg,
+      );
+      checkBinding();
+      if (!certified) return "unknown" as const;
+    }
+    return "present" as const;
   }
   /** Metadata only; callers separately authorize any creation. */
   async inspectReservation(
@@ -276,6 +330,7 @@ export class SpriteClient {
     requireMissing = false,
   ): Promise<SpriteCreateResult> {
     if (!spriteNamePattern.test(name)) return fail("Invalid Civic Spark Sprite name.");
+    const environmentOrg = process.env.CIVIC_SPARK_SPRITE_ORG;
     let observedFailure: SpriteCreationFailure | null = null;
     const failure = (kind: SpriteCreationFailure): SpriteCreateResult => {
       observedFailure = kind;
@@ -312,6 +367,7 @@ export class SpriteClient {
     let lease: SpriteLease | undefined;
     let release: (() => void) | undefined;
     let dispatched = false;
+    let validatingIdentity = false;
     let diagnostic: ReturnType<typeof observeSpriteCreate> | undefined;
     let signal: AbortSignal | undefined;
     let onAbort: (() => void) | undefined;
@@ -334,7 +390,11 @@ export class SpriteClient {
       // Revalidation may await session storage; never cross a provider/credential
       // change between admission and this actual dispatch.
       const current = this.provisioningEndpoint();
-      if (current.token !== endpoint.token || current.url.href !== endpoint.url.href)
+      if (
+        current.token !== endpoint.token ||
+        current.url.href !== endpoint.url.href ||
+        process.env.CIVIC_SPARK_SPRITE_ORG !== environmentOrg
+      )
         return failure("unknown");
       // One POST, no automatic retries or fallback mutation after an uncertain response.
       const timeout = AbortSignal.timeout(120000);
@@ -370,14 +430,59 @@ export class SpriteClient {
         diagnostic.validated(false);
         return failure(classifyCreationFailure(response.status, body));
       }
-      const created = spriteResourceSchema(name, this.org as string).safeParse(body);
-      const confirmed =
+      // Preserve the existing uncertain-body outcome without accepting an aborted read.
+      if (signal.aborted && body === null) {
+        diagnostic.validated(false);
+        return failure("unknown");
+      }
+      validatingIdentity = true;
+      const boundOrg = this.org as string;
+      const checkBinding = () => {
+        signal?.throwIfAborted();
+        const current = this.provisioningEndpoint();
+        if (
+          current.token !== endpoint.token ||
+          current.url.href !== endpoint.url.href ||
+          this.org !== boundOrg ||
+          process.env.CIVIC_SPARK_SPRITE_ORG !== environmentOrg
+        )
+          throw Error("Provider binding changed");
+      };
+      checkBinding();
+      const created = spriteResourceCandidateSchema(name, boundOrg).safeParse(body);
+      let confirmed =
         (requireMissing ? response.status === 201 : [200, 201].includes(response.status)) &&
         created.success;
+      if (confirmed && created.success && created.data.organization !== boundOrg) {
+        confirmed = false;
+        if (created.data.id) {
+          const membershipSignal = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+          const membership = await this.request(new URL(spriteMembershipPath(name), endpoint.url), {
+            method: "GET",
+            headers: { Authorization: `Bearer ${endpoint.token}` },
+            redirect: "error",
+            signal: membershipSignal,
+          });
+          membershipSignal.throwIfAborted();
+          checkBinding();
+          if (membership.status === 200) {
+            confirmed = certifiesSpriteResource(
+              await boundedProviderJson(membership),
+              created.data,
+              boundOrg,
+            );
+            membershipSignal.throwIfAborted();
+            checkBinding();
+          } else await membership.body?.cancel();
+        }
+      }
+      checkBinding();
       diagnostic.validated(confirmed);
       return confirmed ? ok(name) : failure("unknown");
     } catch {
-      return failure(dispatched && !lease?.signal.aborted ? "transient" : "unknown");
+      return failure(
+        !validatingIdentity && dispatched && !lease?.signal.aborted ? "transient" : "unknown",
+      );
     } finally {
       if (signal && onAbort) signal.removeEventListener("abort", onAbort);
       diagnostic?.finish(observedFailure);

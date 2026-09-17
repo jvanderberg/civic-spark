@@ -28,10 +28,6 @@ function fixture(list: unknown, resource: unknown = null, status = 404, listStat
 
 it.each([
   ["live unrelated row", liveList],
-  [
-    "matching target and unrelated conflicting row",
-    { ...liveList, sprites: [...liveList.sprites, { name, organization: org, org_slug: org }] },
-  ],
   ["current empty list", { name: org, sprites: [] }],
   ["SDK null list with authenticated identity", { name: org, sprites: null }],
   ["legacy empty list", { sprites: [] }],
@@ -132,7 +128,18 @@ it.each([
         outcome,
       );
     await expect(f.client.inspectReservation(name, true)).resolves.toBe(outcome);
-    expect(f.request).toHaveBeenCalledTimes(4);
+    if (body && "organization" in body && body.organization === "unexplained-claim") {
+      expect(f.request).toHaveBeenCalledTimes(6);
+      const proofs = f.request.mock.calls.filter(([url]) =>
+        new URL(String(url)).searchParams.has("prefix"),
+      );
+      expect(proofs).toHaveLength(2);
+      for (const [url, options] of proofs) {
+        expect(new URL(String(url)).searchParams.get("prefix")).toBe(name);
+        expect(new URL(String(url)).searchParams.get("max_results")).toBe("2");
+        expect(options?.method).toBe("GET");
+      }
+    } else expect(f.request).toHaveBeenCalledTimes(4);
   },
 );
 

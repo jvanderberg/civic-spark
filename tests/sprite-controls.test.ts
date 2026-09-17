@@ -274,77 +274,97 @@ it("marks interrupted durable deletion retryable at restart without provider cal
   }
 });
 
-it("reopens a deleted reservation only from shared main, preserving history/identity/origin and rejecting stale deletion after recreation", async () => {
-  const f = fixture();
-  vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
-  const shared = f.service.sharedWorkspaceRepository(f.workspace.id);
-  const head = git(shared, ["rev-parse", "main"]).toString();
-  writeFileSync(join(f.service.workspacePath(f.workspace.id), "PRIVATE.txt"), "never share this");
-  writeFileSync(
-    join(f.path, "preview-origins.json"),
-    JSON.stringify({ [f.workspace.id]: "https://permanent.example.test" }),
-  );
-  const client = new SpriteClient();
-  const metadata = vi.fn<typeof fetch>(async (url) =>
-    new URL(String(url)).search
-      ? Response.json({
-          name: "fixture-org",
-          sprites: [{ name: "unrelated", organization: "unexplained-claim" }],
-        })
-      : new Response(null, { status: 404 }),
-  );
-  const inspect = vi.fn<typeof inspectRecoverySprite>((name, org, origin, token) =>
-    inspectRecoverySprite(name, org, origin, token, metadata),
-  );
-  const create = vi.spyOn(client, "create").mockResolvedValue(ok(f.name));
-  vi.spyOn(client, "files").mockResolvedValue(ok(["README.md"]));
-  const upload = vi.spyOn(client, "uploadBundle").mockImplementation(async (_name, bundle) => {
-    const path = join(f.path, "shared-rebuild");
-    git(f.path, ["clone", bundle, path]);
-    expect(git(path, ["rev-parse", "HEAD"]).toString()).toBe(head);
-    expect(git(path, ["ls-files"]).toString()).not.toContain("PRIVATE.txt");
-    return ok(Buffer.alloc(0));
-  });
-  const provisioning = new WorkspaceProvisioning(f.service, f.path, client, inspect);
-  try {
-    unwrap(await f.action("delete"));
-    const oldGeneration = f.service.runtime(f.workspace.id).generation;
-    expect(await provisioning.start(f.current())).toMatchObject({ ok: false, status: 423 });
-    unwrap(f.service.setExecution(actor, f.event.id, true));
-    expect(f.service.wakeWorkspace(actor, f.workspace.id)).toMatchObject({
-      ok: false,
-      status: 423,
+it.each(["missing", "allocated-personal"])(
+  "reopens a %s deleted reservation only from shared main, preserving history/identity/origin",
+  async (existence) => {
+    const f = fixture();
+    vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
+    const shared = f.service.sharedWorkspaceRepository(f.workspace.id);
+    const head = git(shared, ["rev-parse", "main"]).toString();
+    writeFileSync(join(f.service.workspacePath(f.workspace.id), "PRIVATE.txt"), "never share this");
+    writeFileSync(
+      join(f.path, "preview-origins.json"),
+      JSON.stringify({ [f.workspace.id]: "https://permanent.example.test" }),
+    );
+    const client = new SpriteClient();
+    const existingResource = { id: "stable-resource-id", name: f.name, organization: "personal" };
+    const metadata = vi.fn<typeof fetch>(async (url) =>
+      new URL(String(url)).searchParams.has("prefix")
+        ? Response.json({
+            name: "fixture-org",
+            sprites: [existingResource],
+            has_more: false,
+            next_continuation_token: null,
+          })
+        : new URL(String(url)).search
+          ? Response.json({
+              name: "fixture-org",
+              sprites: [{ name: "unrelated", organization: "unexplained-claim" }],
+            })
+          : existence === "allocated-personal"
+            ? Response.json(existingResource)
+            : new Response(null, { status: 404 }),
+    );
+    const inspect = vi.fn<typeof inspectRecoverySprite>((name, org, origin, token) =>
+      inspectRecoverySprite(name, org, origin, token, metadata),
+    );
+    const create = vi.spyOn(client, "create").mockResolvedValue(ok(f.name));
+    const files = vi.spyOn(client, "files").mockResolvedValue(ok(["README.md"]));
+    const exec = vi.spyOn(client, "exec").mockResolvedValue(ok(Buffer.alloc(0)));
+    if (existence === "allocated-personal")
+      files.mockResolvedValueOnce(fail("Project not initialized"));
+    const upload = vi.spyOn(client, "uploadBundle").mockImplementation(async (_name, bundle) => {
+      const path = join(f.path, "shared-rebuild");
+      git(f.path, ["clone", bundle, path]);
+      expect(git(path, ["rev-parse", "HEAD"]).toString()).toBe(head);
+      expect(git(path, ["ls-files"]).toString()).not.toContain("PRIVATE.txt");
+      return ok(Buffer.alloc(0));
     });
-    expect(create).not.toHaveBeenCalled();
-    unwrap(f.service.setExecution(actor, f.event.id, false));
-    unwrap(f.service.wakeWorkspace(actor, f.workspace.id));
-    unwrap(await provisioning.start(f.current()));
-    await provisioning.wait(f.workspace.id);
-    expect(f.current()).toMatchObject({
-      id: f.workspace.id,
-      spriteName: f.name,
-      spriteStatus: "ready",
-    });
-    expect(inspect).toHaveBeenCalledTimes(1);
-    expect(metadata.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
-      "/v1/sprites",
-      `/v1/sprites/${f.name}`,
-    ]);
-    expect(create).toHaveBeenCalledExactlyOnceWith(f.name);
-    expect(upload).toHaveBeenCalledTimes(1);
-    expect(f.service.runtime(f.workspace.id).deletion).toBeNull();
-    expect(await f.action("delete", oldGeneration)).toMatchObject({ ok: false, status: 409 });
-    expect(f.runtime.destroy).toHaveBeenCalledTimes(1);
-    expect(git(shared, ["rev-parse", "main"]).toString()).toBe(head);
-    expect(JSON.parse(readFileSync(join(f.path, "preview-origins.json"), "utf8"))).toEqual({
-      [f.workspace.id]: "https://permanent.example.test",
-    });
-  } finally {
-    await provisioning.close();
-    f.coordinator.close();
-    f.service.close();
-  }
-});
+    const provisioning = new WorkspaceProvisioning(f.service, f.path, client, inspect);
+    try {
+      unwrap(await f.action("delete"));
+      const oldGeneration = f.service.runtime(f.workspace.id).generation;
+      expect(await provisioning.start(f.current())).toMatchObject({ ok: false, status: 423 });
+      unwrap(f.service.setExecution(actor, f.event.id, true));
+      expect(f.service.wakeWorkspace(actor, f.workspace.id)).toMatchObject({
+        ok: false,
+        status: 423,
+      });
+      expect(create).not.toHaveBeenCalled();
+      unwrap(f.service.setExecution(actor, f.event.id, false));
+      unwrap(f.service.wakeWorkspace(actor, f.workspace.id));
+      unwrap(await provisioning.start(f.current()));
+      await provisioning.wait(f.workspace.id);
+      expect(f.current()).toMatchObject({
+        id: f.workspace.id,
+        spriteName: f.name,
+        spriteStatus: "ready",
+      });
+      expect(inspect).toHaveBeenCalledTimes(1);
+      expect(metadata.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+        "/v1/sprites",
+        `/v1/sprites/${f.name}`,
+        ...(existence === "allocated-personal" ? ["/v1/sprites"] : []),
+      ]);
+      if (existence === "allocated-personal") {
+        expect(create).not.toHaveBeenCalled();
+        expect(exec).toHaveBeenCalledWith(f.name, ["test", "!", "-e", "/home/sprite/project"]);
+      } else expect(create).toHaveBeenCalledExactlyOnceWith(f.name);
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(f.service.runtime(f.workspace.id).deletion).toBeNull();
+      expect(await f.action("delete", oldGeneration)).toMatchObject({ ok: false, status: 409 });
+      expect(f.runtime.destroy).toHaveBeenCalledTimes(1);
+      expect(git(shared, ["rev-parse", "main"]).toString()).toBe(head);
+      expect(JSON.parse(readFileSync(join(f.path, "preview-origins.json"), "utf8"))).toEqual({
+        [f.workspace.id]: "https://permanent.example.test",
+      });
+    } finally {
+      await provisioning.close();
+      f.coordinator.close();
+      f.service.close();
+    }
+  },
+);
 
 it("admits additional Sprites and explicit deleted-Sprite recovery without an allocation quota", async () => {
   const f = fixture();

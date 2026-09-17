@@ -5,7 +5,14 @@ import { z } from "zod";
 import { acquireWriter } from "../../../apps/server/src/deployment.ts";
 import { validatePreviewOrigin } from "../../../apps/server/src/preview-origins.ts";
 import { validateSpriteToken } from "../../sprites/src/credentials.ts";
-import { spriteOrganizationListSchema, spriteResourceSchema } from "../../sprites/src/metadata.ts";
+import {
+  certifiesSpriteResource,
+  listWitnessesTarget,
+  resourceAgreesWithWitness,
+  spriteMembershipPath,
+  spriteOrganizationListSchema,
+  spriteResourceCandidateSchema,
+} from "../../sprites/src/metadata.ts";
 import { boundedProviderJson } from "../../sprites/src/provisioning.ts";
 import { privateDirectory, syncPath, writePrivate } from "./archive.ts";
 import { installationSchema } from "./backup.ts";
@@ -107,12 +114,22 @@ export async function verifyRecoveryOrganization(
   request: RecoveryFetch = fetch,
   targetName?: string,
 ) {
+  await recoveryOrganization(org, apiOrigin, token, request, targetName);
+}
+async function recoveryOrganization(
+  org: string,
+  apiOrigin: string,
+  token: string,
+  request: RecoveryFetch,
+  targetName?: string,
+) {
   const response = await providerGet("/sprites?max_results=1", org, apiOrigin, token, request);
   if (response.status !== 200) throw new Error("Provider organization cannot be authenticated");
   const result = spriteOrganizationListSchema(org, targetName).safeParse(
     await boundedProviderJson(response),
   );
   if (!result.success) throw new Error("Provider organization mismatch or invalid metadata");
+  return result.data;
 }
 export async function inspectRecoverySprite(
   name: string,
@@ -123,8 +140,28 @@ export async function inspectRecoverySprite(
 ): Promise<"present" | "missing"> {
   if (!/^civic-spark-[a-z0-9-]{1,45}$/.test(name))
     throw new Error("Invalid recovery reservation name");
+  const configuration = [
+    process.env.SPRITE_TOKEN,
+    process.env.CIVIC_SPARK_SPRITE_ORG,
+    process.env.CIVIC_SPARK_SPRITE_API_URL,
+  ];
+  const checkBinding = () => {
+    if (
+      configuration.some(
+        (value, index) =>
+          value !==
+          [
+            process.env.SPRITE_TOKEN,
+            process.env.CIVIC_SPARK_SPRITE_ORG,
+            process.env.CIVIC_SPARK_SPRITE_API_URL,
+          ][index],
+      )
+    )
+      throw new Error("Provider configuration changed; resource existence remains unknown");
+  };
   // Revalidate organization even on a retry; a stale marker is not proof of current absence.
-  await verifyRecoveryOrganization(org, apiOrigin, token, request, name);
+  const organization = await recoveryOrganization(org, apiOrigin, token, request, name);
+  checkBinding();
   const response = await providerGet(
     `/sprites/${encodeURIComponent(name)}`,
     org,
@@ -132,12 +169,33 @@ export async function inspectRecoverySprite(
     token,
     request,
   );
-  if (response.status === 404) return "missing";
+  checkBinding();
+  if (response.status === 404) {
+    if (listWitnessesTarget(organization, name))
+      throw new Error("Provider resource existence remains unknown");
+    return "missing";
+  }
   if (response.status !== 200) throw new Error("Provider resource existence remains unknown");
-  const resource = spriteResourceSchema(name, org)
+  const resource = spriteResourceCandidateSchema(name, org)
     .extend({ id: z.string().min(1) })
     .safeParse(await boundedProviderJson(response));
-  if (!resource.success) throw new Error("Provider resource ownership mismatch");
+  checkBinding();
+  if (!resource.success || !resourceAgreesWithWitness(resource.data, organization))
+    throw new Error("Provider resource ownership mismatch");
+  if (resource.data.organization !== org) {
+    const membership = await providerGet(
+      spriteMembershipPath(name).slice(3),
+      org,
+      apiOrigin,
+      token,
+      request,
+    );
+    checkBinding();
+    const body = membership.status === 200 ? await boundedProviderJson(membership) : null;
+    checkBinding();
+    if (membership.status !== 200 || !certifiesSpriteResource(body, resource.data, org))
+      throw new Error("Provider resource ownership remains unknown");
+  }
   return "present";
 }
 
