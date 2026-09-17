@@ -49,6 +49,7 @@ import { TerminalSessions } from "./terminal.ts";
 declare module "fastify" {
   interface FastifyRequest {
     actor: Identity | null;
+    capacityBodyBytes: number;
   }
 }
 function send(reply: FastifyReply, result: Result<unknown>) {
@@ -87,6 +88,15 @@ export async function createApp(
     }
   }
   const app = Fastify({ logger: false, bodyLimit: 1500000 });
+  let incomingBodyBytes = 0;
+  app.decorateRequest("capacityBodyBytes", 0);
+  const releaseBody = (request: { capacityBodyBytes: number }) => {
+    incomingBodyBytes -= request.capacityBodyBytes;
+    request.capacityBodyBytes = 0;
+  };
+  app.addHook("onResponse", async (request) => releaseBody(request));
+  app.addHook("onRequestAbort", async (request) => releaseBody(request));
+  app.addHook("onError", async (request) => releaseBody(request));
   await app.register(websocket, { options: { maxPayload: 6 * 1024 * 1024 } });
   const allowed = (id: string) => service.executionAllowed(id).ok;
   const client: SpriteClient = new SpriteClient(undefined, (name, passive) =>
@@ -220,6 +230,16 @@ export async function createApp(
             "Server storage is nearly full or unavailable. Your request has not started; retry after the operator restores space.",
         });
       }
+      const length = Number(request.headers["content-length"]);
+      const reserved =
+        Number.isFinite(length) && length >= 0 ? length : request.routeOptions.bodyLimit;
+      if (incomingBodyBytes + reserved > 256 * 1024 * 1024)
+        return reply
+          .code(429)
+          .header("Retry-After", "2")
+          .send({ error: "File transfers are busy. Retry shortly." });
+      request.capacityBodyBytes = reserved;
+      incomingBodyBytes += reserved;
     }
   });
   app.setErrorHandler((error, _request, reply) => {

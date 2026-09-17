@@ -33,6 +33,7 @@ export class SpriteClient {
       .parse(process.env.CIVIC_SPARK_MAX_COMMANDS ?? "16"),
   );
   private reads = new Map<string, Promise<Result<unknown>>>();
+  private transfers = new CommandQueue(2);
   constructor(
     private org = process.env.CIVIC_SPARK_SPRITE_ORG,
     private acquire?: (name: string, passive?: boolean) => SpriteLease,
@@ -52,6 +53,7 @@ export class SpriteClient {
     let lease: SpriteLease | undefined;
     let closed: Promise<void> | undefined;
     let releaseCommand: (() => void) | undefined;
+    let releaseTransfer: (() => void) | undefined;
     try {
       const name = args.includes("-s")
         ? args[args.indexOf("-s") + 1]
@@ -59,6 +61,8 @@ export class SpriteClient {
           ? args.at(-1)
           : undefined;
       if (name) lease = this.acquire?.(name);
+      if (maxBuffer > 16 * 1024 * 1024)
+        releaseTransfer = await this.transfers.acquire(lease?.signal);
       releaseCommand = await this.commands.acquire(lease?.signal);
       lease?.signal.throwIfAborted();
       const pending = execute("sprite", this.args(args), {
@@ -81,6 +85,7 @@ export class SpriteClient {
       await closed;
       lease?.release();
       releaseCommand?.();
+      releaseTransfer?.();
     }
   }
   async create(name: string): Promise<Result<string>> {

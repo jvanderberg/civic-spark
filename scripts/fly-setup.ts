@@ -264,6 +264,10 @@ export function provision(input: Setup, receiptPath: string, run: Runner = runFl
   const existing = apps.find((a) => a.Name === input.app);
   if (existing && existing.Organization.Slug !== input.org)
     throw new SetupError("App belongs to a different organization");
+  if (!existing && existsSync(receiptPath))
+    throw new SetupError(
+      "The recorded app is missing. Recover the original deployment; setup will not recreate its identity automatically.",
+    );
   if (existing && !existsSync(receiptPath))
     throw new SetupError(
       "Existing app has no local setup receipt. Refusing to adopt it automatically; recover the original receipt or coordinate manual adoption.",

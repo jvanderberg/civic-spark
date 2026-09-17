@@ -1,17 +1,21 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp } from "../apps/server/src/app.ts";
+import * as deployment from "../apps/server/src/deployment.ts";
 import { acquireWriter } from "../apps/server/src/deployment.ts";
+import { WorkspaceProvisioning } from "../apps/server/src/provisioning.ts";
 import { EventService } from "../packages/domain/src/service.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import * as asyncGit from "../packages/git/src/async.ts";
 import * as jobs from "../packages/git/src/jobs.ts";
 import { git } from "../packages/git/src/repository.ts";
+import { SpriteClient } from "../packages/sprites/src/client.ts";
 import { WorkspaceFiles } from "../packages/workspace/src/files.ts";
 import { testIdentity } from "./auth-fixture.ts";
 
@@ -302,4 +306,78 @@ it("releases the management writer lock after SIGKILL", async () => {
   child.kill("SIGKILL");
   await once(child, "close");
   acquireWriter(root)();
+});
+
+it("fails storage-starved writes before starting Git and resumes after space recovery", async () => {
+  const f = await fixture();
+  const worker = vi.spyOn(jobs, "gitJob");
+  const fault = vi.spyOn(deployment, "storageHeadroom").mockImplementation(() => {
+    throw new Error("Injected ENOSPC");
+  });
+  const denied = await f.share();
+  expect(denied.statusCode).toBe(503);
+  expect(denied.headers["retry-after"]).toBe("10");
+  expect(worker).not.toHaveBeenCalled();
+  expect(f.head()).toBe(f.initial);
+  fault.mockRestore();
+  expect((await f.share()).statusCode).toBe(200);
+});
+
+it("bounds concurrent incoming bodies without allocating the declared file contents", async () => {
+  const f = await fixture();
+  await f.app.listen({ host: "127.0.0.1", port: 0 });
+  const address = f.app.server.address();
+  if (!address || typeof address === "string") throw new Error("Missing address");
+  const url = `http://127.0.0.1:${address.port}/api/workspaces/${f.workspace.id}/file`;
+  const options = {
+    method: "PUT",
+    headers: {
+      cookie: f.cookie,
+      origin: "http://127.0.0.1:4310",
+      "content-type": "application/json",
+      "content-length": String(140 * 1024 * 1024),
+    },
+  };
+  const first = request(url, options);
+  first.on("error", () => {});
+  first.write('{"path":');
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const second = request(url, options);
+    second.on("error", () => {});
+    const response = once(second, "response");
+    second.write('{"path":');
+    const [incoming] = await response;
+    expect(incoming.statusCode).toBe(429);
+    incoming.resume();
+    second.destroy();
+  } finally {
+    first.destroy();
+  }
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect((await f.share()).statusCode).toBe(200);
+});
+
+it("handles provisioning error-persistence failure without an unhandled rejection or another allocation", async () => {
+  const f = await fixture();
+  // Use the untouched owner checkout; the other checkout intentionally has private edits.
+  const workspace = f.team.workspace;
+  const client = new SpriteClient();
+  const create = vi
+    .spyOn(client, "create")
+    .mockResolvedValue({ ok: false, status: 502, error: "Uncertain provider result" });
+  const provisioning = new WorkspaceProvisioning(f.service, f.root, client);
+  const original = f.service.setSprite.bind(f.service);
+  const storage = vi.spyOn(f.service, "setSprite").mockImplementation((...args) => {
+    if (args[2] === "error") throw new Error("Injected disk full while recording provider failure");
+    return original(...args);
+  });
+  unwrap(provisioning.start(workspace));
+  await expect(provisioning.wait(workspace.id)).rejects.toThrow("disk full");
+  await provisioning.close();
+  storage.mockRestore();
+  const saved = unwrap(f.service.workspace(f.owner, workspace.id));
+  expect(saved.spriteName).toBe(`civic-spark-${workspace.id}`);
+  expect(provisioning.status(saved).spriteStatus).toBe("error");
+  expect(create).toHaveBeenCalledTimes(1);
 });

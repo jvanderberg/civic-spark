@@ -60,7 +60,11 @@ export class GitQueue {
       clearTimeout(timer);
       this.pending--;
       release();
-      if (this.tails.get(key) === tail) this.tails.delete(key);
+      // An expired waiter must not remove the ordering barrier while its
+      // predecessor still runs; subsequent work must stay behind that writer.
+      void tail.then(() => {
+        if (this.tails.get(key) === tail) this.tails.delete(key);
+      });
     }
   }
 }

@@ -108,6 +108,12 @@ it("extends only the retained volume explicitly, tolerates bounded growth, and r
   expect(() => authorizeExisting(setup, receipt, run)).toThrow("volume");
   size = 10;
   expect(() => authorizeExisting(setup, receipt, run)).toThrow("volume");
+  expect(() =>
+    provision(setup, receipt, (args) =>
+      args.slice(0, 2).join(" ") === "apps list" ? "[]" : run(args),
+    ),
+  ).toThrow("recorded app is missing");
+  expect(mutations).toHaveLength(1);
 });
 it("plans and reuses 60 additional origins beyond eight permanent retained bindings without cloud calls", () => {
   const { root, receipt } = fixture();

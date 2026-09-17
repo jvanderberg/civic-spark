@@ -177,3 +177,15 @@ A native helper for syncing while the browser is closed is a possible later exte
 The initial anonymous organizer rehearsal has been superseded. Its data remains on disk but is not assigned to authenticated users. The original Git bundle round-trip proof and provider-portability/mTLS design remain valid.
 
 Deployment setup, exact commands, constraints and validation gaps: [Fly deployment](docs/fly-deployment.md). Hosted previews require isolated HTTPS origin configuration and still await live acceptance; continuous hosted Git/mTLS, complete cross-store crash recovery and unattended-session/budget enforcement are not complete.
+
+## Capacity and recovery for 60 concurrent participants (local work)
+
+- [x] Remove the hidden total Sprite-allocation admission cap; preserve organizer participant capacity, planned budget metadata, lifecycle gates and the five-minute idle policy.
+- [x] Measure isolated 60-person polling/Share/replay baseline and target; run actual agent/terminal/private preview HTTP+WS bridges with provider transport doubles. See [evidence and limits](docs/capacity-resilience.md).
+- [x] Move costly Share preparation/validation off Node's request thread, add repository ordering and bounded worker/CLI/transfer pressure, optimize replay byte accounting, and persist/reconcile publication intents without automatic Share or history rewrite.
+- [x] Exercise revocation/pause/session loss, stale refs, failed metadata persistence, before/after-CAS restart, worker cancellation, OS writer-lock release and storage/body-pressure failures in isolated fixtures.
+- [x] Expose initial disk size, explicit native auto-extension threshold/increment/ceiling, repeatable same-volume growth/receipt drift checks and independent append-only preview origin capacity.
+- [x] Complete local mobile, Share, team-update, provisioning and workspace browser verification with screenshots and clean consoles; provider transports use isolated fixtures.
+- [ ] Root integration review and dedicated deployment acceptance; no capacity changes deployed by this workstream.
+- [ ] Root-coordinated dedicated provider/resource rehearsal: actual 60-workspace CLI/process/network limits, maximum file-transfer bursts, live volume expansion and crash recovery. Local mocks do not certify live 60-person capacity.
+- [ ] Follow up synchronous admin/team Git and whole-state JSON persistence, full-history bundle growth/seed duplication, orphan/stale-lock reclamation and general cross-store recovery; no speculative full storage rewrite in this change.
