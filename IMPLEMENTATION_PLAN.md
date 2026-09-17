@@ -2,6 +2,13 @@
 
 Current checkpoint, validation and next-session priorities: [handoff](docs/handoff.md).
 
+## Capacity and resilience for 60 concurrent participants
+
+- [ ] Remove arbitrary Sprite allocation blockers while retaining safe bounded concurrency and owner/pause isolation; address preview-origin capacity without origin reuse.
+- [ ] Expose initial disk sizing and optional bounded auto-expansion in repeatable setup.
+- [ ] Measure realistic 60-participant load, audit polling/Git/database/memory/transport/storage bottlenecks, and implement evidenced fixes.
+- [ ] Exercise crash/restart and disk-full failure/recovery using isolated fixtures; report measured limits and remaining live acceptance.
+
 ## Participant project creation
 
 - [ ] Add Projects Create project with useful event-configured brief guidance and authorized participant catalog creation without role/team/runtime side effects.
