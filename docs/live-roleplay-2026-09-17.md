@@ -31,7 +31,7 @@ Emails use roleplay-20260917-pNN@example.test. Test identity names are labeled F
 
 ## Progress
 
-Three independent Luna leads created their assigned teams, read the briefs and submitted one MVP request each through the Agent UI. No lead has Shared, no collaborator has started, and no MVP completion is claimed. Further model requests are held after the same failure affected all three runs.
+Three independent Luna leads created their assigned teams, read the briefs and submitted one MVP request each through the Agent UI. All three transcripts subsequently continued beyond the false error. Leads are reviewing previews and preparing manual Share handoffs; no collaborator has started. Further model requests are held while turn tracking is fixed.
 
 | Participant | Team | Observed result |
 |---|---|---|
@@ -58,6 +58,13 @@ Evidence: artifacts/roleplay-20260917/screenshots/p01-provider-error.png, p01-pr
 Read-only browser follow-up found both Riley and Morgan continued receiving progress after the displayed failure, without any retry. Riley advanced from 9 to 20 changes; Morgan from 10 to 20. Both transcripts continued through checks, preview startup and a local commit. This is not a verified provider outage: the UI declared failure while the underlying agent kept working.
 
 Source inspection identifies a long-running local OpenCode session.prompt HTTP request separate from the progress event stream. A failure of that local request is currently mapped to the generic provider-network error, releases the activity hold and marks the UI Ready. A loopback reproduction using Node 24.18.0 and OpenCode 1.18.31 confirmed the mechanism: the blocking prompt request failed at 303 seconds with TypeError fetch failed, caused by HeadersTimeoutError / UND_ERR_HEADERS_TIMEOUT. The session status was still busy; progress continued from 300 to 330 deltas and the fake provider finished at 332 seconds. No paid calls or live state changes were needed for this reproduction. This diagnostic fixture is separate from the prose-directed participant roleplay. A shorter 282-second blocking request succeeded, explaining why short smoke tests missed it. The async submission comparison acknowledged immediately and completed normally at 283 seconds; a beyond-timeout regression is required for the production fix. Evidence: artifacts/provider-diagnosis/{slow-turn,slow-turn-node24,async-turn}.log. No production fix or deployment is claimed yet.
+
+## Lead preview reviews
+
+- **Avery / assessment fairness:** preview opens at https://civic-spark-858930f9-d666-4633-bee6-2528faf08cd5-biglv.sprites.app/. Desktop and 360/390px review found a histogram, working year selector, peer-relative tables and visible data caveats. Repeated condo units dominate the top-over-assessed list; narrow tables require horizontal scrolling. Local commit reported: e96a5de. Manual Share authorized, outcome pending.
+- **Riley / school cycling:** preview opens at https://civic-spark-6ba5ed42-cd36-4c31-b051-762b6ed32368-biglv.sprites.app/. Review found a working map, schools, phased bikeways, crashes, attribution and usable phone layout. **Data correctness issue:** Village severity shows zero injuries/fatalities and the severity filter empties the layer, while IDOT has nonzero totals. The network summary also remains Village-specific after switching sources. Some brief overlays/gap analysis remain unimplemented; mobile legend obscures part of the map. Local commit reported: 325e170. Authorized Share as an incomplete baseline with these defects explicitly handed to reviewers, not as a fully correct demo; outcome pending.
+
+Runtime repair is assigned to a separate Luna agent in an isolated source worktree. It must preserve one prompt/session, accurate working/completion state and cancellation, with an actual pinned-runtime loopback regression exceeding five minutes. No production fix/deployment claimed yet.
 
 ## Abandoned pilot
 
