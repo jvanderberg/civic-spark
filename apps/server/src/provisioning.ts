@@ -7,13 +7,15 @@ import {
   recoveryPermission,
 } from "../../../packages/backup/src/recovery.ts";
 import type { Workspace } from "../../../packages/domain/src/access-types.ts";
+import type { WorkspaceRuntime } from "../../../packages/domain/src/lifecycle.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
 import { fail, ok, type Result, type SpritePhase } from "../../../packages/domain/src/types.ts";
-import { git } from "../../../packages/git/src/repository.ts";
+import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 
 export class WorkspaceProvisioning {
   private jobs = new Map<string, Promise<void>>();
+  private starts = new Map<string, Promise<Result<{ preparing: boolean }>>>();
   constructor(
     private service: EventService,
     private root: string,
@@ -32,12 +34,6 @@ export class WorkspaceProvisioning {
   }
   private limits() {
     return {
-      total: z.coerce
-        .number()
-        .int()
-        .min(1)
-        .max(10000)
-        .parse(process.env.CIVIC_SPARK_MAX_SPRITES ?? "100"),
       concurrent: z.coerce
         .number()
         .int()
@@ -80,24 +76,44 @@ export class WorkspaceProvisioning {
         )
       : null;
   }
-  start(workspace: Workspace): Result<{ preparing: boolean }> {
-    try {
-      return this.prepare(workspace);
-    } catch {
-      if (this.service.runtime(workspace.id).deletion)
-        this.service.setRuntime(workspace.id, { held: true, reason: "admin" });
-      return fail(
-        "Workspace preparation could not start. Check installation configuration and retry.",
-        503,
-      );
-    }
+  start(
+    workspace: Workspace,
+    authorize: () => Promise<Result<Workspace>> = async () => ok(workspace),
+  ): Promise<Result<{ preparing: boolean }>> {
+    const pending = this.starts.get(workspace.id);
+    if (pending) return pending;
+    const expected = this.service.runtime(workspace.id);
+    const started = this.prepare(workspace, authorize)
+      .catch(() => {
+        this.restoreRecoveryHold(workspace.id, expected);
+        return fail(
+          "Workspace preparation could not start. Check installation configuration and retry.",
+          503,
+        );
+      })
+      .finally(() => this.starts.delete(workspace.id));
+    this.starts.set(workspace.id, started);
+    return started;
   }
-  private prepare(workspace: Workspace): Result<{ preparing: boolean }> {
+  private restoreRecoveryHold(id: string, expected: WorkspaceRuntime) {
+    const current = this.service.runtime(id);
+    // Undo only this recovery attempt's wake, never a newer lifecycle decision.
+    if (
+      expected.deletion &&
+      current.generation === expected.generation &&
+      JSON.stringify(current.deletion) === JSON.stringify(expected.deletion)
+    )
+      this.service.setRuntime(id, { held: true, reason: "admin" });
+  }
+  private async prepare(
+    workspace: Workspace,
+    authorize: () => Promise<Result<Workspace>>,
+  ): Promise<Result<{ preparing: boolean }>> {
     const allowed = this.service.executionAllowed(workspace.id);
     if (!allowed.ok) return allowed;
+    let expected = this.service.runtime(workspace.id);
     const denied = (error: string, status: number) => {
-      if (this.service.runtime(workspace.id).deletion)
-        this.service.setRuntime(workspace.id, { held: true, reason: "admin" });
+      this.restoreRecoveryHold(workspace.id, expected);
       return fail(error, status);
     };
     let recovery: ReturnType<WorkspaceProvisioning["needsRecovery"]>;
@@ -112,23 +128,24 @@ export class WorkspaceProvisioning {
     if (workspace.spriteStatus === "ready" && !recovery) return ok({ preparing: false });
     if (this.jobs.has(workspace.id)) return ok({ preparing: true });
     const limits = this.limits();
-    if (this.jobs.size >= limits.concurrent)
+    if (new Set([...this.jobs.keys(), ...this.starts.keys()]).size >= limits.concurrent)
       return denied("Workspace preparation is busy. Retry shortly.", 429);
-    const deletion = this.service.runtime(workspace.id).deletion;
-    const needsCapacity =
-      !workspace.spriteName || (deletion?.state === "deleted" && !deletion.replacementReserved);
-    const allocated = this.service.provisioningRecords().filter((w) => {
-      const deleted = this.service.runtime(w.id).deletion;
-      return w.spriteName && (deleted?.state !== "deleted" || deleted.replacementReserved);
-    }).length;
-    if (needsCapacity && allocated >= limits.total)
-      return denied(
-        "This installation has reached its workspace limit. Contact the event admin.",
-        409,
-      );
+    const deletion = expected.deletion;
     const dir = this.service.workspacePath(workspace.id);
-    if (!recovery && git(dir, ["status", "--porcelain"]).toString().trim())
-      return denied("Share saved changes before preparing your Sprite", 409);
+    const generation = expected.generation;
+    // Reject unshared local edits before reserving any provider identity or phase.
+    // The in-memory start entry deduplicates/bounds this asynchronous preflight.
+    if (!recovery && (await gitAsync(dir, ["status", "--porcelain"])).toString().trim())
+      return fail("Share saved changes before preparing your Sprite", 409);
+    const fresh = await authorize();
+    if (!fresh.ok) return denied(fresh.error, fresh.status);
+    if (
+      fresh.value.spriteName !== workspace.spriteName ||
+      fresh.value.spriteStatus !== workspace.spriteStatus ||
+      this.service.runtime(workspace.id).generation !== generation ||
+      JSON.stringify(this.service.runtime(workspace.id).deletion) !== JSON.stringify(deletion)
+    )
+      return denied("Workspace state changed. Refresh and retry preparation.", 409);
     const name = workspace.spriteName ?? `civic-spark-${workspace.id}`;
     const bundle = join(this.root, `${workspace.id}.bundle`);
     const phase = (next: SpritePhase) => {
@@ -139,7 +156,7 @@ export class WorkspaceProvisioning {
     };
     try {
       if (deletion?.state === "deleted" && !deletion.replacementReserved)
-        this.service.setRuntime(workspace.id, {
+        expected = this.service.setRuntime(workspace.id, {
           deletion: { ...deletion, replacementReserved: true },
         });
       phase("bundling");
@@ -154,7 +171,7 @@ export class WorkspaceProvisioning {
       const client = this.client;
       try {
         if (recovery) {
-          git(this.service.sharedWorkspaceRepository(workspace.id), [
+          await gitAsync(this.service.sharedWorkspaceRepository(workspace.id), [
             "bundle",
             "create",
             bundle,
@@ -191,7 +208,7 @@ export class WorkspaceProvisioning {
             }
           }
         } else {
-          git(dir, ["bundle", "create", bundle, "--all"]);
+          await gitAsync(dir, ["bundle", "create", bundle, "--all"]);
           phase("creating");
           const resumed = workspace.spriteName ? await client.exec(name, ["true"]) : null;
           if (resumed && !resumed.ok)
@@ -239,13 +256,20 @@ export class WorkspaceProvisioning {
       }
     });
     this.jobs.set(workspace.id, job);
-    void job.finally(() => this.jobs.delete(workspace.id));
+    // Handle both paths: persistence may also fail while recording a provider error.
+    // Never leave the cleanup promise rejected and crash the management process.
+    void job.then(
+      () => this.jobs.delete(workspace.id),
+      () => this.jobs.delete(workspace.id),
+    );
     return ok({ preparing: true });
   }
   async wait(id: string) {
+    await this.starts.get(id);
     await this.jobs.get(id);
   }
   async close() {
+    await Promise.allSettled(this.starts.values());
     await Promise.allSettled(this.jobs.values());
   }
 }

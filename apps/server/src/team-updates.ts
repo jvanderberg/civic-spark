@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Identity } from "../../../packages/domain/src/access-types.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
 import type { Result } from "../../../packages/domain/src/types.ts";
-import { git } from "../../../packages/git/src/repository.ts";
+import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 import { type TeamStatus, teamUpdateSchema } from "../../../packages/workspace/src/team-git.ts";
 import type { AgentSessions } from "./agents.ts";
@@ -35,7 +35,7 @@ export function registerTeamUpdateRoutes(
   app.get<{ Params: { id: string }; Querystring: { fresh?: string } }>(
     "/api/workspaces/:id/team-status",
     async (r, reply) => {
-      const p = service.teamReference(actor(r.actor), r.params.id);
+      const p = await service.teamReferenceAsync(actor(r.actor), r.params.id);
       if (!p.ok) return send(reply, p);
       const { workspace, remote } = p.value;
       const saved = cache.get(r.params.id);
@@ -69,7 +69,7 @@ export function registerTeamUpdateRoutes(
   );
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/team-update", async (r, reply) => {
     const input = teamUpdateSchema.parse(r.body);
-    const p = service.teamReference(actor(r.actor), r.params.id, true);
+    const p = await service.teamReferenceAsync(actor(r.actor), r.params.id, true);
     if (!p.ok) return send(reply, p);
     if (p.value.remote !== input.remote)
       return reply
@@ -89,7 +89,7 @@ export function registerTeamUpdateRoutes(
     try {
       temp = mkdtempSync(join(tmpdir(), "civic-spark-team-"));
       const bundle = join(temp, "team.bundle");
-      git(p.value.repo, ["bundle", "create", bundle, "main"]);
+      await gitAsync(p.value.repo, ["bundle", "create", bundle, "main"]);
       if (statSync(bundle).size > 10 * 1024 * 1024)
         return reply
           .code(413)
@@ -101,7 +101,7 @@ export function registerTeamUpdateRoutes(
         return reply.code(409).send({ error: "Wait for the workspace to be ready." });
       const imported = await client.importTeam(workspace.spriteName, bundle, input.remote);
       if (!imported.ok) return send(reply, imported);
-      const fresh = service.teamReference(actor(r.actor), r.params.id, true);
+      const fresh = await service.teamReferenceAsync(actor(r.actor), r.params.id, true);
       if (!fresh.ok) return send(reply, fresh);
       if (fresh.value.remote !== input.remote)
         return reply

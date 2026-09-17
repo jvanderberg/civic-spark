@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import type { IncomingHttpHeaders } from "node:http";
 import { BlockList, isIP } from "node:net";
+import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
@@ -118,7 +119,20 @@ export function acquireWriter(root: string) {
 }
 
 export function storageReady(root: string) {
+  storageHeadroom(root);
   const path = join(root, ".civic-spark-health");
   writeFileSync(path, "ready", { mode: 0o600 });
   rmSync(path);
+}
+
+/** Check both persistent data and temporary/root filesystem; growth of one cannot repair the other. */
+export function storageHeadroom(root: string, incomingBytes = 0) {
+  for (const path of new Set([root, tmpdir()])) {
+    const stat = statfsSync(path);
+    const available = stat.bavail * stat.bsize;
+    if (available < 128 * 1024 * 1024 + incomingBytes * 2)
+      throw new Error(
+        "Server storage is nearly full. Ask the event operator to add space, then retry.",
+      );
+  }
 }

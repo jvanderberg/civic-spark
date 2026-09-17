@@ -104,7 +104,12 @@ it("requires explicit demo setup and no email credentials", () => {
     proxyCidrs: ["172.19.0.0/16"],
   };
   expect(setupSchema.safeParse(input).success).toBe(false);
-  const demo = setupSchema.parse({ ...input, authMode: "demo", maxSprites: 8, maxProvisioning: 2 });
+  const demo = setupSchema.parse({
+    ...input,
+    authMode: "demo",
+    previewPoolSize: 8,
+    maxProvisioning: 2,
+  });
   expect(flyConfig(demo)).toContain('CIVIC_SPARK_AUTH_MODE = "demo"');
   expect(flyConfig(demo)).not.toContain("EMAIL_PROVIDER");
   expect(

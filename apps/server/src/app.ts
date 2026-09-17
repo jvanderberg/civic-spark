@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import { fromNodeHeaders } from "better-auth/node";
-import Fastify, { type FastifyReply } from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   demoIdentitySchema,
@@ -20,9 +20,10 @@ import { EventService } from "../../../packages/domain/src/service.ts";
 import {
   createEventSchema,
   eventSettingsSchema,
+  fail,
   type Result,
 } from "../../../packages/domain/src/types.ts";
-import { git } from "../../../packages/git/src/repository.ts";
+import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 import {
   SpriteLifecycle,
@@ -36,7 +37,7 @@ import {
 import { registerAdminRoutes } from "./admin.ts";
 import { AgentSessions } from "./agents.ts";
 import { createAuthentication } from "./auth.ts";
-import { clientAddress, storageReady, validateDeployment } from "./deployment.ts";
+import { clientAddress, storageHeadroom, storageReady, validateDeployment } from "./deployment.ts";
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
 import { WorkspaceLifecycle } from "./lifecycle.ts";
@@ -49,6 +50,7 @@ import { TerminalSessions } from "./terminal.ts";
 declare module "fastify" {
   interface FastifyRequest {
     actor: Identity | null;
+    capacityBodyBytes: number;
   }
 }
 function send(reply: FastifyReply, result: Result<unknown>) {
@@ -87,6 +89,15 @@ export async function createApp(
     }
   }
   const app = Fastify({ logger: false, bodyLimit: 1500000 });
+  let incomingBodyBytes = 0;
+  app.decorateRequest("capacityBodyBytes", 0);
+  const releaseBody = (request: { capacityBodyBytes: number }) => {
+    incomingBodyBytes -= request.capacityBodyBytes;
+    request.capacityBodyBytes = 0;
+  };
+  app.addHook("onResponse", async (request) => releaseBody(request));
+  app.addHook("onRequestAbort", async (request) => releaseBody(request));
+  app.addHook("onError", async (request) => releaseBody(request));
   await app.register(websocket, { options: { maxPayload: 6 * 1024 * 1024 } });
   const allowed = (id: string) => service.executionAllowed(id).ok;
   const client: SpriteClient = new SpriteClient(undefined, (name, passive) =>
@@ -210,6 +221,27 @@ export async function createApp(
     request.actor = parsed.success ? parsed.data : null;
     if (request.url.split("?")[0] !== "/api/session" && !request.actor)
       return reply.code(401).send({ error: "Verify your email to sign in and continue" });
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+      try {
+        const declared = Number(request.headers["content-length"] ?? 0);
+        storageHeadroom(root, Number.isFinite(declared) && declared > 0 ? declared : 0);
+      } catch {
+        return reply.code(503).header("Retry-After", "10").send({
+          error:
+            "Server storage is nearly full or unavailable. Your request has not started; retry after the operator restores space.",
+        });
+      }
+      const length = Number(request.headers["content-length"]);
+      const reserved =
+        Number.isFinite(length) && length >= 0 ? length : request.routeOptions.bodyLimit;
+      if (incomingBodyBytes + reserved > 256 * 1024 * 1024)
+        return reply
+          .code(429)
+          .header("Retry-After", "2")
+          .send({ error: "File transfers are busy. Retry shortly." });
+      request.capacityBodyBytes = reserved;
+      incomingBodyBytes += reserved;
+    }
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof z.ZodError)
@@ -369,6 +401,19 @@ export async function createApp(
     const input = lifecycleActionSchema.parse(r.body);
     return send(reply, await lifecycle.change(actor(r.actor), r.params.id, input.action));
   });
+  const authorizePreparation = async (r: FastifyRequest, id: string) => {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(r.headers),
+      query: { disableCookieCache: true },
+    });
+    if (
+      !session ||
+      (!unverifiedSignIn && !session.user.emailVerified) ||
+      (prototype ? session.user.email.toLowerCase() : session.user.id) !== actor(r.actor).id
+    )
+      return fail("Sign in again before preparing your workspace.", 401);
+    return service.workspace(actor(r.actor), id, true);
+  };
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/wake", async (r, reply) => {
     if (!spritesEnabled)
       return reply
@@ -376,7 +421,9 @@ export async function createApp(
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
     const workspace = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!workspace.ok) return send(reply, workspace);
-    const prepared = provisioning.start(workspace.value);
+    const prepared = await provisioning.start(workspace.value, () =>
+      authorizePreparation(r, r.params.id),
+    );
     if (!prepared.ok) return send(reply, prepared);
     if (prepared.value.preparing) return reply.code(202).send(prepared.value);
     if (workspace.value.spriteName && workspace.value.spriteStatus === "ready") {
@@ -698,6 +745,14 @@ export async function createApp(
         revision: z.string().regex(/^[a-f0-9]{64}$/),
       })
       .parse(r.body);
+    const sessionActive = async () => {
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(r.headers),
+        query: { disableCookieCache: true },
+      });
+      if (!session || (!unverifiedSignIn && !session.user.emailVerified)) return false;
+      return (prototype ? session.user.email.toLowerCase() : session.user.id) === actor(r.actor).id;
+    };
     const p = service.workspace(actor(r.actor), r.params.id, true);
     if (!p.ok) return send(reply, p);
     if (sharing.has(r.params.id))
@@ -710,7 +765,13 @@ export async function createApp(
       if (p.value.spriteStatus === "local")
         return send(
           reply,
-          service.shareLocal(actor(r.actor), r.params.id, input.title, input.revision),
+          await service.shareLocalAsync(
+            actor(r.actor),
+            r.params.id,
+            input.title,
+            input.revision,
+            sessionActive,
+          ),
         );
       if (p.value.spriteStatus !== "ready" || !p.value.spriteName)
         return reply
@@ -728,19 +789,20 @@ export async function createApp(
         throw new Error("Invalid contribution transfer");
       writeFileSync(bundle, data, { mode: 0o600 });
       const repo = join(temp, "repository.git");
-      git(temp, ["init", "--bare", repo]);
-      git(repo, ["bundle", "verify", bundle]);
-      git(repo, ["fetch", bundle, `${result.value.ref}:refs/heads/incoming`]);
-      const commit = git(repo, ["rev-parse", "refs/heads/incoming"]).toString().trim();
+      await gitAsync(temp, ["init", "--bare", repo]);
+      await gitAsync(repo, ["bundle", "verify", bundle]);
+      await gitAsync(repo, ["fetch", bundle, `${result.value.ref}:refs/heads/incoming`]);
+      const commit = (await gitAsync(repo, ["rev-parse", "refs/heads/incoming"])).toString().trim();
       if (commit !== result.value.commit || result.value.revision !== input.revision)
         throw new Error("Invalid contribution transfer");
-      const published = service.publishSnapshot(
+      const published = await service.publishSnapshotAsync(
         actor(r.actor),
         r.params.id,
         input.title,
         input.revision,
         repo,
         commit,
+        sessionActive,
       );
       if (!published.ok) return send(reply, published);
       const acknowledged = await client.acknowledgeShare(
@@ -803,7 +865,9 @@ export async function createApp(
         .send({ error: "Cloud workspaces are not enabled for this installation yet" });
     const waking = service.wakeWorkspace(actor(r.actor), r.params.id);
     if (!waking.ok) return send(reply, waking);
-    const result = provisioning.start(workspace.value);
+    const result = await provisioning.start(workspace.value, () =>
+      authorizePreparation(r, r.params.id),
+    );
     if (result.ok) return reply.code(result.value.preparing ? 202 : 200).send(result.value);
     return send(reply, result);
   });

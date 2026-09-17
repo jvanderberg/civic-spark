@@ -373,8 +373,17 @@ it("round-trips secret punctuation and rejects malformed envelopes without parti
 it("recovers durable provisioning, sessions and Git after restart without automatic cloud work", async () => {
   vi.stubEnv("CIVIC_SPARK_MAX_SPRITES", "1");
   const root = mkdtempSync(join(tmpdir(), "civic-spark-restart-"));
-  const create = vi.spyOn(SpriteClient.prototype, "create");
-  const exec = vi.spyOn(SpriteClient.prototype, "exec");
+  const create = vi
+    .spyOn(SpriteClient.prototype, "create")
+    .mockResolvedValue({ ok: true, value: "fixture" });
+  const exec = vi
+    .spyOn(SpriteClient.prototype, "exec")
+    .mockResolvedValue({ ok: true, value: Buffer.alloc(0) });
+  vi.spyOn(SpriteClient.prototype, "uploadBundle").mockResolvedValue({
+    ok: true,
+    value: Buffer.alloc(0),
+  });
+  vi.spyOn(SpriteClient.prototype, "files").mockResolvedValue({ ok: true, value: ["README.md"] });
   let current = await createApp(root, true, "http://127.0.0.1:4310", undefined, "email");
   try {
     const owner = await testIdentity(current.authentication, "Restart Owner");
@@ -426,9 +435,8 @@ it("recovers durable provisioning, sessions and Git after restart without automa
       url: `/api/workspaces/${second.value.workspace.id}/sprite`,
       headers,
     });
-    expect(limit.statusCode).toBe(409);
-    expect(limit.body).toContain("workspace limit");
-    expect(create).not.toHaveBeenCalled();
+    expect(limit.statusCode).toBe(202);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
     expect(exec).not.toHaveBeenCalled();
   } finally {
     await current.app.close();

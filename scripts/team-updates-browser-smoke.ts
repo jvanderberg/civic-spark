@@ -131,6 +131,7 @@ try {
     await page.screenshot({ path: join(artifacts, `team-updates-${theme}.png`) });
   }
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
   const box = await page.getByRole("region", { name: "Team updates", exact: true }).boundingBox();
   assert(box && box.x >= 0 && box.x + box.width <= 390);
   await page.screenshot({ path: join(artifacts, "team-updates-mobile.png") });
@@ -146,6 +147,7 @@ try {
   await top.click();
   await page.getByText("Your workspace includes the latest team commits.").waitFor();
   await page.getByRole("button", { name: "Later", exact: true }).click();
+  await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
   await page.getByRole("button", { name: "Changes", exact: true }).click();
   await page.getByText("Local commits are ready to push.").waitFor();
   await page.getByLabel("Commit message", { exact: true }).fill("Share merged team work");

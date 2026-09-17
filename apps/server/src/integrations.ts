@@ -17,7 +17,7 @@ import { z } from "zod";
 import type { Identity } from "../../../packages/domain/src/access-types.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
 import type { Result } from "../../../packages/domain/src/types.ts";
-import { git } from "../../../packages/git/src/repository.ts";
+import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 import { type PreviewTransportFactory, WorkspacePreviews } from "./preview.ts";
 
@@ -263,18 +263,18 @@ export class WorkspaceIntegrations {
     return this.previews.open(id, workspace.spriteName, status.port, authorized);
   }
   private async fetched(id: string, owner: Identity) {
-    const team = unwrap(this.service.teamReference(owner, id, true));
+    const team = unwrap(await this.service.teamReferenceAsync(owner, id, true));
     if (team.workspace.spriteStatus !== "ready" || !team.workspace.spriteName)
       throw new Error("Agent publishing needs a running Sprite.");
     const sprite = team.workspace.spriteName;
     const temp = mkdtempSync(join(tmpdir(), "civic-spark-agent-fetch-"));
     try {
       const bundle = join(temp, "team.bundle");
-      git(team.repo, ["bundle", "create", bundle, "main"]);
+      await gitAsync(team.repo, ["bundle", "create", bundle, "main"]);
       if (statSync(bundle).size > 10 * 1024 * 1024)
         throw new Error("Compressed team update exceeds 10 MiB.");
       unwrap(await this.client.importTeam(sprite, bundle, team.remote));
-      const fresh = unwrap(this.service.teamReference(owner, id, true));
+      const fresh = unwrap(await this.service.teamReferenceAsync(owner, id, true));
       if (fresh.remote !== team.remote)
         throw new Error("Team changed during fetch. Retry publication.");
       return { sprite, remote: team.remote };
@@ -349,14 +349,22 @@ export class WorkspaceIntegrations {
         throw new Error("Invalid Git bundle");
       writeFileSync(bundle, data, { mode: 0o600 });
       const repo = join(temp, "repository.git");
-      git(temp, ["init", "--bare", repo]);
-      git(repo, ["bundle", "verify", bundle]);
-      git(repo, ["fetch", bundle, `${exported.ref}:refs/heads/incoming`]);
-      const commit = git(repo, ["rev-parse", "refs/heads/incoming"]).toString().trim();
+      await gitAsync(temp, ["init", "--bare", repo]);
+      await gitAsync(repo, ["bundle", "verify", bundle]);
+      await gitAsync(repo, ["fetch", bundle, `${exported.ref}:refs/heads/incoming`]);
+      const commit = (await gitAsync(repo, ["rev-parse", "refs/heads/incoming"])).toString().trim();
       if (commit !== exported.commit || !(await authorized()))
         throw new Error("Git publication changed or access ended.");
       unwrap(
-        this.service.publishSnapshot(owner, id, exported.title, exported.revision, repo, commit),
+        await this.service.publishSnapshotAsync(
+          owner,
+          id,
+          exported.title,
+          exported.revision,
+          repo,
+          commit,
+          authorized,
+        ),
       );
       const acknowledged = await this.client.acknowledgeShare(sprite, exported.revision, commit);
       rmSync(this.path(id), { force: true });

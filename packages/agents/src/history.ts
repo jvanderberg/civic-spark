@@ -12,6 +12,15 @@ const retainedTypes = new Set([
   "done",
   "error",
 ]);
+const encodedSizes = new WeakMap<AgentEvent, number>();
+const encoder = new TextEncoder();
+function encodedSize(event: AgentEvent) {
+  const cached = encodedSizes.get(event);
+  if (cached !== undefined) return cached;
+  const size = encoder.encode(JSON.stringify(event)).byteLength;
+  encodedSizes.set(event, size);
+  return size;
+}
 export function retainEvent(events: AgentEvent[], event: AgentEvent) {
   if (!retainedTypes.has(event.type)) return;
   // Runtime connection chatter is current state, not part of the conversation.
@@ -33,11 +42,14 @@ export function retainEvent(events: AgentEvent[], event: AgentEvent) {
       next.text = `${events[existing]?.text ?? ""}${next.text}`.slice(-200000);
     events[existing] = next;
   } else events.push(next);
-  while (
-    events.length > historyLimit ||
-    new TextEncoder().encode(JSON.stringify(events)).byteLength > historyByteLimit
-  )
-    events.shift();
+  // Each retained event is replaced, never mutated. Size new deltas once rather
+  // than serializing up to 10 MiB of unchanged transcript on every token.
+  let bytes = 2 + Math.max(0, events.length - 1) + events.reduce((n, e) => n + encodedSize(e), 0);
+  while (events.length > historyLimit || bytes > historyByteLimit) {
+    const removed = events.shift();
+    if (!removed) break;
+    bytes -= encodedSize(removed) + (events.length ? 1 : 0);
+  }
 }
 export class AgentReplay {
   readonly events: AgentEvent[] = [];
