@@ -18,3 +18,11 @@ Final evidence:
 Validation setup/fixes: installed committed root/runtime lockfile dependencies in this isolated checkout; updated stale-generation expectation; fixed a browser fixture teardown to await pending route callbacks. Final mobile run used a fixed production build, with no overlapping rebuild.
 
 No live provider/cloud calls, deletion, deployment, push, paid models, participant data modifications or additional agents. Root runtime24de48f and active participants untouched. Root owns integration/live acceptance on a dedicated test resource. Physical iOS/Android device behavior remains unverified. See handoff.md for implementation details and prototype durability limits.
+
+## Narrow follow-up: dispatch authorization races
+
+Both reviewer P2 fixes implemented atop 1d1029a; separate local follow-up commit (SHA supplied in final response and followup-commit.txt). Delete takes a synchronous admin/current-generation guard, called after complete metadata preflight before accepting absence and immediately at DELETE dispatch. Authorized dispatched deletion still confirms absence and cleans up after later admin revocation; newer generations remain protected. Reset recovery now passes the existing revalidate callback into queued creation.
+
+New injected-fetch/real-adapter regressions cover named GET delayed across admin revocation/new generation for present and missing resources, revocation after authorized DELETE, and real owner Connect queued across database session removal, membership removal, generation change and event pause. Initial focused suite: 41/41 PASS. Running these tests against previous production code reproduced seven failures; the missing/newer-generation case was already protected. Changes restored afterward. Exact persisted reset defaults are verified by a strengthened interrupted-cleanup/restart test with every optional intent seeded.
+
+Both TypeScript checks and changed-source Biome PASS. Related five-file focused run PASS: 170 tests (sprite-controls, sprite-provisioning, missing-workspace-recovery, initial-provisioning-retry, lifecycle-races). Logs: followup-focused.log, followup-regression-before.log, followup-typecheck.log, followup-lint.log. No broad check/browser duplication while root validation runs. No UI changes, live/provider calls, cloud/deploy/push, paid models or participant mutations.

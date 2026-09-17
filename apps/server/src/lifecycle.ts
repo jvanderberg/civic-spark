@@ -202,11 +202,13 @@ export class WorkspaceLifecycle {
         await Promise.all([...entries].map((op) => op.done));
       }
       await this.drain(id);
-      // No await separates this authorization check and the provider action.
-      if (!this.service.isAdmin(actor, eventId) || !current())
-        throw new Error("Authorization changed");
+      const revalidate = () => {
+        if (!this.service.isAdmin(actor, eventId) || !current())
+          throw new Error("Authorization changed");
+      };
+      revalidate();
       if (action === "delete") {
-        await this.provider.destroy(held.value.spriteName as string);
+        await this.provider.destroy(held.value.spriteName as string, revalidate);
         const deletion = this.service.runtime(id).deletion;
         if (!current()) throw new Error("Workspace changed during deletion");
         if (!deletion) throw new Error("Missing deletion state");

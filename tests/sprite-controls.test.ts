@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp } from "../apps/server/src/app.ts";
 import { WorkspaceLifecycle } from "../apps/server/src/lifecycle.ts";
@@ -75,6 +76,7 @@ function fixture() {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
@@ -108,7 +110,7 @@ it.each([204, 404])("confirms exact authenticated absence after DELETE %s", asyn
     "https://api.example",
     request,
     managed,
-  ).destroy("civic-spark-fixture");
+  ).destroy("civic-spark-fixture", vi.fn());
   expect(request.mock.calls.map(([, options]) => options?.method)).toEqual([
     "GET",
     "GET",
@@ -125,6 +127,7 @@ it.each([200, 202, 401, 403, 429, 500, 503])(
     await expect(
       new SpriteLifecycle("fixture-org/id/token/value", "https://api.example", request).destroy(
         "civic-spark-fixture",
+        vi.fn(),
       ),
     ).rejects.toThrow(`(${status})`);
   },
@@ -136,6 +139,7 @@ it.each(["present", "auth", "network"] as const)(
     await expect(
       new SpriteLifecycle("fixture-org/id/token/value", "https://api.example", request).destroy(
         "civic-spark-fixture",
+        vi.fn(),
       ),
     ).rejects.toThrow();
   },
@@ -151,9 +155,9 @@ it("accepts already absent resources only after authenticated exact404 and rejec
         : Response.json({ id: "wrong", name: "civic-spark-other", organization: "fixture-org" }),
   );
   const adapter = new SpriteLifecycle("fixture-org/id/token/value", "https://api.example", request);
-  await adapter.destroy("civic-spark-fixture");
+  await adapter.destroy("civic-spark-fixture", vi.fn());
   missing = false;
-  await expect(adapter.destroy("civic-spark-fixture")).rejects.toThrow();
+  await expect(adapter.destroy("civic-spark-fixture", vi.fn())).rejects.toThrow();
   expect(request.mock.calls.every(([, options]) => options?.method === "GET")).toBe(true);
 });
 it("estimates one continuously-up amount with documented average resources and setup overrides", () => {
@@ -226,7 +230,10 @@ it("scopes individual HTTP actions to event admins and exactly one reservation, 
     expect(
       (await post({}, { action: "delete", generation: service.runtime(own.id).generation })).json(),
     ).toEqual({ failures: 0 });
-    expect(runtime.destroy).toHaveBeenCalledExactlyOnceWith(`civic-spark-${own.id}`);
+    expect(runtime.destroy).toHaveBeenCalledExactlyOnceWith(
+      `civic-spark-${own.id}`,
+      expect.any(Function),
+    );
     expect(service.runtime(own.id).reset).toBeDefined();
     expect(service.provisioningRecords().find((w) => w.id === own.id)?.spriteName).toBeNull();
     expect(
@@ -414,7 +421,12 @@ it.each(["missing", "allocated-personal"])(
           "-lc",
           "test ! -e /home/sprite/project && test ! -L /home/sprite/project",
         ]);
-      } else expect(create).toHaveBeenCalledExactlyOnceWith(replacementName);
+      } else
+        expect(create).toHaveBeenCalledExactlyOnceWith(
+          replacementName,
+          expect.any(Function),
+          false,
+        );
       expect(upload).toHaveBeenCalledTimes(1);
       expect(f.service.runtime(f.workspace.id).deletion).toBeNull();
       expect(await f.action("delete", oldGeneration)).toMatchObject({ ok: false, status: 409 });
@@ -737,9 +749,10 @@ it("clears only the confirmed generation metadata and resumes interrupted cleanu
   const client = new SpriteClient();
   const binding = client.provisioningBinding();
   if (!binding) throw Error("Fixture binding");
-  // Include obsolete checkout repair and old restore evidence, including a stale name.
+  // Seed every optional intent as well as obsolete checkout and restore evidence.
   f.service.setRuntime(f.workspace.id, {
     projectRepair: { ...binding, name: f.name },
+    reset: { name: f.name, org: "fixture-org", apiOrigin: "https://api.sprites.dev" },
     stopError: "obsolete",
     stoppedAt: new Date().toISOString(),
     lastUsedAt: new Date().toISOString(),
@@ -779,6 +792,15 @@ it("clears only the confirmed generation metadata and resumes interrupted cleanu
   expect(f.service.wakeWorkspace(actor, f.workspace.id)).toMatchObject({ ok: false, status: 423 });
   expect(unwrap(f.service.spriteInventory(actor, f.event.id))[0]?.spriteName).toBe(f.name);
   finish.mockRestore();
+  const receipt = f.service.runtime(f.workspace.id).deletion;
+  if (!receipt?.reset) throw Error("Missing confirmed receipt");
+  f.service.setRuntime(f.workspace.id, {
+    deletion: {
+      ...receipt,
+      replacementReserved: true,
+      ownerRecovery: { name: f.name, account: "a".repeat(64) },
+    },
+  });
   f.coordinator.close();
   f.service.close();
   const service = new EventService(f.path);
@@ -786,7 +808,13 @@ it("clears only the confirmed generation metadata and resumes interrupted cleanu
   const coordinator = new WorkspaceLifecycle(service, runtime, vi.fn(), () => false);
   try {
     const state = service.runtime(f.workspace.id);
-    expect(state).toMatchObject({
+    expect(state).toEqual({
+      reason: "admin",
+      reset: {
+        name: receipt.reset.nextName,
+        org: "fixture-org",
+        apiOrigin: "https://api.sprites.dev",
+      },
       generation: 2,
       held: true,
       deletion: null,
@@ -972,3 +1000,251 @@ it("drains a complete HTTP operation before provider deletion, including delayed
     await app.close();
   }
 });
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+it.each([
+  ["revoked", "present"],
+  ["generation", "present"],
+  ["revoked", "missing"],
+  ["generation", "missing"],
+] as const)(
+  "holds original metadata when %s during delayed named GET (%s)",
+  async (change, existence) => {
+    const f = fixture();
+    f.coordinator.close();
+    const second = { ...actor, id: "second-admin", email: "second@example.test" };
+    f.service.portal(second, true);
+    unwrap(f.service.addAdmin(actor, f.event.id, second.email));
+    const arrived = deferred();
+    const gate = deferred();
+    const request = vi.fn<typeof fetch>(async (url, init) => {
+      if (init?.method === "DELETE") return new Response(null, { status: 204 });
+      if (new URL(String(url)).search) return Response.json({ name: "fixture-org", sprites: [] });
+      arrived.resolve();
+      await gate.promise;
+      return existence === "missing"
+        ? new Response(null, { status: 404 })
+        : Response.json({ id: "original-resource", name: f.name, organization: "fixture-org" });
+    });
+    const adapter = new SpriteLifecycle(
+      "fixture-org/id/token/value",
+      "https://api.sprites.dev",
+      request,
+    );
+    const coordinator = new WorkspaceLifecycle(f.service, adapter, vi.fn(), () => false);
+    const original = f.service.provisioningRecords().find((w) => w.id === f.workspace.id);
+    const reservation = f.service.initialCreation(f.workspace.id);
+    let pending: ReturnType<typeof coordinator.changeSprite> | undefined;
+    try {
+      pending = coordinator.changeSprite(actor, f.event.id, f.workspace.id, "delete", 0);
+      await arrived.promise;
+      if (change === "revoked") unwrap(f.service.setRole(second, f.event.id, actor.id, "member"));
+      else
+        f.service.setRuntime(f.workspace.id, {
+          generation: f.service.runtime(f.workspace.id).generation + 1,
+        });
+      const newer = f.service.runtime(f.workspace.id);
+      gate.resolve();
+      expect(unwrap(await pending).failures).toBe(1);
+      expect(request.mock.calls.map(([, init]) => init?.method)).toEqual(["GET", "GET"]);
+      expect(f.service.provisioningRecords().find((w) => w.id === f.workspace.id)).toEqual(
+        original,
+      );
+      expect(f.service.initialCreation(f.workspace.id)).toEqual(reservation);
+      expect(f.service.runtime(f.workspace.id)).toMatchObject({ held: true });
+      expect(f.service.runtime(f.workspace.id).reset).toBeUndefined();
+      if (change === "generation") expect(f.service.runtime(f.workspace.id)).toEqual(newer);
+      else expect(f.service.runtime(f.workspace.id).deletion?.state).toBe("failed");
+    } finally {
+      gate.resolve();
+      await pending;
+      coordinator.close();
+      f.service.close();
+    }
+  },
+);
+
+it("finishes confirmed deletion after admin revocation following authorized DELETE dispatch", async () => {
+  const f = fixture();
+  f.coordinator.close();
+  const second = { ...actor, id: "second-admin", email: "second@example.test" };
+  f.service.portal(second, true);
+  unwrap(f.service.addAdmin(actor, f.event.id, second.email));
+  const dispatched = deferred();
+  const gate = deferred();
+  let deleted = false;
+  const request = vi.fn<typeof fetch>(async (url, init) => {
+    if (init?.method === "DELETE") {
+      expect(f.service.isAdmin(actor, f.event.id)).toBe(true);
+      deleted = true;
+      dispatched.resolve();
+      await gate.promise;
+      return new Response(null, { status: 204 });
+    }
+    if (new URL(String(url)).search) return Response.json({ name: "fixture-org", sprites: [] });
+    return deleted
+      ? new Response(null, { status: 404 })
+      : Response.json({ id: "original-resource", name: f.name, organization: "fixture-org" });
+  });
+  const coordinator = new WorkspaceLifecycle(
+    f.service,
+    new SpriteLifecycle("fixture-org/id/token/value", "https://api.sprites.dev", request),
+    vi.fn(),
+    () => false,
+  );
+  let pending: ReturnType<typeof coordinator.changeSprite> | undefined;
+  try {
+    pending = coordinator.changeSprite(actor, f.event.id, f.workspace.id, "delete", 0);
+    await dispatched.promise;
+    unwrap(f.service.setRole(second, f.event.id, actor.id, "member"));
+    gate.resolve();
+    expect(unwrap(await pending).failures).toBe(0);
+    expect(request.mock.calls.map(([, init]) => init?.method)).toEqual([
+      "GET",
+      "GET",
+      "DELETE",
+      "GET",
+      "GET",
+    ]);
+    expect(f.current().spriteName).toBeNull();
+    expect(f.service.runtime(f.workspace.id)).toMatchObject({
+      held: true,
+      deletion: null,
+      reset: { org: "fixture-org" },
+    });
+  } finally {
+    gate.resolve();
+    await pending;
+    coordinator.close();
+    f.service.close();
+  }
+});
+
+it.each(["session", "membership", "generation", "paused"] as const)(
+  "revalidates owner reset at actual queue admission after %s changes, without POST",
+  async (change) => {
+    vi.stubEnv("CIVIC_SPARK_MAX_COMMANDS", "1");
+    vi.stubEnv("CIVIC_SPARK_SPRITE_ORG", "fixture-org");
+    vi.stubEnv("SPRITE_TOKEN", "fixture-org/id/token/value");
+    const arrived = deferred();
+    const gate = deferred();
+    const queued = deferred();
+    const request = vi.fn<typeof fetch>(async (url, init) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname.endsWith("/civic-spark-queue-blocker")) {
+        arrived.resolve();
+        await gate.promise;
+        return new Response(null, { status: 404 });
+      }
+      if (init?.method === "POST")
+        return Response.json({ name: JSON.parse(String(init.body)).name });
+      if (parsed.search) return Response.json({ name: "fixture-org", sprites: [] });
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", request);
+    const originalCreate = SpriteClient.prototype.create;
+    // Observe the actual adapter and occupy its own real queue with an injected GET.
+    vi.spyOn(SpriteClient.prototype, "create").mockImplementation(async function (
+      this: SpriteClient,
+      name,
+      guard,
+      requireMissing,
+    ) {
+      const blocker = this.inspectReservation("civic-spark-queue-blocker");
+      await arrived.promise;
+      const creating = originalCreate.call(this, name, guard, requireMissing);
+      queued.resolve();
+      try {
+        return await creating;
+      } finally {
+        await blocker;
+      }
+    });
+    const upload = vi
+      .spyOn(SpriteClient.prototype, "uploadBundle")
+      .mockResolvedValue(fail("Test forbids remote upload"));
+    vi.spyOn(SpriteClient.prototype, "command").mockRejectedValue(
+      Error("Test forbids live commands"),
+    );
+    const path = root();
+    const origin = "http://127.0.0.1:4310";
+    const { app, service, authentication } = await createApp(
+      path,
+      true,
+      origin,
+      undefined,
+      "email",
+      undefined,
+      provider(),
+    );
+    try {
+      const owner = await testIdentity(authentication, "Queue reset owner");
+      if (!owner.actor) throw Error("Missing fixture owner");
+      const event = unwrap(service.createEvent(owner.actor, input));
+      const team = unwrap(
+        service.createTeam(owner.actor, {
+          eventId: event.id,
+          name: "Queue reset team",
+          projectId: "data-starter",
+        }),
+      );
+      const id = team.workspace.id;
+      const oldName = `civic-spark-${id}`;
+      unwrap(service.setSprite(id, oldName, "ready", null));
+      const headers = { cookie: owner.cookie, origin };
+      const deleted = await app.inject({
+        method: "POST",
+        url: `/api/events/${event.id}/sprites/${id}`,
+        headers,
+        payload: { action: "delete", generation: 0 },
+      });
+      expect(deleted.json()).toEqual({ failures: 0 });
+      const reset = service.runtime(id).reset;
+      expect(reset).toBeDefined();
+      const connected = await app.inject({
+        method: "POST",
+        url: `/api/workspaces/${id}/sprite`,
+        headers,
+        payload: { action: "connect-new", generation: service.runtime(id).generation },
+      });
+      expect(connected.statusCode).toBe(202);
+      await queued.promise;
+      expect(request.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+      if (change === "session") {
+        const db = new DatabaseSync(join(path, "auth.sqlite"));
+        db.prepare("DELETE FROM session WHERE userId=?").run(owner.actor.id);
+        db.close();
+      } else if (change === "membership")
+        unwrap(service.removeMember(owner.actor, team.team.id, owner.actor.id));
+      else if (change === "paused") unwrap(service.setExecution(owner.actor, event.id, true));
+      else service.setRuntime(id, { generation: service.runtime(id).generation + 1 });
+      const newerRuntime = service.runtime(id);
+      const newerRecord = service.provisioningRecords().find((w) => w.id === id);
+      gate.resolve();
+      // Server close drains the real provisioning job, including its failure handler.
+      await app.close();
+      expect(request.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+      expect(upload).not.toHaveBeenCalled();
+      const reopened = new EventService(path);
+      try {
+        expect(reopened.runtime(id).reset).toEqual(reset);
+        if (change === "generation") {
+          expect(reopened.runtime(id)).toEqual(newerRuntime);
+          expect(reopened.provisioningRecords().find((w) => w.id === id)).toEqual(newerRecord);
+        }
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      gate.resolve();
+      await app.close();
+    }
+  },
+);

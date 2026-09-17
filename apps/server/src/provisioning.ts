@@ -470,7 +470,7 @@ export class WorkspaceProvisioning {
             if (existence === "missing" && projectRepair)
               throw Error("The reserved workspace is missing. No replacement was created.");
             if (existence === "missing") {
-              await create();
+              await create(revalidate);
               phase("checkout");
               const uploaded = await client.uploadBundle(name, bundle, revalidate);
               if (!uploaded.ok) throw new Error(uploaded.error);

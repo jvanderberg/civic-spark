@@ -10,7 +10,9 @@ import { SpriteClient } from "./client.ts";
 export interface SpriteLifecycleProvider {
   inspect(name: string): Promise<SpriteObservation>;
   stop(name: string): Promise<void>;
-  destroy(name: string): Promise<void>;
+  // The synchronous guard must throw on revoked access or a stale generation.
+  // Run after preflight, including absence, and immediately before destructive dispatch.
+  destroy(name: string, beforeDispatch: () => void): Promise<void>;
 }
 const nameSchema = z.string().regex(/^civic-spark-[a-z0-9-]{1,45}$/);
 const dateSchema = z.iso.datetime({ offset: true }).nullish();
@@ -73,9 +75,10 @@ export class SpriteLifecycle implements SpriteLifecycleProvider {
     )
       throw new Error("Sprite API must use an HTTPS origin (loopback HTTP is allowed for tests).");
   }
-  private async api(name: string, suffix = "", method = "GET") {
+  private async api(name: string, suffix = "", method = "GET", beforeDispatch?: () => void) {
     nameSchema.parse(name);
     if (!this.token) throw new Error("Sprite lifecycle credentials are not configured.");
+    beforeDispatch?.();
     const response = await this.request(
       `${this.baseURL.replace(/\/$/, "")}/v1/sprites/${encodeURIComponent(name)}${suffix}`,
       {
@@ -150,15 +153,18 @@ export class SpriteLifecycle implements SpriteLifecycleProvider {
       };
     }
   }
-  async destroy(name: string) {
+  async destroy(name: string, beforeDispatch: () => void) {
     // Documented permanent delete: 204 complete; 404 already absent. Every other
     // response is uncertain and must keep the durable deletion gate in place.
     const org = process.env.CIVIC_SPARK_SPRITE_ORG ?? "";
     const token = this.token ?? "";
     const inspect = () => inspectRecoverySprite(name, org, this.baseURL, token, this.request);
     // Authenticate the organization and exact resource before any destructive call.
-    if ((await inspect()) === "missing") return;
-    await this.api(name, "", "DELETE");
+    const existence = await inspect();
+    // Absence also authorizes local retirement; recheck after every preflight await.
+    beforeDispatch();
+    if (existence === "missing") return;
+    await this.api(name, "", "DELETE", beforeDispatch);
     // A DELETE acknowledgement alone is insufficient to retire local identity.
     if ((await inspect()) !== "missing")
       throw new Error(

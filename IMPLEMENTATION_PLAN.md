@@ -5,6 +5,7 @@
 - [x] Retire old runtime identity/reservations/recovery/connection metadata after confirmation, reconcile interrupted local cleanup, and gate fresh-name shared-only preparation on explicit owner connect and event execution state.
 - [x] Extend full-request/relay drains and stale-generation protections; retain accounts, memberships, catalog, shared Git, historical preview tombstones and unrelated workspaces.
 - [x] Full check passed 647 tests/68 files (2 opt-in suites skipped), lint/types/build; complete mobile and lifecycle/provisioning/connection browser checks passed, with inspected screenshots and no unexpected console errors. Evidence: artifacts/sprite-delete-reset.
+- [x] Follow-up guards Delete after all metadata awaits (including confirmed absence) and reset creation after queue admission; real adapter/queue regressions cover revoked admin/session/membership, newer generation, event pause and post-dispatch cleanup. Reset defaults verified through interrupted-cleanup restart.
 - [ ] Root integration and dedicated test-resource live acceptance. No provider/cloud calls, deployment, publication or live participant modifications in this workstream.
 
 ## Absent project checkout repair — local, pending integration
