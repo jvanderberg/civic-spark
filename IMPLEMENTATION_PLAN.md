@@ -9,7 +9,7 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Guard deferred agent/terminal input against disconnect, lifecycle changes and revocation after asynchronous authorization.
 - [x] Preserve the five-minute idle default; passive agent/terminal connections do not keep resources awake.
 - [x] Complete local combined/mobile/specialized browser validation and bounded review; prepare local commit for root integration.
-- [ ] Root integration and deployment; no publication or deployment in this workstream.
+- [x] Root integration/deployment `82e3769`; live source/data/health checks and dedicated saved-key owner/anonymous check passed, no model calls.
 
 ## Agent screenshots
 

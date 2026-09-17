@@ -1,3 +1,11 @@
+# Persistent connections LIVE — September 16, 2026
+
+Runtime `82e3769` is deployed at https://civic-spark.fly.dev and pushed to main (source `6eaff20`). Agent and Terminal remain lazy until first activation, then their connection/retry ownership is independent of view visibility. Tab/menu changes no longer reset retry budgets, bypass backoff/denial, or abandon hidden reconnect/preparation. Explicit terminal Disconnect remains explicit; five-minute idle and pause/revocation behavior are unchanged. No-key workspaces wait for key entry before preparing an agent; native saved keys are detected automatically through an owner-only names-only check.
+
+The integrated runtime/test tree matches the reviewed agent commit exactly. Validation: 296 tests / 54 files, full mobile, connections/agent/terminal/workspace/environment browser suites, and clean deployment context147 passed. Root inspected phone/short image drafts and terminal screenshots. Four allocations were idle before rollout. Live source hashes, health200, all16 project hashes, participant reservation, original Machine/volume/receipt and CLI ownership passed. Dedicated test owner saved-key detection returned200 with only an empty provider list and Cache-Control:no-store; anonymous401. No agent prepare or paid model requests, participant content changes or role changes. Evidence: live ignored artifacts/connections-deploy/{verification,credentials}.json.
+
+The initial cause of the user's live transport disconnect has not been captured. Baseline reproduction established visibility-driven retry churn, not healthy-tab unmounting; this release fixes those demonstrated defects. Portal navigation out of the workspace still unmounts browser views; physical-device behavior remains unverified. First live backup remains pending its coordinated maintenance window.
+
 # Persistent workspace connections — local work, September 16, 2026
 
 Based on `fa6d68e`; live runtime `49cdda9` is untouched. Root `d393aafd` retains integration, push and deployment ownership. This workstream makes a local commit only and uses isolated fixtures; no cloud/provider/participant requests or paid inference.
