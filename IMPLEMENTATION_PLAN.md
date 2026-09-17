@@ -218,4 +218,5 @@ Deployment setup, exact commands, constraints and validation gaps: [Fly deployme
 - [x] Replace the inference-length synchronous prompt with a single bounded async submission; use pinned native message IDs and correlate the current user message, final assistant and fresh idle status before releasing Working/Tasks.
 - [x] Reconcile missing/stalled SSE and uncertain ACKs without resubmitting inference; Stop drains delayed acceptance through a subsequent native abort and idle check. Distinguish provider failures from local runtime transport loss.
 - [x] Complete final local runner/browser/context checks and the opt-in Node 24.18.0 / OpenCode 1.18.31 loopback turn beyond 300 seconds, including Tasks renewal; see [evidence and limits](docs/opencode-turns.md).
-- [ ] Root review, integration and separately authorized deployment/live acceptance. No participant resources or paid inference used by this workstream.
+- [x] Correct independent-review findings: recover durable current-answer text without duplicate streaming/replay, and validate message/status evidence before terminal hold release; actual-runner regressions added.
+- [ ] Reviewer reread, root integration and separately authorized deployment/live acceptance. No participant resources or paid inference used by this workstream.

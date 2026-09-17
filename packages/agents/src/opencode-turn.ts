@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { z } from "zod";
 
 // Match the pinned runtime's ascending message ID format and sort order:
 // https://github.com/anomalyco/opencode/blob/v1.18.31/packages/opencode/src/id/id.ts
@@ -33,6 +34,78 @@ export type OpenCodeTurnEvent = {
 };
 
 export type OpenCodeTurnRecord = { info: OpenCodeTurnMessage };
+// Validate every record/entry before using any of a control response as evidence.
+// Unused native fields are allowed; consumed identity, terminal and text fields
+// must match the pinned API shapes rather than just an array/object container.
+const identity = z.string().min(1);
+const messageFields = {
+  id: identity,
+  sessionID: identity,
+  time: z.object({ created: z.number().optional(), completed: z.number().optional() }).optional(),
+};
+const messageSchema = z.discriminatedUnion("role", [
+  z.object({ ...messageFields, role: z.literal("user") }),
+  z.object({
+    ...messageFields,
+    role: z.literal("assistant"),
+    parentID: identity,
+    finish: z.string().optional(),
+    cost: z.number().optional(),
+    error: z.object({ name: identity }).passthrough().optional(),
+  }),
+]);
+const partFields = { id: identity, sessionID: identity, messageID: identity };
+const partSchema = z.discriminatedUnion("type", [
+  z.object({ ...partFields, type: z.literal("text"), text: z.string() }),
+  z.object({
+    ...partFields,
+    type: z.enum([
+      "subtask",
+      "reasoning",
+      "file",
+      "tool",
+      "step-start",
+      "step-finish",
+      "snapshot",
+      "patch",
+      "agent",
+      "retry",
+      "compaction",
+    ]),
+  }),
+]);
+const recordsSchema = z.array(z.object({ info: messageSchema, parts: z.array(partSchema) }));
+const statusMapSchema = z.record(
+  identity,
+  z.discriminatedUnion("type", [
+    z.object({ type: z.literal("idle") }),
+    z.object({ type: z.literal("busy") }),
+    z.object({
+      type: z.literal("retry"),
+      attempt: z.number(),
+      message: z.string(),
+      next: z.number(),
+    }),
+  ]),
+);
+export function parseOpenCodeMessages(value: unknown, sessionID: string) {
+  const result = recordsSchema.safeParse(value);
+  if (
+    !result.success ||
+    result.data.some(
+      ({ info, parts }) =>
+        info.sessionID !== sessionID ||
+        parts.some((part) => part.sessionID !== sessionID || part.messageID !== info.id),
+    )
+  )
+    return undefined;
+  return result.data;
+}
+export function parseOpenCodeStatus(value: unknown) {
+  const result = statusMapSchema.safeParse(value);
+  return result.success ? result.data : undefined;
+}
+
 export type OpenCodeTurnOutcome =
   | { outcome: "success"; cost?: number }
   | { outcome: "failed"; error: unknown }
@@ -79,6 +152,43 @@ export class OpenCodeTurnTracker {
   private stopConfirmed = false;
   private authoritativeIdle = false;
   private terminal: OpenCodeTurnOutcome | undefined;
+  private textParts = new Map<string, { text: string; recovered: boolean }>();
+  private snapshotsOnly = false;
+
+  preferTextSnapshots() {
+    this.snapshotsOnly = true;
+  }
+
+  streamText(partID: string, delta: string) {
+    const part = this.textParts.get(partID) ?? { text: "", recovered: false };
+    if (this.snapshotsOnly || part.recovered) return "";
+    part.text += delta;
+    this.textParts.set(partID, part);
+    return delta;
+  }
+
+  recoverText(
+    records: NonNullable<ReturnType<typeof parseOpenCodeMessages>>,
+    emit: (id: string, text: string) => void,
+  ) {
+    for (const { info, parts } of records) {
+      if (info.role !== "assistant" || info.parentID !== this.userMessageID) continue;
+      for (const source of parts) {
+        if (source.type !== "text") continue;
+        const part = this.textParts.get(source.id) ?? { text: "", recovered: false };
+        if (part.text.startsWith(source.text)) continue; // Snapshot can lag live deltas.
+        if (!source.text.startsWith(part.text)) return false; // Not append-only evidence.
+        const suffix = source.text.slice(part.text.length);
+        part.text = source.text;
+        // A durable snapshot can be ahead of queued SSE deltas. Once it fills
+        // a gap, use snapshots for this part so later deltas cannot duplicate it.
+        part.recovered = true;
+        this.textParts.set(source.id, part);
+        emit(source.id, suffix);
+      }
+    }
+    return true;
+  }
 
   readonly sessionID: string;
   readonly userMessageID: string;
@@ -156,6 +266,7 @@ export class OpenCodeTurnTracker {
     messages: OpenCodeTurnRecord[] | undefined,
     authoritativeStatus = false,
   ) {
+    if (messages) this.assistantComplete = false;
     for (const message of messages ?? []) this.observeMessage(message.info);
     if (status) this.observeStatus(status.type, authoritativeStatus);
     else if (authoritativeStatus) this.observeStatus("idle", true);
@@ -185,8 +296,8 @@ export class OpenCodeTurnTracker {
       this.authoritativeIdle = false;
     }
     if (message.error) this.providerError = message.error;
-    if (isFinished(message)) {
-      this.assistantComplete = true;
+    this.assistantComplete = isFinished(message);
+    if (this.assistantComplete) {
       this.assistantCost = message.cost;
     }
   }

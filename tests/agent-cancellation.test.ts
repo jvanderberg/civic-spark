@@ -58,7 +58,7 @@ it.each(["claude", "opencode"] as const)(
           invoked();
           const user = {id:messageID,sessionID,role:'user'};
           const reply = {id:'assistant',sessionID,role:'assistant',parentID:messageID,finish:'stop'};
-          records.push({info:user},{info:reply});
+          records.push({info:user,parts:[]},{info:reply,parts:[]});
           push({type:'message.updated',properties:{sessionID,info:user}});
           push({type:'message.updated',properties:{sessionID,info:reply}});
           push({type:'session.status',properties:{sessionID,status:{type:'idle'}}});

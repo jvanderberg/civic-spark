@@ -33,6 +33,7 @@ async function fixture() {
     busy = false;
     res.end("true");
   };
+  let readMessages: ((response: ServerResponse) => void) | undefined;
   let readStatus: ((response: ServerResponse) => void) | undefined;
   const tasks = createServer((req, res) => {
     req.resume();
@@ -69,6 +70,7 @@ async function fixture() {
           ),
         );
     }
+    if (path.endsWith("/message") && readMessages) return readMessages(res);
     if (path.endsWith("/message"))
       return res
         .writeHead(messagesFail ? 503 : 200)
@@ -125,14 +127,19 @@ async function fixture() {
           JSON.stringify(pathToFileURL(resolve(`packages/agents/src/${name}.ts`)).href),
       ),
   );
-  const child = spawn(process.execPath, ["--experimental-strip-types", entry], { stdio: "pipe" });
+  let child = spawn(process.execPath, ["--experimental-strip-types", entry], { stdio: "pipe" });
   const events: AgentEvent[] = [];
   let diagnostics = "";
   child.stderr.on("data", (chunk) => {
     diagnostics += chunk.toString();
   });
-  const reader = createInterface({ input: child.stdout });
+  let reader = createInterface({ input: child.stdout });
   reader.on("line", (line) => events.push(JSON.parse(line)));
+  const stopChild = async () => {
+    child.kill();
+    await new Promise<void>((done) => child.once("close", () => done()));
+    reader.close();
+  };
   const wait = (predicate: () => boolean, timeout = 8000) =>
     vi.waitFor(() => expect(predicate(), diagnostics).toBe(true), { timeout, interval: 20 });
   const send = (body: object) => child.stdin.write(`${JSON.stringify(body)}\n`);
@@ -182,6 +189,9 @@ async function fixture() {
     set abort(value: typeof abort) {
       abort = value;
     },
+    set readMessages(value: typeof readMessages) {
+      readMessages = value;
+    },
     set readStatus(value: typeof readStatus) {
       readStatus = value;
     },
@@ -202,10 +212,19 @@ async function fixture() {
       api.closeAllConnections();
       await new Promise<void>((done) => api.close(() => done()));
     },
+    async restart() {
+      await stopChild();
+      events.length = 0;
+      child = spawn(process.execPath, ["--experimental-strip-types", entry], { stdio: "pipe" });
+      child.stderr.on("data", (chunk) => {
+        diagnostics += chunk.toString();
+      });
+      reader = createInterface({ input: child.stdout });
+      reader.on("line", (line) => events.push(JSON.parse(line)));
+      await wait(() => events.some((event) => event.type === "ready"));
+    },
     async close() {
-      child.kill();
-      await new Promise<void>((done) => child.once("close", () => done()));
-      reader.close();
+      await stopChild();
       api.closeAllConnections();
       await new Promise<void>((done) => api.close(() => done()));
       await new Promise<void>((done) => tasks.close(() => done()));
@@ -493,3 +512,163 @@ it("retains images, question replies, bypass permissions and the next explicit t
     await f.close();
   }
 }, 12000);
+
+it.each(["zero SSE", "streamed prefix"])(
+  "recovers durable text after %s exactly once before Done and on actual runner restart",
+  async (mode) => {
+    const f = await fixture();
+    const answer = "A complete answer recovered from the native runtime.";
+    const partID = "answer-part";
+    const prefix = "A complete ";
+    try {
+      f.prompt = (res, body) => {
+        f.user(String(body.messageID));
+        res.writeHead(204).end();
+      };
+      f.begin();
+      await f.wait(() => f.records.length === 1 && f.streams.size > 0);
+      const nativeID = String(f.records[0]?.info.id);
+      if (mode === "streamed prefix") {
+        f.emit("message.part.delta", {
+          sessionID: f.sessionID,
+          messageID: "assistant-2",
+          partID,
+          field: "text",
+          delta: prefix,
+        });
+        await f.wait(() => f.events.some((event) => event.type === "text"));
+      }
+      // These valid but unrelated parts must never be added to the current answer.
+      f.assistant("earlier-user");
+      f.records[1]?.parts.push({
+        type: "text",
+        id: "old-part",
+        sessionID: f.sessionID,
+        messageID: "assistant-1",
+        text: "Old answer",
+      });
+      f.assistant(nativeID);
+      f.records[2]?.parts.push({
+        type: "text",
+        id: partID,
+        sessionID: f.sessionID,
+        messageID: "assistant-2",
+        text: answer,
+      });
+      // Recover during busy, then deliver the queued SSE suffix: never duplicate it.
+      await f.wait(
+        () =>
+          f.events
+            .filter((event) => event.type === "text")
+            .map((event) => event.text)
+            .join("") === answer,
+      );
+      expect(f.deletes).toBe(0);
+      f.emit("message.part.delta", {
+        sessionID: f.sessionID,
+        messageID: "assistant-2",
+        partID,
+        field: "text",
+        delta: answer.slice(mode === "streamed prefix" ? prefix.length : 0),
+      });
+      await new Promise((done) => setTimeout(done, 1200));
+      f.busy = false;
+      await f.wait(() => f.events.some((event) => event.type === "done"));
+      const texts = f.events.filter((event) => event.type === "text");
+      expect(texts.map((event) => event.text).join("")).toBe(answer);
+      expect(texts.every((event) => event.id === partID)).toBe(true);
+      expect(f.events.findLastIndex((event) => event.type === "text")).toBeLessThan(
+        f.events.findIndex((event) => event.type === "done"),
+      );
+      expect(f.events.find((event) => event.type === "done")?.outcome).toBe("success");
+      expect(f.deletes).toBe(1);
+      await f.restart();
+      expect(f.events.filter((event) => event.type === "text")).toEqual([
+        expect.objectContaining({ id: partID, text: answer, replayed: true }),
+      ]);
+      expect(f.requests.filter((request) => request.path.endsWith("prompt_async"))).toHaveLength(1);
+    } finally {
+      await f.close();
+    }
+  },
+  14000,
+);
+
+it.each([
+  { name: "error object", status: { error: "malformed status map" } },
+  { name: "null session entry", status: { "retained-session": null } },
+  { name: "invalid session type", status: { "retained-session": { type: "complete" } } },
+  { name: "malformed unrelated entry", status: { other: null } },
+])(
+  "retains Tasks on HTTP200 status $name until valid busy then idle",
+  async ({ status }) => {
+    const f = await fixture();
+    try {
+      f.prompt = (res, body) => {
+        f.user(String(body.messageID));
+        res.writeHead(204).end();
+      };
+      f.readStatus = (res) => res.end(JSON.stringify(status));
+      f.begin();
+      await f.wait(() => f.records.length === 1);
+      f.assistant("11111111-1111-4111-8111-111111111111");
+      await new Promise((done) => setTimeout(done, 1500));
+      expect(f.deletes).toBe(0);
+      expect(f.events.some((event) => event.type === "done" || event.type === "error")).toBe(false);
+      f.readStatus = undefined;
+      await new Promise((done) => setTimeout(done, 1200));
+      expect(f.deletes).toBe(0);
+      f.busy = false;
+      await f.wait(() => f.events.some((event) => event.type === "done"));
+      expect(f.deletes).toBe(1);
+      expect(f.events.find((event) => event.type === "done")?.outcome).toBe("success");
+      expect(f.requests.filter((request) => request.path.endsWith("prompt_async"))).toHaveLength(1);
+    } finally {
+      await f.close();
+    }
+  },
+  12000,
+);
+
+it.each([
+  null,
+  {},
+  { info: null },
+  {
+    info: { id: "x", role: "assistant", sessionID: "retained-session", parentID: "x" },
+    parts: [null],
+  },
+])(
+  "retains Tasks on malformed HTTP200 message record %j even with SSE completion and idle",
+  async (malformed) => {
+    const f = await fixture();
+    try {
+      f.prompt = (res, body) => {
+        f.user(String(body.messageID));
+        res.writeHead(204).end();
+      };
+      f.readMessages = (res) => res.end(JSON.stringify([malformed]));
+      f.begin();
+      await f.wait(() => f.records.length === 1 && f.streams.size > 0);
+      f.assistant("11111111-1111-4111-8111-111111111111");
+      f.emit("message.updated", { info: f.records[0]?.info });
+      f.emit("message.updated", { info: f.records[1]?.info });
+      f.busy = false;
+      await new Promise((done) => setTimeout(done, 1500));
+      expect(f.deletes).toBe(0);
+      expect(f.events.some((event) => event.type === "done" || event.type === "error")).toBe(false);
+      f.busy = true;
+      f.readMessages = undefined;
+      await new Promise((done) => setTimeout(done, 1200));
+      expect(f.deletes).toBe(0);
+      f.busy = false;
+      await f.wait(() => f.events.some((event) => event.type === "done"));
+      expect(f.deletes).toBe(1);
+      expect(f.events.find((event) => event.type === "done")?.outcome).toBe("success");
+      expect(f.requests.filter((request) => request.path.endsWith("prompt_async"))).toHaveLength(1);
+    } finally {
+      await f.close();
+    }
+  },
+  12000,
+);

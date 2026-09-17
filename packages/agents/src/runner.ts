@@ -20,6 +20,8 @@ import {
   type OpenCodeTurnOutcome,
   OpenCodeTurnTracker,
   openCodeMessageID,
+  parseOpenCodeMessages,
+  parseOpenCodeStatus,
 } from "./opencode-turn.ts";
 import {
   type AgentEvent,
@@ -205,14 +207,25 @@ async function startOpen() {
   open = client;
   void (async () => {
     while (open === client) {
-      const events = await client.event.subscribe({}, { signal: eventsAbort.signal });
+      const events = await client.event.subscribe(
+        {},
+        {
+          signal: eventsAbort.signal,
+          onSseError: () => activeOpenTurn?.tracker.preferTextSnapshots(),
+        },
+      );
       for await (const event of events.stream) {
         if (open !== client) return;
         const props = event.properties;
         if ("sessionID" in props && props.sessionID !== state.opencode) continue;
         activeOpenTurn?.tracker.observe(event as OpenCodeTurnEvent);
-        if (event.type === "message.part.delta" && event.properties.field === "text")
-          emit("text", event.properties.delta, { id: event.properties.partID });
+        if (event.type === "message.part.delta" && event.properties.field === "text") {
+          const text = activeOpenTurn?.tracker.streamText(
+            event.properties.partID,
+            event.properties.delta,
+          );
+          if (text) emit("text", text, { id: event.properties.partID });
+        }
         if (event.type === "message.part.updated" && event.properties.part.type === "tool")
           emit("tool", event.properties.part.tool, {
             id: event.properties.part.id,
@@ -242,6 +255,7 @@ async function startOpen() {
       }
       // The SDK retries errors, but clean EOF ends its iterator. Reattach to
       // the same runtime; periodic reconciliation covers missing terminal events.
+      activeOpenTurn?.tracker.preferTextSnapshots();
       if (open === client) await pause(1000);
     }
   })().catch(() => {
@@ -273,10 +287,14 @@ async function reconcileOpenCodeTurn(
         (value) => ({ value }),
         (error: unknown) => ({ error }),
       );
-    const reliableMessages = "value" in messages && Array.isArray(messages.value.data);
-    if (reliableMessages && "value" in messages) {
-      tracker.reconcile(undefined, messages.value.data);
-    }
+    const records =
+      "value" in messages
+        ? parseOpenCodeMessages(messages.value.data, tracker.sessionID)
+        : undefined;
+    const reliableMessages =
+      records !== undefined &&
+      tracker.recoverText(records, (id, text) => emit("text", text, { id }));
+    if (reliableMessages) tracker.reconcile(undefined, records);
     if (tracker.hasCurrentUser) tracker.markAccepted();
     if (tracker.isStopRequested && tracker.hasCurrentUser) {
       // A pre-acceptance abort is insufficient. Abort again after observing
@@ -293,10 +311,9 @@ async function reconcileOpenCodeTurn(
       (value) => ({ value }),
       (error: unknown) => ({ error }),
     );
-    const data = "value" in status ? status.value.data : undefined;
-    const reliableStatus =
-      data !== undefined && data !== null && typeof data === "object" && !Array.isArray(data);
-    if (reliableStatus && revision === tracker.eventRevision) {
+    const data = "value" in status ? parseOpenCodeStatus(status.value.data) : undefined;
+    const reliableStatus = data !== undefined;
+    if (reliableMessages && reliableStatus && revision === tracker.eventRevision) {
       // OpenCode omits idle sessions from a successful status map.
       tracker.reconcile(data[tracker.sessionID], undefined, true);
     }

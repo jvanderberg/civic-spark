@@ -37,10 +37,13 @@ it.runIf(Boolean(process.env.CIVIC_SPARK_LONG_TURN))(
     );
     let inferenceRequests = 0;
     let inferenceStartedAt = 0;
+    let providerText = "";
+    const trace: { event: string; at: number }[] = [];
     let holds = 0;
     let releases = 0;
     const tasks = createServer((request, response) => {
       request.resume();
+      trace.push({ event: `tasks-${request.method}`, at: Date.now() });
       if (request.method === "PUT") holds++;
       if (request.method === "DELETE") releases++;
       response.writeHead(204).end();
@@ -64,14 +67,20 @@ it.runIf(Boolean(process.env.CIVIC_SPARK_LONG_TURN))(
       }
       inferenceRequests++;
       inferenceStartedAt = Date.now();
+      trace.push({ event: "inference-start", at: inferenceStartedAt });
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.flushHeaders();
       const chunk = (delta: Record<string, string>, finish: string | null = null) =>
         `data: ${JSON.stringify({ id: "local", object: "chat.completion.chunk", created: 1, model: "z-ai/glm-5.3-flash", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
-      response.write(chunk({ role: "assistant", content: "Loopback long-turn proof. " }));
-      const heartbeat = setInterval(() => response.write(chunk({ content: "." })), 1000);
+      providerText = "Loopback long-turn proof. ";
+      response.write(chunk({ role: "assistant", content: providerText }));
+      const heartbeat = setInterval(() => {
+        providerText += ".";
+        response.write(chunk({ content: "." }));
+      }, 1000);
       const finish = setTimeout(() => {
         clearInterval(heartbeat);
+        trace.push({ event: "inference-finish", at: Date.now() });
         response.end(`${chunk({}, "stop")}data: [DONE]\n\n`);
       }, 305000);
       response.on("close", () => {
@@ -203,7 +212,31 @@ it.runIf(Boolean(process.env.CIVIC_SPARK_LONG_TURN))(
       expect(
         events.filter((event) => event.type === "user" && event.id === requestID),
       ).toHaveLength(1);
-      expect(events.some((event) => event.type === "text")).toBe(true);
+      const deliveredText = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      expect(deliveredText).toBe(providerText);
+      mkdirSync(resolve("artifacts"), { recursive: true });
+      writeFileSync(
+        resolve("artifacts/followup-long-turn-result.json"),
+        JSON.stringify(
+          {
+            node: process.version,
+            opencode: "1.18.31",
+            inferenceRequests,
+            holds,
+            releases,
+            elapsedMs: Date.now() - inferenceStartedAt,
+            outcome: done?.outcome,
+            providerText,
+            deliveredText,
+            trace,
+          },
+          null,
+          2,
+        ),
+      );
       expect(events.filter((event) => event.type === "error")).toHaveLength(0);
     } finally {
       child.kill();
