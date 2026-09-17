@@ -65,7 +65,7 @@ export class WorkspaceEngine {
     for (const event of this.state.events) {
       for (const row of event.schedule) row.id ??= randomUUID();
     }
-    if (row) this.save();
+    if (row && JSON.stringify(this.state) !== String(row.body)) this.save();
   }
   close() {
     this.db.close();

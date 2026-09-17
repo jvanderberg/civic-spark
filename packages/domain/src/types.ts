@@ -50,13 +50,20 @@ const eventDetailsFields = {
 export const eventSettingsSchema = createEventSchema
   .omit({ templateId: true })
   .extend({
-    ...eventDetailsFields,
+    projectBriefGuidance: eventDetailsFields.projectBriefGuidance.removeDefault(),
+    description: eventDetailsFields.description.removeDefault(),
+    address: eventDetailsFields.address.removeDefault(),
+    startTime: eventDetailsFields.startTime.removeDefault(),
+    endTime: eventDetailsFields.endTime.removeDefault(),
     expectedRevision: z.number().int().nonnegative(),
     schedule: z
       .array(
         z.object({
           id: z.string().min(1).max(100),
-          time: z.string().trim().min(1).max(100),
+          time: z
+            .string()
+            .max(100)
+            .refine((value) => value.trim().length > 0, "Enter a schedule time or label"),
           title: z.string().trim().min(1).max(200),
           description: z.string().max(5000),
         }),
@@ -81,14 +88,15 @@ export const eventSettingsSchema = createEventSchema
           message: "Schedule entries must have unique IDs",
         });
       ids.add(row.id);
-      if (clockTime.safeParse(row.time).success) {
-        if (previous > row.time)
+      const time = row.time.trim();
+      if (clockTime.safeParse(time).success) {
+        if (previous > time)
           ctx.addIssue({
             code: "custom",
             path: ["schedule", index, "time"],
             message: "Put timed schedule entries in chronological order",
           });
-        previous = row.time;
+        previous = time;
       }
     }
   });

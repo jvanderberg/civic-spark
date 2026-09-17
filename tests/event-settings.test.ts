@@ -74,7 +74,18 @@ it("authorizes event settings, rejects stale/invalid writes, preserves unrelated
         file.revision,
       ),
     );
+    value(
+      service.createTeam(member.actor, {
+        eventId: event.id,
+        name: "Second membership, same person",
+        projectId: "business",
+      }),
+    );
     const before = service.portal(admin.actor, false);
+    const otherBefore = service
+      .portal(otherAdmin.actor, false)
+      .events.find((e) => e.id === other.id);
+    const projectsBefore = structuredClone(event.projects);
     const history = value(service.repositoryHistory(admin.actor, team.team.id, {}));
     const payload = {
       ...settings(event),
@@ -129,12 +140,15 @@ it("authorizes event settings, rejects stale/invalid writes, preserves unrelated
       { ...payload, budget: -1 },
       { ...payload, projectBriefGuidance: "x".repeat(5001) },
       { ...payload, expectedRevision: undefined },
+      { ...payload, projectBriefGuidance: undefined },
+      { ...payload, description: undefined },
       { ...payload, schedule: [{ ...payload.schedule[0], time: "25:99" }] },
+      { ...payload, schedule: [{ ...payload.schedule[0], time: " 25:99 " }] },
       { ...payload, schedule: [payload.schedule[0], payload.schedule[0]] },
       {
         ...payload,
         schedule: [
-          { ...payload.schedule[0], time: "10:00" },
+          { ...payload.schedule[0], time: " 10:00 " },
           { ...payload.schedule[1], time: "09:00" },
         ],
       },
@@ -162,10 +176,10 @@ it("authorizes event settings, rejects stale/invalid writes, preserves unrelated
     const after = service.portal(admin.actor, false);
     for (const key of ["teams", "members", "myWorkspaces", "contributions", "activity"] as const)
       expect(after[key]).toEqual(before[key]);
-    expect(after.events.find((e) => e.id === other.id)).toEqual(
-      before.events.find((e) => e.id === other.id),
+    expect(service.portal(otherAdmin.actor, false).events.find((e) => e.id === other.id)).toEqual(
+      otherBefore,
     );
-    expect(after.events.find((e) => e.id === event.id)?.projects).toEqual(event.projects);
+    expect(after.events.find((e) => e.id === event.id)?.projects).toEqual(projectsBefore);
     expect(value(service.repositoryHistory(admin.actor, team.team.id, {}))).toEqual(history);
     expect(value(service.readFile(member.actor, team.workspace.id, "PROJECT.md")).content).toBe(
       "Private unsent changes",
@@ -238,7 +252,7 @@ it("adds stable legacy row IDs and neutral defaults without replacing stored eve
     ])
       delete legacy[field];
     legacy.schedule = [
-      { time: "9:30 AM – noon", title: "Original title", description: "Original details" },
+      { time: " 9:30 AM – noon ", title: "Original title", description: "Original details" },
       {
         time: "After lunch",
         title: "Original second title",

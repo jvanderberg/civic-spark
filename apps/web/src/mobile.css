@@ -577,3 +577,42 @@ body:has(.workspace-screen) {
     overflow-y: auto;
   }
 }
+
+.schedule-editor-row {
+  min-width: 0;
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+}
+.event-description {
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.project-editor-fields .schedule-editor-row textarea {
+  height: 6rem;
+}
+.timeline-item time {
+  width: clamp(4.5rem, 15vw, 7rem);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.timeline-item > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.timeline-item p {
+  white-space: pre-wrap;
+  max-height: 16rem;
+  overflow: auto;
+}
+.event-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.event-meta svg {
+  flex-shrink: 0;
+}

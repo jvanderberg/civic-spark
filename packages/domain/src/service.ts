@@ -407,9 +407,10 @@ export class EventService {
     if (!event) return fail("Event not found", 404);
     // Legacy freeform labels are editable. Reject newly introduced malformed clock labels.
     for (const row of parsed.data.schedule) {
+      const time = row.time.trim();
       if (
-        /^\d{1,2}:/.test(row.time) &&
-        !/^([01]\d|2[0-3]):[0-5]\d$/.test(row.time) &&
+        /^\d{1,2}:/.test(time) &&
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(time) &&
         !event.schedule.some((old) => old.id === row.id && old.time === row.time)
       )
         return fail("Use a 24-hour schedule time (HH:mm) or a descriptive label");

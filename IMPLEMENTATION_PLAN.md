@@ -8,10 +8,13 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [ ] Add New project inside team creation, returning on success/cancel to the preserved team draft and selecting the newly created project.
 - [ ] Coordinate editable event.projectBriefGuidance with Event Admin branch; combine, test mobile/draft/focus/authorization behavior and deploy together.
 
-## Editable event settings
+## Editable event configuration — local work
 
-- [ ] Add event-admin editing for event name, date/time/timezone, location, other existing event details and schedule with persisted validated service writes, stale-edit protection and live-view refresh.
-- [ ] Verify admin/participant scopes and mobile/draft behavior, integrate and deploy without changing the live event content during tests.
+- [x] Add event-admin-authorized, revision-checked settings updates, neutral legacy migration, stable schedule row IDs and persisted plain-text project guidance.
+- [x] Add nested Admin → Event details with reusable metadata/capacity/budget forms, schedule add/edit/remove/reorder, preserved drafts and explicit stale recovery; retain status and workspace controls.
+- [x] Cover unauthorized/cross-event/invalid/stale writes, restart, legacy labels, pinned title privacy and unchanged roles/teams/projects/private files/history in isolated regression tests.
+- [x] Complete full check/mobile/admin/portal browser matrices, screenshot inspection and bounded root source review; integration remains root-owned.
+- [ ] Integrate participant project creation and its guidance rendering in root's combined branch; no local deployment or publication.
 
 ## Persistent workspace connections
 

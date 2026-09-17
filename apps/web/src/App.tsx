@@ -22,6 +22,7 @@ import type {
   TeamView,
 } from "../../../packages/domain/src/access-types.ts";
 import type { Contribution, Event } from "../../../packages/domain/src/types.ts";
+import { AdminEventDetails } from "./AdminEventDetails.tsx";
 import { AdminProjects } from "./AdminProjects.tsx";
 import { AdminSprites } from "./AdminSprites.tsx";
 import { AdminTeams } from "./AdminTeams.tsx";
@@ -31,8 +32,9 @@ import { MobileMenu } from "./MobileMenu.tsx";
 import { ProjectBrief } from "./ProjectBrief.tsx";
 import { Workspace } from "./Workspace.tsx";
 
-type AdminSection = "sprites" | "projects" | "teams" | "people";
+type AdminSection = "event" | "sprites" | "projects" | "teams" | "people";
 const adminSections: { id: AdminSection; label: string }[] = [
+  { id: "event", label: "Event details" },
   { id: "sprites", label: "Sprites" },
   { id: "projects", label: "Projects" },
   { id: "teams", label: "Teams" },
@@ -64,7 +66,9 @@ export function App() {
     setAdminSection(null);
     setTab("admin");
   }
-  const [projectDirty, setProjectDirty] = useState(false);
+  const [adminProjectDirty, setProjectDirty] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const projectDirty = adminProjectDirty || settingsDirty;
   const [tab, setTab] = useState<Tab>("discover");
   const [modal, setModal] = useState<"event" | "team" | null>(null);
   const [projectChoice, setProjectChoice] = useState("");
@@ -107,8 +111,11 @@ export function App() {
     );
   }, []);
   useEffect(() => {
-    document.title = session?.siteEvent?.name ?? "Civic Spark";
-  }, [session?.siteEvent?.name]);
+    document.title =
+      session?.siteEvent?.name ??
+      state?.events.find((e) => e.id === eventId)?.name ??
+      "Civic Spark";
+  }, [session?.siteEvent?.name, state?.events, eventId]);
   useEffect(() => {
     const url = new URL(window.location.href);
     url.hash = workspaceId ? new URLSearchParams({ workspace: workspaceId }).toString() : "";
@@ -181,19 +188,13 @@ export function App() {
   function openTeam(team: TeamView) {
     const own = state?.myWorkspaces.find((w) => w.teamId === team.id);
     if (!own) return;
-    if (
-      projectDirty &&
-      !window.confirm("Discard your unsaved project draft and open your workspace?")
-    )
+    if (projectDirty && !window.confirm("Discard your unsaved drafts and open your workspace?"))
       return;
     setWorkspaceId(own.id);
   }
   function submitEvent(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (
-      projectDirty &&
-      !window.confirm("Discard your unsaved project draft and create another event?")
-    )
+    if (projectDirty && !window.confirm("Discard your unsaved drafts and create another event?"))
       return;
     const form = new FormData(e.currentTarget);
     void run(async () => {
@@ -450,7 +451,7 @@ export function App() {
                   onChange={(e) => {
                     if (
                       projectDirty &&
-                      !window.confirm("Discard your unsaved project draft and switch events?")
+                      !window.confirm("Discard your unsaved drafts and switch events?")
                     )
                       return;
                     setEventId(e.target.value);
@@ -557,10 +558,7 @@ export function App() {
               className="new-event-link"
               onClick={() =>
                 void run(async () => {
-                  if (
-                    projectDirty &&
-                    !window.confirm("Discard your unsaved project draft and sign out?")
-                  )
+                  if (projectDirty && !window.confirm("Discard your unsaved drafts and sign out?"))
                     return;
                   await api("/auth/sign-out", "POST", {});
                   setSentTo("");
@@ -657,8 +655,15 @@ export function App() {
                     <span>
                       <MapPin size={15} />
                       {event.location}
+                      {event.address ? ` · ${event.address}` : ""}
                     </span>
+                    {(event.startTime || event.endTime) && (
+                      <span>
+                        {event.startTime || "…"}–{event.endTime || "…"} · {event.timezone}
+                      </span>
+                    )}
                   </div>
+                  {event.description && <p className="event-description">{event.description}</p>}
                 </div>
                 {activeTab === "admin" ? (
                   <button
@@ -970,6 +975,16 @@ export function App() {
                 </>
               )}
               {admin && (
+                <div hidden={activeTab !== "admin" || adminSection !== "event"}>
+                  <AdminEventDetails
+                    key={`${session.user.id}-event-${eventId}`}
+                    event={event}
+                    refresh={refresh}
+                    onDirtyChange={setSettingsDirty}
+                  />
+                </div>
+              )}
+              {admin && (
                 <div hidden={activeTab !== "admin" || adminSection !== "projects"}>
                   <AdminProjects
                     key={`${session.user.id}-projects-${eventId}`}
@@ -983,14 +998,14 @@ export function App() {
                 <section className="section">
                   <div className="section-heading">
                     <div>
-                      <h2>The day of your event</h2>
+                      <h2>Event schedule</h2>
                       <p>All times in {event.timezone}.</p>
                     </div>
                   </div>
                   <div className="timeline">
                     {event.schedule.length ? (
                       event.schedule.map((s) => (
-                        <article className="timeline-item" key={s.time}>
+                        <article className="timeline-item" key={s.id}>
                           <time>{s.time}</time>
                           <span className="timeline-dot" />
                           <div>
@@ -1053,7 +1068,11 @@ export function App() {
                   />
                 </Field>
                 <Field label="Timezone">
-                  <input name="timezone" required defaultValue="America/Chicago" />
+                  <input
+                    name="timezone"
+                    required
+                    defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone}
+                  />
                 </Field>
               </div>
               <Field label="Location">
