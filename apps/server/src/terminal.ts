@@ -83,7 +83,16 @@ export class TerminalSessions {
     socket.send(JSON.stringify({ type: "output", data: active.history }));
     const check = async () => {
       try {
-        if (this.allowed(id) && (await authorized())) return true;
+        if (
+          socket.readyState === 1 &&
+          active.clients.has(socket) &&
+          (await authorized()) &&
+          socket.readyState === 1 &&
+          active.clients.has(socket) &&
+          this.sessions.get(id) === active &&
+          this.allowed(id)
+        )
+          return true;
         socket.close(1008, "Workspace access ended");
         return false;
       } catch {

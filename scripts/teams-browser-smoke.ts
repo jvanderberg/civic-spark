@@ -121,6 +121,8 @@ export async function verifyTeamsPortal() {
       .click();
   }
   async function login(email: string) {
+    // End the previous account’s polling before replacing its test cookies.
+    await page.goto("about:blank");
     await context.clearCookies();
     await page.goto(origin);
     await page.getByLabel("Email address").fill(email);

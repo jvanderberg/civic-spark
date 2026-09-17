@@ -190,8 +190,10 @@ try {
   assert.equal(inputs.slice(beforeReconnectInput).join(""), "resumed");
   await page.getByRole("button", { name: "Files", exact: true }).click();
   sockets.at(-1)?.close({ code: 1011, reason: "Hidden transport failure" });
-  await page.waitForTimeout(1200);
-  assert.equal(connections, 3, "A hidden terminal must defer reconnect until opened");
+  await page.waitForFunction(
+    () => document.querySelector(".terminal-panel [role=status]")?.textContent === "Connected",
+  );
+  assert.equal(connections, 4, "An activated hidden terminal reconnects after transport failure");
   await page.getByRole("button", { name: "Terminal", exact: true }).click();
   await waitConnected();
   assert.equal(connections, 4);
@@ -199,8 +201,11 @@ try {
   await page.waitForTimeout(1200);
   assert.equal(connections, 4, "Explicit disconnect must remain disconnected");
   await reopen();
+  await page.waitForTimeout(200);
+  assert.equal(connections, 4, "Tab reopening must respect explicit disconnect");
+  await page.getByRole("button", { name: "Reconnect terminal", exact: true }).click();
   await waitConnected();
-  assert.equal(connections, 5, "Reopening after explicit disconnect resumes the shell");
+  assert.equal(connections, 5, "Explicit reconnect resumes the shell");
   sockets.at(-1)?.close({ code: 1008, reason: "Workspace access ended" });
   await status.filter({ hasText: "no longer has workspace access" }).waitFor();
   await page.waitForTimeout(1200);
@@ -239,7 +244,7 @@ try {
   preparationGate = undefined;
   releasePreparation();
   await page.waitForTimeout(200);
-  assert.equal(connections, 10, "Preparation completing after hiding must not connect");
+  assert.equal(connections, 11, "Activated preparation completes even while hidden");
   await page.getByRole("button", { name: "Terminal", exact: true }).click();
   await waitConnected();
   assert.equal(connections, 11);
@@ -251,7 +256,7 @@ try {
   assert(sizes.length >= 3 && sizes.every((size) => size.cols > 0 && size.rows > 0));
   assert.deepEqual(errors, []);
   console.log(
-    `PASS (${browserType.name()}): terminal fits desktop, short windows and mobile; trusted touch focus, keyboard action, native text input, exact-once IME, input-only Return/Backspace, uncanceled touch gestures; output scrolls internally; auto-connect on open/refresh, healthy tab reuse, deferred hidden reconnect, manual disconnect, bounded retry, auth failure and unavailable guards. Mock transport; no Sprite/model calls. Physical phone keyboard unverified.`,
+    `PASS (${browserType.name()}): terminal fits desktop, short windows and mobile; trusted touch focus, keyboard action, native text input, exact-once IME, input-only Return/Backspace, uncanceled touch gestures; output scrolls internally; auto-connect on open/refresh, healthy tab reuse, persistent hidden reconnect, manual disconnect, bounded retry, auth failure and unavailable guards. Mock transport; no Sprite/model calls. Physical phone keyboard unverified.`,
   );
 } catch (error) {
   await page.screenshot({ path: join(artifacts, "terminal-failure.png") });

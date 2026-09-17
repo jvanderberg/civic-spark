@@ -168,6 +168,9 @@ try {
     conflict = false;
     await route.fulfill({ json: { status: "resolving" } });
   });
+  await page.route("**/agent/credentials", (route) =>
+    route.fulfill({ json: { savedProviders: ["claude", "opencode"] } }),
+  );
   await page.route("**/agent/prepare", (route) => route.fulfill({ json: { ready: true } }));
   await page.routeWebSocket("**/api/workspaces/*/agent", (socket) => {
     socket.send(

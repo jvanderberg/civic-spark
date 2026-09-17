@@ -108,6 +108,7 @@ it("forwards large validated images, replays only the same workspace, and checks
     expect(owner.events.some((event) => event.images?.[0]?.data === data)).toBe(true),
   );
   const reopened = attach("owner-workspace");
+  expect(children).toHaveLength(1);
   expect(reopened.events.find((event) => event.type === "user")?.images?.[0]?.data).toBe(data);
   const stranger = attach("different-owner-workspace");
   expect(stranger.events.some((event) => event.images?.length)).toBe(false);
@@ -148,3 +149,31 @@ it("rejects malformed/oversized frames without forwarding bodies and bounds pend
   expect(socket.closed).toBe(1009);
   expect(writes).toEqual([]);
 });
+
+it.each(["disconnect", "pause"])(
+  "drops queued input after %s during authorization",
+  async (action) => {
+    let release!: (value: boolean) => void;
+    const authorization = new Promise<boolean>((resolve) => {
+      release = resolve;
+    });
+    sessions = new AgentSessions({ lease: () => undefined } as unknown as SpriteClient);
+    const socket = new Socket();
+    const check = vi.fn(() => authorization);
+    sessions.attach(
+      "workspace",
+      "civic-spark-isolated-test",
+      socket as unknown as WebSocket,
+      check,
+    );
+    const writes: string[] = [];
+    children[0]?.stdin.on("data", (chunk) => writes.push(chunk.toString()));
+    socket.input({ type: "prompt", provider: "claude", text: "Never send late" });
+    await vi.waitFor(() => expect(check).toHaveBeenCalled());
+    if (action === "disconnect") socket.close();
+    else sessions.stop("workspace");
+    release(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(writes.filter((value) => JSON.parse(value).type === "prompt")).toEqual([]);
+  },
+);

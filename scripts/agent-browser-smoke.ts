@@ -109,6 +109,14 @@ await page.route("**/api/state", async (route) => {
   for (const workspace of state.myWorkspaces) workspace.spriteStatus = "ready";
   await route.fulfill({ response, json: state });
 });
+await page.route("**/preview*", (route) =>
+  route.fulfill({
+    json: { port: 5173, command: ["npm", "run", "dev"], running: false, ready: false },
+  }),
+);
+await page.route("**/agent/credentials", (route) =>
+  route.fulfill({ json: { savedProviders: ["opencode"] } }),
+);
 await page.route("**/agent/prepare", (route) => route.fulfill({ json: { ready: true } }));
 await page.routeWebSocket("**/api/workspaces/*/agent", (socket) => {
   connection = socket;
@@ -215,6 +223,8 @@ try {
   emit({
     type: "error",
     id: "live-startup-failure",
+    provider: "opencode",
+    credentialFailure: true,
     text: "The saved API key was rejected during startup.",
   });
   await page
@@ -511,6 +521,7 @@ try {
   await page.getByPlaceholder("Anthropic API key").waitFor();
   assert.equal(await page.getByRole("button", { name: "Send to agent" }).isEnabled(), false);
   const configuredBeforeInvalid = requests.filter((request) => request.type === "configure").length;
+  await page.getByLabel("Agent API key").fill("test-fixture-claude-key");
   await page.getByLabel("Anthropic workspace ID").fill("invalid workspace");
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page
@@ -868,7 +879,12 @@ try {
     .filter({ hasText: "no longer has workspace access" })
     .waitFor();
   await new Promise((resolve) => setTimeout(resolve, 1200));
-  assert.equal(connections, beforeDenied, "Access denial must not retry");
+  for (const view of ["Files", "Changes", "Agent"]) {
+    await page.getByRole("button", { name: view, exact: true }).click();
+  }
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.waitForTimeout(1200);
+  assert.equal(connections, beforeDenied, "Access denial must not retry on navigation or online");
   // A manual retry can recover after signing back in; repeated transient
   // failures then stop after exactly three automatic attempts.
   await page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -882,7 +898,11 @@ try {
     .getByRole("alert")
     .filter({ hasText: "Could not reconnect to the agent" })
     .waitFor();
-  assert.equal(connections, beforeExhaustion + 3);
+  await page.getByRole("button", { name: "Files", exact: true }).click();
+  await page.getByRole("button", { name: "Agent", exact: true }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.waitForTimeout(1200);
+  assert.equal(connections, beforeExhaustion + 3, "Navigation cannot reset exhausted retry budget");
   assert.deepEqual(errors, []);
   console.log(
     "PASS: full-screen T3 chat, readiness, fixed models, streamed Markdown/code/table, copy, tools, files, questions, keyboard send/stop, errors, mobile, reload/project reopen restoring model/conversation/active turn without reentering a key, real team-resolution handoff and merge verification. Mock agent transport; no model requests or secrets.",

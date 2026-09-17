@@ -16,6 +16,10 @@ export function Terminal({
   visible: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const [activated, setActivated] = useState(visible);
+  useEffect(() => {
+    if (visible) setActivated(true);
+  }, [visible]);
   const [status, setStatus] = useState("Disconnected");
   const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -51,7 +55,7 @@ export function Terminal({
     if (terminalRef.current) terminalRef.current.options.theme = palette;
   }, [palette]);
   useEffect(() => {
-    if (!available || !host.current) return;
+    if (!activated || !available || !host.current) return;
     let disposed = false;
     let socket: WebSocket | null = null;
     let pending = false;
@@ -119,39 +123,19 @@ export function Terminal({
         fail("Could not reconnect to the terminal. Retry to resume your shell.");
         return;
       }
-      // A hidden tab resumes on its next explicit opening, without background connects.
-      if (!activity.current.visible) {
-        setBusy(false);
-        setStatus("Disconnected · reopen to resume");
-        return;
-      }
       attempts += 1;
       setBusy(true);
       setStatus(`Reconnecting (${attempts}/3)`);
       retryTimer = setTimeout(
         () => {
           retryTimer = undefined;
-          if (!activity.current.visible) {
-            setBusy(false);
-            setStatus("Disconnected · reopen to resume");
-            return;
-          }
           void connect();
         },
         1000 * 2 ** (attempts - 1),
       );
     };
     const connect = async () => {
-      if (
-        disposed ||
-        pending ||
-        blocked ||
-        manuallyDisconnected ||
-        !activity.current.visible ||
-        socket ||
-        retryTimer
-      )
-        return;
+      if (disposed || pending || blocked || manuallyDisconnected || socket || retryTimer) return;
       pending = true;
       const attempt = ++generation;
       setBusy(true);
@@ -160,11 +144,6 @@ export function Terminal({
         await api(`/workspaces/${workspace}/agent/prepare`, "POST");
         if (disposed || attempt !== generation) return;
         pending = false;
-        if (!activity.current.visible) {
-          setBusy(false);
-          setStatus("Disconnected · reopen to resume");
-          return;
-        }
         const url = new URL(`/api/workspaces/${workspace}/terminal`, location.href);
         url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const connection = new WebSocket(url);
@@ -219,7 +198,6 @@ export function Terminal({
     };
     controls.current = {
       open: () => {
-        manuallyDisconnected = false;
         resize();
         if (socket?.readyState === WebSocket.OPEN) focusDesktopInput();
         else void connect();
@@ -244,7 +222,7 @@ export function Terminal({
         }
         setConnected(false);
         setBusy(false);
-        setStatus("Disconnected · reopen to resume");
+        setStatus("Disconnected · reconnect to resume");
       },
     };
     const input = terminal.onData((data) => {
@@ -253,7 +231,7 @@ export function Terminal({
     });
     const observer = new ResizeObserver(resize);
     observer.observe(host.current);
-    if (activity.current.visible) void connect();
+    void connect();
     return () => {
       disposed = true;
       generation += 1;
@@ -270,7 +248,7 @@ export function Terminal({
       terminal.dispose();
       terminalRef.current = null;
     };
-  }, [workspace, available]);
+  }, [workspace, available, activated]);
   useEffect(() => {
     if (visible && available) controls.current.open();
   }, [visible, available]);

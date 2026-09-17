@@ -151,6 +151,7 @@ it("authorizes event inventory and pause, blocks every workspace route and keeps
       "team-status",
       "preview",
       "agent-git",
+      "agent/credentials",
     ]) {
       expect(
         (await app.inject({ url: `/api/workspaces/${own.id}/${route}`, headers: memberHeaders }))
@@ -376,7 +377,10 @@ it("releases idle polling without stopping active turns or protected terminal/pr
   try {
     coordinator.touch(own.id);
     const before = service.runtime(own.id).lastUsedAt;
-    const future = Date.now() + 6 * 60000;
+    expect(coordinator.idleMinutes).toBe(5);
+    const future = Date.parse(before as string) + 5 * 60000;
+    const agentLease = coordinator.acquire(`civic-spark-${own.id}`, true);
+    const terminalLease = coordinator.acquire(`civic-spark-${own.id}`, true);
     coordinator.releaseIdle(future);
     expect(service.runtime(own.id).held).toBe(false);
     working = false;
@@ -387,7 +391,11 @@ it("releases idle polling without stopping active turns or protected terminal/pr
     // A provider command does not extend participant activity.
     coordinator.acquire(`civic-spark-${own.id}`).release();
     expect(service.runtime(own.id).lastUsedAt).toBe(before);
+    coordinator.releaseIdle(future - 1);
+    expect(service.runtime(own.id).held).toBe(false);
     coordinator.releaseIdle(future);
+    agentLease.release();
+    terminalLease.release();
     expect(service.runtime(own.id)).toMatchObject({ held: true, reason: "idle" });
     expect(disconnect).toHaveBeenCalledOnce();
     expect(runtime.stop).not.toHaveBeenCalled();

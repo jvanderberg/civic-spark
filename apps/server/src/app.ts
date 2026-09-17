@@ -435,6 +435,28 @@ export async function createApp(
     async (r, reply) =>
       send(reply, service.removeMember(actor(r.actor), r.params.id, r.params.userId)),
   );
+  app.get<{ Params: { id: string } }>("/api/workspaces/:id/agent/credentials", async (r, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const owner = actor(r.actor);
+    const p = service.workspace(owner, r.params.id, true);
+    if (!p.ok) return send(reply, p);
+    if (p.value.spriteStatus !== "ready" || !p.value.spriteName)
+      return reply.code(409).send({ error: "Agent execution needs a running Sprite" });
+    try {
+      const status = await agents.credentials(p.value.spriteName);
+      const session = await auth.api.getSession({ headers: fromNodeHeaders(r.headers) });
+      if (!session || (prototype ? session.user.email.toLowerCase() : session.user.id) !== owner.id)
+        return reply.code(401).send({ error: "Sign in to continue" });
+      const current = service.workspace(owner, r.params.id, true);
+      if (!current.ok) return send(reply, current);
+      if (!allowed(r.params.id)) return send(reply, service.executionAllowed(r.params.id));
+      return status;
+    } catch {
+      return reply
+        .code(502)
+        .send({ error: "Could not check saved agent keys. Retry to check again." });
+    }
+  });
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/agent/prepare", async (r, reply) => {
     const p = service.workspace(actor(r.actor), r.params.id, true);
     if (!p.ok) return send(reply, p);

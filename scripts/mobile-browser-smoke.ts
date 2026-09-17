@@ -79,6 +79,9 @@ await page.route("**/preview*", (route) =>
       }),
 );
 await page.route("**/agent-git", (route) => route.fulfill({ json: { pending: null } }));
+await page.route("**/agent/credentials", (route) =>
+  route.fulfill({ json: { savedProviders: ["claude", "opencode"] } }),
+);
 await page.route("**/agent/prepare", (route) => route.fulfill({ json: { ready: true } }));
 await page.routeWebSocket("**/api/workspaces/*/agent", (socket) => {
   connection = socket;

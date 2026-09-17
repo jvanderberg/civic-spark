@@ -124,6 +124,9 @@ it("external requests send once after an explicit action, preserve drafts, and i
     );
   const output = (name: string) => page.locator(`[data-${name}]`).innerText();
   try {
+    await page.route("**/agent/credentials", (route) =>
+      route.fulfill({ json: { savedProviders: ["opencode"] } }),
+    );
     await page.route("**/agent/prepare", (route) => route.fulfill({ json: { ready: true } }));
     await page.routeWebSocket("**/api/workspaces/*/agent", (connection) => {
       socket = connection;

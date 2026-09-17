@@ -1,5 +1,6 @@
 import { ArrowDown, GitCompareArrows, LoaderCircle, Paperclip, Settings2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import { retainEvent } from "../../../packages/agents/src/history.ts";
 import {
   type AgentImage,
@@ -214,6 +215,7 @@ export function Agent({
   const [connected, setConnected] = useState(false);
   const [working, setWorking] = useState(false);
   const [workingStartedAt, setWorkingStartedAt] = useState<string>();
+  const [discovering, setDiscovering] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [reconnecting, setReconnecting] = useState(0);
   const [error, setError] = useState("");
@@ -223,6 +225,10 @@ export function Agent({
   const connectionAttempt = useRef(0);
   const starting = useRef(false);
   const autoAttempted = useRef(false);
+  const activated = useRef(false);
+  const retryBlocked = useRef(false);
+  const updatedCallback = useRef(onUpdated);
+  updatedCallback.current = onUpdated;
   const readyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCount = useRef(0);
@@ -246,6 +252,7 @@ export function Agent({
       connectionAttempt.current += 1;
       starting.current = false;
       autoAttempted.current = false;
+      retryBlocked.current = false;
       if (readyTimeout.current) clearTimeout(readyTimeout.current);
       if (retryTimer.current) clearTimeout(retryTimer.current);
       if (socket.current) {
@@ -255,10 +262,12 @@ export function Agent({
     };
   }, []);
   useEffect(() => {
+    if (visible) activated.current = true;
     if (!available) {
       connectionAttempt.current += 1;
       starting.current = false;
       autoAttempted.current = false;
+      retryBlocked.current = false;
       if (readyTimeout.current) clearTimeout(readyTimeout.current);
       if (retryTimer.current) clearTimeout(retryTimer.current);
       if (socket.current) {
@@ -266,32 +275,31 @@ export function Agent({
         socket.current.close();
         socket.current = null;
       }
+      setDiscovering(false);
       setPreparing(false);
       setConnected(false);
       setWorking(false);
       return;
     }
-    if (!visible) {
-      autoAttempted.current = false;
-      if (retryTimer.current) clearTimeout(retryTimer.current);
-      setReconnecting(0);
-    }
-    if (visible && !autoAttempted.current) {
+    // Visibility only activates the connection once. Navigation cannot cancel a
+    // retry, reset its budget, or override an access/idle close.
+    if (activated.current && !autoAttempted.current) {
       autoAttempted.current = true;
-      if (!starting.current && (!socket.current || socket.current.readyState > WebSocket.OPEN))
-        queueMicrotask(() => {
-          if (mounted.current) void connectLatest.current();
-        });
+      queueMicrotask(() => {
+        if (mounted.current && activity.current.available) void connectLatest.current();
+      });
     }
   }, [available, visible]);
   useEffect(() => {
     function online() {
       if (
         activity.current.available &&
-        activity.current.visible &&
+        activated.current &&
+        !retryBlocked.current &&
+        !retryTimer.current &&
         (!socket.current || socket.current.readyState > WebSocket.OPEN)
       )
-        void connectLatest.current();
+        void connectLatest.current(true);
     }
     window.addEventListener("online", online);
     return () => window.removeEventListener("online", online);
@@ -307,7 +315,12 @@ export function Agent({
     requestCallbacks.current.onRequestFinished?.(active.id);
   }
   function send(input: AgentInput) {
-    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify(input));
+    if (
+      mounted.current &&
+      activity.current.available &&
+      socket.current?.readyState === WebSocket.OPEN
+    )
+      socket.current.send(JSON.stringify(input));
   }
   function validateWorkspaceId() {
     const id = claudeWorkspaceId.trim();
@@ -318,9 +331,19 @@ export function Agent({
     return true;
   }
   async function connect(retry = false) {
-    if (starting.current || !available || !validateWorkspaceId()) return;
+    if (
+      !mounted.current ||
+      starting.current ||
+      !activity.current.available ||
+      (socket.current && socket.current.readyState <= WebSocket.OPEN) ||
+      (retry && retryBlocked.current) ||
+      !validateWorkspaceId()
+    )
+      return;
     if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = null;
     if (!retry) {
+      retryBlocked.current = false;
       retryCount.current = 0;
       setReconnecting(0);
     }
@@ -344,6 +367,27 @@ export function Agent({
     setConnected(false);
     setError("");
     try {
+      if (!key.trim()) {
+        setDiscovering(true);
+        const status = z
+          .object({ savedProviders: z.array(z.enum(["claude", "opencode"])) })
+          .parse(await api(`/workspaces/${workspace}/agent/credentials`));
+        if (
+          !mounted.current ||
+          attempt !== connectionAttempt.current ||
+          !activity.current.available
+        )
+          return;
+        setDiscovering(false);
+        setSavedProviders(status.savedProviders);
+        setCredentialsKnown(true);
+        if (!status.savedProviders.length) {
+          retryBlocked.current = true;
+          setPreparing(false);
+          setReconnecting(0);
+          return;
+        }
+      }
       await api(`/workspaces/${workspace}/agent/prepare`, "POST");
       if (!mounted.current || attempt !== connectionAttempt.current) return;
       const url = new URL(`/api/workspaces/${workspace}/agent`, location.href);
@@ -357,6 +401,7 @@ export function Agent({
         if (socket.current !== connection || !mounted.current) return;
         connection.onclose = null;
         connection.close();
+        retryBlocked.current = true;
         setPreparing(false);
         setConnected(false);
         setError("The agent did not finish reconnecting. Retry to resume your saved session.");
@@ -462,7 +507,7 @@ export function Agent({
         if (live && event.type === "done") {
           finishRequest();
           setWorking(false);
-          onUpdated();
+          updatedCallback.current();
         }
         if (event.type === "resolved") setResolved((ids) => [...ids, event.id]);
         setEvents((previous) => {
@@ -472,7 +517,7 @@ export function Agent({
         });
       };
       connection.onclose = (closed) => {
-        if (socket.current !== connection) return;
+        if (socket.current !== connection || !mounted.current) return;
         if (readyTimeout.current) clearTimeout(readyTimeout.current);
         pendingKey.current = null;
         setChecking(false);
@@ -484,7 +529,7 @@ export function Agent({
         readySince.current = 0;
         const canRetry =
           activity.current.available &&
-          activity.current.visible &&
+          activated.current &&
           ![1008, 4001, 4003, 4401, 4403].includes(closed.code) &&
           retryCount.current < 3;
         if (canRetry) {
@@ -493,12 +538,14 @@ export function Agent({
           setError("");
           retryTimer.current = setTimeout(
             () => {
-              if (mounted.current && activity.current.available && activity.current.visible)
+              retryTimer.current = null;
+              if (mounted.current && activity.current.available && !retryBlocked.current)
                 void connectLatest.current(true);
             },
             1000 * 2 ** (next - 1),
           );
         } else {
+          retryBlocked.current = true;
           setReconnecting(0);
           setError(
             [1008, 4001, 4003, 4401, 4403].includes(closed.code)
@@ -512,6 +559,8 @@ export function Agent({
       };
     } catch (e) {
       if (!mounted.current || attempt !== connectionAttempt.current) return;
+      setDiscovering(false);
+      retryBlocked.current = true;
       setError(e instanceof Error ? e.message : "Could not prepare agent");
       setPreparing(false);
       setReconnecting(0);
@@ -534,21 +583,25 @@ export function Agent({
     ? "Sprite required"
     : reconnecting
       ? `Reconnecting (${reconnecting}/3)`
-      : preparing
-        ? "Starting runtime"
-        : checking
-          ? "Checking connection"
-          : approval
-            ? "Waiting for your answer"
-            : working
-              ? "Working"
-              : ready
-                ? "Ready"
-                : connected
-                  ? hasSavedKey
-                    ? "Saved key needs connection"
-                    : "Add API key"
-                  : "Not connected";
+      : discovering
+        ? "Checking saved connection"
+        : preparing
+          ? "Starting runtime"
+          : checking
+            ? "Checking connection"
+            : approval
+              ? "Waiting for your answer"
+              : working
+                ? "Working"
+                : ready
+                  ? "Ready"
+                  : connected
+                    ? hasSavedKey
+                      ? "Saved key needs connection"
+                      : "Add API key"
+                    : credentialsKnown && !hasSavedKey
+                      ? "Add API key"
+                      : "Not connected";
   const submitLatest = useRef<
     (text: string, requestId?: string, previousDraft?: string) => boolean
   >(() => false);
@@ -557,6 +610,8 @@ export function Agent({
     if (
       (!text.trim() && !attached.length) ||
       readingImagesRef.current ||
+      !mounted.current ||
+      !activity.current.available ||
       !ready ||
       working ||
       checking ||
@@ -802,18 +857,26 @@ export function Agent({
                           size="xs"
                           variant="outline"
                           type="submit"
-                          disabled={!available || preparing || checking || working}
+                          disabled={
+                            !available ||
+                            preparing ||
+                            checking ||
+                            working ||
+                            (credentialsKnown && !hasSavedKey && !key.trim())
+                          }
                         >
                           {preparing || checking ? (
                             <LoaderCircle size={14} className="chat-spin" />
                           ) : null}
-                          {preparing
-                            ? "Starting…"
-                            : checking
-                              ? "Checking…"
-                              : ready
-                                ? "Reconnect"
-                                : "Connect"}
+                          {discovering
+                            ? "Checking…"
+                            : preparing
+                              ? "Starting…"
+                              : checking
+                                ? "Checking…"
+                                : ready
+                                  ? "Reconnect"
+                                  : "Connect"}
                         </Button>
                       </form>
                       {provider === "claude" && showKeyInput && (

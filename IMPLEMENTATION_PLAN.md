@@ -4,8 +4,12 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 
 ## Persistent workspace connections
 
-- [ ] Diagnose repeated agent reconnects and keep Agent/Terminal connections after first tab activation independent of selected view; preserve drafts/session IDs and intentional lifecycle cleanup. Keep five-minute idle timeout unchanged.
-- [ ] Review, test combined mobile/agent/terminal flows, integrate and deploy the connection fix.
+- [x] Keep Agent/Terminal connections independent of view visibility after lazy first activation; preserve bounded retries and explicit disconnect/access/lifecycle gates.
+- [x] Check saved-key presence before preparing a fresh agent runtime; no-key workspaces request a key without opening an agent socket.
+- [x] Guard deferred agent/terminal input against disconnect, lifecycle changes and revocation after asynchronous authorization.
+- [x] Preserve the five-minute idle default; passive agent/terminal connections do not keep resources awake.
+- [x] Complete local combined/mobile/specialized browser validation and bounded review; prepare local commit for root integration.
+- [ ] Root integration and deployment; no publication or deployment in this workstream.
 
 ## Agent screenshots
 

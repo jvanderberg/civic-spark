@@ -28,6 +28,10 @@ The main portal has a visible **Menu** on phones and short viewports, with Explo
 
 Mobile is a required participant and admin interface. Navigation, event/team management, confirmation dialogs, repository history and restore, browser editing, chat, changes and preview controls should be usable on narrow touch screens and short viewports. Preserve drafts and sessions through responsive layout changes. The terminal remains available with the expected phone keyboard/screen limitations; devices without writable folder access use browser editing or upload/download. Verify phone interactions and both system themes in the browser, while identifying physical iOS/Android keyboard and native-picker checks separately.
 
+Agent and Terminal activate lazily on first opening. Once activated, workspace view switches and menus retain their connections, drafts, transcript and terminal buffer. Transport retries use a bounded backoff independently of view visibility; navigation cannot override denied access or an explicit terminal Disconnect. Reconnect terminal is explicit after Disconnect. A fresh agent workspace checks saved-key presence without starting the agent runtime and asks for a key when none is saved. Existing native saved keys remain reusable without exposing their values.
+
+The five-minute idle policy still releases inactive connections; merely retaining a hidden view does not count as activity. Lifecycle holds, revoked access and signout close connections. Leaving the workspace for the portal still unmounts its browser views; reopening reattaches persisted runtime state, but unsent browser drafts are not persisted across that boundary.
+
 The workspace follows visual-viewport height and panning while preserving native pinch zoom. On phones and short landscape screens, **Menu** exposes Back to teams, team updates and preview controls without remounting the editor, agent or terminal. Composer text scrolls within the remaining chat space. Viewport/keyboard simulations cover these bounds and session/draft retention; actual iPhone keyboard behavior still needs device verification.
 
 | Person | View and permissions |

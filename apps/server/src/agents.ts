@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { WebSocket } from "ws";
@@ -64,6 +65,21 @@ export class AgentSessions {
   isWorking(id: string) {
     const session = this.sessions.get(id);
     return Boolean(session?.pendingPrompt || session?.replay.snapshot().working);
+  }
+  async credentials(sprite: string) {
+    const result = await this.client.exec(sprite, [
+      "python3",
+      "-c",
+      readFileSync(
+        new URL("../../../packages/agents/runtime/credential-presence.py", import.meta.url),
+        "utf8",
+      ),
+    ]);
+    if (!result.ok) throw new Error("Could not check saved agent keys. Retry to check again.");
+    return z
+      .object({ savedProviders: z.array(z.enum(["claude", "opencode"])) })
+      .strict()
+      .parse(JSON.parse(result.value.toString()));
   }
   async prepare(sprite: string) {
     const existing = this.preparing.get(sprite);
@@ -195,7 +211,16 @@ export class AgentSessions {
     socket.send(JSON.stringify(active.replay.snapshot()));
     const check = async () => {
       try {
-        if (this.allowed(id) && (await authorized())) return true;
+        if (
+          socket.readyState === 1 &&
+          active.clients.has(socket) &&
+          (await authorized()) &&
+          socket.readyState === 1 &&
+          active.clients.has(socket) &&
+          this.sessions.get(id) === active &&
+          this.allowed(id)
+        )
+          return true;
       } catch {
         /* Fail closed. */
       }

@@ -37,6 +37,7 @@ export function stageContext(destination: string) {
     "templates/events/blank.json",
     "apps/web/index.html",
     "packages/agents/runtime/package-lock.json",
+    "packages/agents/runtime/credential-presence.py",
   ]) {
     if (!included.includes(path)) throw new Error(`Required build input excluded: ${path}`);
   }
