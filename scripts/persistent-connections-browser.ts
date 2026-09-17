@@ -28,9 +28,23 @@ await app.listen({ host: "127.0.0.1", port });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
 const errors: string[] = [];
+const expectedSignoutErrors: string[] = [];
+let signingOut = false;
 page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => {
-  if (message.type() === "error") errors.push(message.text());
+  if (message.type() !== "error") return;
+  const url = new URL(message.location().url || address);
+  // API sign-out deliberately invalidates the session while workspace reads
+  // may still be in flight. Only these known reads may return 401 in this phase.
+  if (
+    signingOut &&
+    message.text() ===
+      "Failed to load resource: the server responded with a status of 401 (Unauthorized)" &&
+    url.origin === address &&
+    /^\/api\/workspaces\/[^/]+\/(files|changes)$/.test(url.pathname)
+  )
+    expectedSignoutErrors.push(url.pathname);
+  else errors.push(message.text());
 });
 const sockets = { agent: [] as WebSocketRoute[], terminal: [] as WebSocketRoute[] };
 const closes = { agent: 0, terminal: 0 };
@@ -317,6 +331,7 @@ try {
   await view("Terminal");
   await connected();
   const beforeSignout = counts();
+  signingOut = true;
   const signedOut = await page.request.post(`${address}/api/auth/sign-out`, {
     headers: { origin: address },
     data: {},
@@ -326,6 +341,7 @@ try {
   await page.waitForTimeout(1200);
   assert.deepEqual(counts(), beforeSignout, "Signout closes active views without reconnecting");
   assert.deepEqual(errors, []);
+  console.log("Expected in-flight workspace reads rejected after sign-out:", expectedSignoutErrors);
   console.log(
     "PASS: lazy activation, stable agent/terminal sockets across all tabs/menus and parent polling, both themes/phone/desktop/short, image/text/model/transcript retention, hidden resize, bounded transport retry, hold/unpause/revocation cleanup and no late sends. Isolated mocks only.",
   );

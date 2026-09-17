@@ -34,6 +34,8 @@ export function agentFailure(error: unknown): string {
     return "The selected model or provider could not accept these images. Remove the images to send text, or choose another configured model.";
   if (value?.name === "CredentialConfigurationError")
     return "Could not save the agent settings in this Sprite. Check home-directory permissions and JSON configuration, then reconnect.";
+  if (value?.name === "OpenCodeTransportError")
+    return "The local OpenCode runtime connection was interrupted. Reconnect the agent to inspect the turn.";
   const status = value?.status ?? value?.statusCode ?? value?.data?.statusCode;
   const message = `${value?.name ?? ""} ${value?.message ?? ""} ${value?.data?.message ?? ""}`;
   if (/workspace/i.test(message)) {

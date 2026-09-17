@@ -204,3 +204,10 @@ Deployment setup, exact commands, constraints and validation gaps: [Fly deployme
 - [x] Keep five-minute idle connection release without service Stop; explicit admin Pause still stops the public service and requires owner Launch recovery.
 - [x] Complete local provider-contract, dependency, TLS Vite/HMR and mobile/browser validation: check 342 tests/58 files plus opt-in stream skip, full mobile/environment/direct-TLS browser, inspected screenshots and clean consoles; exact local commit supplied in handoff.
 - [ ] Root-owned dedicated provider acceptance: metadata/public URL and running anonymous HTTPS verified; same-name service update verified; explicit Stop produced failed/143, no process and later HTTP502. Loopback binding and explicit start recovery to anonymous HTTPS200 verified. Quiet native hibernation/wake, live Vite HMR and stable management restart remain separate acceptance.
+
+## OpenCode long-turn transport — local fix, pending root integration
+
+- [x] Replace the inference-length synchronous prompt with a single bounded async submission; use pinned native message IDs and correlate the current user message, final assistant and fresh idle status before releasing Working/Tasks.
+- [x] Reconcile missing/stalled SSE and uncertain ACKs without resubmitting inference; Stop drains delayed acceptance through a subsequent native abort and idle check. Distinguish provider failures from local runtime transport loss.
+- [x] Complete final local runner/browser/context checks and the opt-in Node 24.18.0 / OpenCode 1.18.31 loopback turn beyond 300 seconds, including Tasks renewal; see [evidence and limits](docs/opencode-turns.md).
+- [ ] Root review, integration and separately authorized deployment/live acceptance. No participant resources or paid inference used by this workstream.

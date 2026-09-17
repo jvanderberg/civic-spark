@@ -14,6 +14,14 @@ import {
 import { AgentJournal } from "./journal.ts";
 import { claudePrompt, openCodeParts, requireImageCapability } from "./multimodal.ts";
 import {
+  isOpenCodeConnectionRefused,
+  OpenCodeTransportError,
+  type OpenCodeTurnEvent,
+  type OpenCodeTurnOutcome,
+  OpenCodeTurnTracker,
+  openCodeMessageID,
+} from "./opencode-turn.ts";
+import {
   type AgentEvent,
   type AgentInput,
   agentFailure,
@@ -70,6 +78,13 @@ let claude: Query | undefined;
 let claudeAbort: AbortController | undefined;
 let open: ReturnType<typeof createOpencodeClient> | undefined;
 let closeOpen: (() => void) | undefined;
+type ActiveOpenTurn = {
+  client: ReturnType<typeof createOpencodeClient>;
+  tracker: OpenCodeTurnTracker;
+  stop: () => Promise<void>;
+  reconcile: () => Promise<OpenCodeTurnOutcome>;
+};
+let activeOpenTurn: ActiveOpenTurn | undefined;
 const keys: Partial<Record<"claude" | "opencode", string>> = {};
 const failedProviders = new Set<"claude" | "opencode">();
 const emitState = () =>
@@ -177,49 +192,141 @@ async function startOpen() {
     timeout: 30000,
     config: { permission: "allow" },
   });
-  closeOpen = server.close;
+  const eventsAbort = new AbortController();
+  closeOpen = () => {
+    eventsAbort.abort();
+    server.close();
+  };
   const client = createOpencodeClient({
     baseUrl: server.url,
     headers: { Authorization: `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}` },
     throwOnError: true,
   });
-  const events = await client.event.subscribe();
+  open = client;
   void (async () => {
-    for await (const event of events.stream) {
-      const props = event.properties;
-      if ("sessionID" in props && props.sessionID !== state.opencode) continue;
-      if (event.type === "message.part.delta" && event.properties.field === "text")
-        emit("text", event.properties.delta, { id: event.properties.partID });
-      if (event.type === "message.part.updated" && event.properties.part.type === "tool")
-        emit("tool", event.properties.part.tool, {
-          id: event.properties.part.id,
-          details: JSON.stringify(event.properties.part.state).slice(0, 20000),
-        });
-      if (event.type === "permission.asked") {
-        void client.permission
-          .reply({ requestID: event.properties.id, reply: "once" })
-          .catch(() => emit("error", "Could not apply bypass permissions"));
+    while (open === client) {
+      const events = await client.event.subscribe({}, { signal: eventsAbort.signal });
+      for await (const event of events.stream) {
+        if (open !== client) return;
+        const props = event.properties;
+        if ("sessionID" in props && props.sessionID !== state.opencode) continue;
+        activeOpenTurn?.tracker.observe(event as OpenCodeTurnEvent);
+        if (event.type === "message.part.delta" && event.properties.field === "text")
+          emit("text", event.properties.delta, { id: event.properties.partID });
+        if (event.type === "message.part.updated" && event.properties.part.type === "tool")
+          emit("tool", event.properties.part.tool, {
+            id: event.properties.part.id,
+            details: JSON.stringify(event.properties.part.state).slice(0, 20000),
+          });
+        if (event.type === "permission.asked") {
+          void client.permission
+            .reply({ requestID: event.properties.id, reply: "once" }, { signal: controlTimeout() })
+            .catch(() => emit("error", "Could not apply bypass permissions"));
+        }
+        if (event.type === "question.asked") {
+          const request = event.properties;
+          void ask(request.id, "Agent question", request.questions)
+            .then((result) =>
+              result.allow
+                ? client.question.reply(
+                    {
+                      requestID: request.id,
+                      answers: request.questions.map(() => [result.answer ?? ""]),
+                    },
+                    { signal: controlTimeout() },
+                  )
+                : client.question.reject({ requestID: request.id }, { signal: controlTimeout() }),
+            )
+            .catch(() => emit("error", "Could not reply to agent question"));
+        }
       }
-      if (event.type === "question.asked") {
-        const request = event.properties;
-        void ask(request.id, "Agent question", request.questions)
-          .then((result) =>
-            result.allow
-              ? client.question.reply({
-                  requestID: request.id,
-                  answers: request.questions.map(() => [result.answer ?? ""]),
-                })
-              : client.question.reject({ requestID: request.id }),
-          )
-          .catch(() => emit("error", "Could not reply to agent question"));
-      }
+      // The SDK retries errors, but clean EOF ends its iterator. Reattach to
+      // the same runtime; periodic reconciliation covers missing terminal events.
+      if (open === client) await pause(1000);
     }
   })().catch(() => {
-    if (open === client) emit("error", "OpenCode event stream disconnected. Reconnect the agent.");
+    if (open !== client) return;
+    if (activeOpenTurn) {
+      emit("status", "OpenCode connection interrupted; checking the current turn…");
+      void activeOpenTurn.reconcile();
+    } else emit("error", "OpenCode event stream disconnected. Reconnect the agent.");
   });
-  open = client;
   return client;
 }
+const controlTimeout = () => AbortSignal.timeout(5000);
+const promptTimeout = () => AbortSignal.timeout(10000);
+const pause = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+async function reconcileOpenCodeTurn(
+  client: ReturnType<typeof createOpencodeClient>,
+  tracker: OpenCodeTurnTracker,
+  getRejection: () => unknown,
+) {
+  let refusedReads = 0;
+  while (!tracker.result) {
+    // Read messages BEFORE status. An idle snapshot taken before the current
+    // message exists cannot terminate that message or a later tool step.
+    const messages = await client.session
+      .messages({ sessionID: tracker.sessionID, limit: 200 }, { signal: controlTimeout() })
+      .then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+    const reliableMessages = "value" in messages && Array.isArray(messages.value.data);
+    if (reliableMessages && "value" in messages) {
+      tracker.reconcile(undefined, messages.value.data);
+    }
+    if (tracker.hasCurrentUser) tracker.markAccepted();
+    if (tracker.isStopRequested && tracker.hasCurrentUser) {
+      // A pre-acceptance abort is insufficient. Abort again after observing
+      // the exact submitted message; only a subsequent idle read can drain it.
+      tracker.confirmStop();
+      try {
+        await client.session.abort({ sessionID: tracker.sessionID }, { signal: controlTimeout() });
+      } catch {
+        // A lost abort response is not proof of either success or failure.
+      }
+    }
+    const revision = tracker.eventRevision;
+    const status = await client.session.status({}, { signal: controlTimeout() }).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    const data = "value" in status ? status.value.data : undefined;
+    const reliableStatus =
+      data !== undefined && data !== null && typeof data === "object" && !Array.isArray(data);
+    if (reliableStatus && revision === tracker.eventRevision) {
+      // OpenCode omits idle sessions from a successful status map.
+      tracker.reconcile(data[tracker.sessionID], undefined, true);
+    }
+    const rejection = getRejection();
+    if (
+      rejection &&
+      reliableMessages &&
+      reliableStatus &&
+      tracker.isAuthoritativelyIdle &&
+      !tracker.hasCurrentUser
+    ) {
+      return tracker.fail(rejection);
+    }
+    // Timeouts and broken streams retain the hold: native work may continue.
+    // Repeated connection refusals on BOTH loopback endpoints establish that
+    // the runtime is no longer listening and cannot be reconciled indefinitely.
+    if (
+      "error" in messages &&
+      "error" in status &&
+      isOpenCodeConnectionRefused(messages.error) &&
+      isOpenCodeConnectionRefused(status.error)
+    )
+      refusedReads++;
+    else refusedReads = 0;
+    if (refusedReads >= 3) return tracker.fail(new OpenCodeTransportError());
+    if (!tracker.result) await pause(1000);
+  }
+  return tracker.result;
+}
+
 async function openTurn(
   input: Extract<AgentInput, { type: "prompt" }>,
   cancellation: AbortController,
@@ -228,15 +335,19 @@ async function openTurn(
   const client = await startOpen();
   cancellation.signal.throwIfAborted();
   if (!state.opencode) {
-    const created = await client.session.create({ title: "Civic Spark workspace" });
+    const created = await client.session.create(
+      { title: "Civic Spark workspace" },
+      { signal: controlTimeout() },
+    );
     state.opencode = created.data?.id;
     save();
     cancellation.signal.throwIfAborted();
   }
   if (!state.opencode) throw new Error("Could not create session");
+  const sessionID = state.opencode;
   const model = agentModels.opencode.model;
   if (input.images?.length) {
-    const providers = await client.provider.list();
+    const providers = await client.provider.list({}, { signal: controlTimeout() });
     const registered = providers.data?.all.find((provider) => provider.id === "openrouter")?.models[
       model.slice("openrouter/".length)
     ];
@@ -245,19 +356,71 @@ async function openTurn(
   const separator = model.indexOf("/");
   const context = await contextModule();
   cancellation.signal.throwIfAborted();
-  const result = await client.session.prompt({
-    sessionID: state.opencode,
-    system: context.workspaceContext(),
-    model: {
-      providerID: model.slice(0, separator),
-      modelID: model.slice(separator + 1),
-    },
-    parts: openCodeParts(input),
-  });
-  if (result.data?.info.error) throw result.data.info.error;
-  if (result.data?.info.cost !== undefined)
-    emit("status", "Turn complete", { cost: result.data.info.cost });
+  const userMessageID = openCodeMessageID();
+  const tracker = new OpenCodeTurnTracker(sessionID, userMessageID);
+  let rejection: unknown;
+  let reconcilePromise: Promise<OpenCodeTurnOutcome> | undefined;
+  const reconcile = () => {
+    reconcilePromise ??= reconcileOpenCodeTurn(client, tracker, () => rejection);
+    return reconcilePromise;
+  };
+  const stop = async () => {
+    tracker.requestStop();
+    // Do not cancel the POST: a delayed server can accept it after cancellation.
+    // The reconciler observes acceptance and then aborts the actual native turn.
+    await reconcile();
+  };
+  const activeTurn: ActiveOpenTurn = { client, tracker, stop, reconcile };
+  activeOpenTurn = activeTurn;
+  try {
+    cancellation.signal.throwIfAborted();
+    tracker.markSubmissionStarted();
+    // Submit exactly once. ACK has a bounded lifetime; inference does not.
+    // Even if ACK is lost, durable correlated messages can confirm completion.
+    const submission = client.session
+      .promptAsync(
+        {
+          sessionID,
+          messageID: userMessageID,
+          system: context.workspaceContext(),
+          model: {
+            providerID: model.slice(0, separator),
+            modelID: model.slice(separator + 1),
+          },
+          parts: openCodeParts(input),
+        },
+        { signal: promptTimeout(), throwOnError: false },
+      )
+      .then(
+        (result) => {
+          if (result?.error || (result?.response && !result.response.ok)) {
+            // An HTTP rejection is distinct from an unknown transport outcome.
+            if (
+              [400, 401, 403, 404, 405, 409, 413, 415, 422].includes(result.response?.status ?? 0)
+            )
+              rejection = new OpenCodeTransportError();
+            else if (activeOpenTurn === activeTurn)
+              emit("status", "OpenCode connection interrupted; checking the current turn…");
+          } else tracker.markAccepted();
+        },
+        () => {
+          if (activeOpenTurn === activeTurn)
+            emit("status", "OpenCode connection interrupted; checking the current turn…");
+        },
+      );
+    const outcome = await reconcile();
+    // Keep submission observed even when terminal events precede its ACK.
+    void submission;
+    if (outcome.outcome === "stopped") cancellation.abort();
+    cancellation.signal.throwIfAborted();
+    if (outcome.outcome === "failed") throw outcome.error;
+    if (outcome.outcome === "success" && outcome.cost !== undefined)
+      emit("status", "Turn complete", { cost: outcome.cost });
+  } finally {
+    if (activeOpenTurn === activeTurn) activeOpenTurn = undefined;
+  }
 }
+
 async function input(message: AgentInput) {
   if (message.type === "reconnect") {
     const key = loadCredentials("/home/sprite")[message.provider];
@@ -327,7 +490,7 @@ async function input(message: AgentInput) {
     turn?.abort();
     for (const resolve of approvals.values()) resolve(false);
     claudeAbort?.abort();
-    if (open && state.opencode) await open.session.abort({ sessionID: state.opencode });
+    await activeOpenTurn?.stop();
     return;
   }
   if (active) {
@@ -348,7 +511,8 @@ async function input(message: AgentInput) {
   active = true;
   const cancellation = new AbortController();
   turn = cancellation;
-  emit("user", message.text, { ...(message.id ? { id: message.id } : {}), images: message.images });
+  const userMessageID = message.id ?? randomUUID();
+  emit("user", message.text, { id: userMessageID, images: message.images });
   working = true;
   workingStartedAt = new Date().toISOString();
   emit("status", "Working", { workingStartedAt });
@@ -360,7 +524,7 @@ async function input(message: AgentInput) {
       if (turn !== cancellation) return;
       cancellation.abort();
       claudeAbort?.abort();
-      if (open && state.opencode) void open.session.abort({ sessionID: state.opencode });
+      void activeOpenTurn?.stop();
       emit(
         "error",
         "Sprite activity protection was interrupted. The turn was stopped; reconnect to retry.",

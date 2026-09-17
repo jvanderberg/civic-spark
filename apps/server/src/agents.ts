@@ -148,6 +148,7 @@ export class AgentSessions {
             "activity.ts",
             "images.ts",
             "multimodal.ts",
+            "opencode-turn.ts",
           ].flatMap((name) => [
             "--file",
             `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,

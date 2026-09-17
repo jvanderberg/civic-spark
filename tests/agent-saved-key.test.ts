@@ -34,8 +34,10 @@ it("keeps a saved OpenRouter key through startup failure and retries the native 
     .replaceAll('"@anthropic-ai/claude-agent-sdk"', JSON.stringify(pathToFileURL(mocks).href))
     .replaceAll('"@opencode-ai/sdk/v2"', JSON.stringify(pathToFileURL(mocks).href))
     .replaceAll('"./provider.ts"', JSON.stringify(pathToFileURL(mocks).href))
-    .replace(/"\.\/(credentials|journal|protocol|multimodal|activity)\.ts"/g, (_, name: string) =>
-      JSON.stringify(pathToFileURL(resolve(`packages/agents/src/${name}.ts`)).href),
+    .replace(
+      /"\.\/(credentials|journal|protocol|multimodal|activity|opencode-turn)\.ts"/g,
+      (_, name: string) =>
+        JSON.stringify(pathToFileURL(resolve(`packages/agents/src/${name}.ts`)).href),
     );
   const entry = join(runtime, "runner.ts");
   writeFileSync(entry, source);

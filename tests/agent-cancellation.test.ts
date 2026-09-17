@@ -40,13 +40,33 @@ it.each(["claude", "opencode"] as const)(
       `
     import {appendFileSync} from 'node:fs';
     const invoked = () => appendFileSync(${JSON.stringify(invoked)}, 'model\n');
+    const queued = [];
+    let wake;
+    const push = (event) => wake ? (wake(event), wake = undefined) : queued.push(event);
+    const stream = (async function*() { while (true) yield queued.shift() ?? await new Promise(resolve => wake = resolve); })();
+    const records = [];
     export async function verifyProviderKey() { return {}; }
     export async function* query() { invoked(); }
     export async function getSessionMessages() { return []; }
     export async function createOpencodeServer() { return {url:'http://127.0.0.1:1',close(){}}; }
     export function createOpencodeClient() { return {
-      event:{subscribe:async()=>({stream:(async function*(){})()})},
-      session:{create:async()=>({data:{id:'preserved-session'}}),abort:async()=>{},prompt:async()=>{invoked();return {};}}
+      event:{subscribe:async()=>({stream})},
+      session:{
+        create:async()=>({data:{id:'preserved-session'}}),
+        abort:async()=>{},
+        promptAsync:async({sessionID,messageID})=>{
+          invoked();
+          const user = {id:messageID,sessionID,role:'user'};
+          const reply = {id:'assistant',sessionID,role:'assistant',parentID:messageID,finish:'stop'};
+          records.push({info:user},{info:reply});
+          push({type:'message.updated',properties:{sessionID,info:user}});
+          push({type:'message.updated',properties:{sessionID,info:reply}});
+          push({type:'session.status',properties:{sessionID,status:{type:'idle'}}});
+          throw new TypeError('fetch failed');
+        },
+        status:async()=>({data:{'preserved-session':{type:'idle'}}}),
+        messages:async()=>({data:records})
+      }
     }; }
   `.replace("'model\n'", "'model\\n'"),
     );
@@ -69,8 +89,10 @@ it.each(["claude", "opencode"] as const)(
         .replaceAll('"@anthropic-ai/claude-agent-sdk"', JSON.stringify(pathToFileURL(mocks).href))
         .replaceAll('"@opencode-ai/sdk/v2"', JSON.stringify(pathToFileURL(mocks).href))
         .replaceAll('"./provider.ts"', JSON.stringify(pathToFileURL(mocks).href))
-        .replace(/"\.\/(credentials|journal|protocol|multimodal)\.ts"/g, (_, name: string) =>
-          JSON.stringify(pathToFileURL(resolve(`packages/agents/src/${name}.ts`)).href),
+        .replace(
+          /"\.\/(credentials|journal|protocol|multimodal|opencode-turn)\.ts"/g,
+          (_, name: string) =>
+            JSON.stringify(pathToFileURL(resolve(`packages/agents/src/${name}.ts`)).href),
         ),
     );
     const child = spawn(process.execPath, ["--experimental-strip-types", entry], { stdio: "pipe" });
@@ -101,6 +123,7 @@ it.each(["claude", "opencode"] as const)(
       expect(() => readFileSync(invoked)).toThrow();
       send({ type: "prompt", provider, text: "Next explicit turn" });
       await wait(() => events.filter((e) => e.type === "done").length === 2);
+      expect(events.filter((event) => event.type === "done")[1]?.outcome).toBe("success");
       expect(readFileSync(invoked, "utf8")).toBe("model\n");
       expect(puts).toBe(2);
       expect(deletes).toBe(2);
