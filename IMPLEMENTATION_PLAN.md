@@ -1,4 +1,4 @@
-## Administrative Sprite deletion reset — local, pending root acceptance
+## Administrative Sprite deletion reset — deployed `6c48d0f`
 
 - [x] Trace row Delete through API/admin/generation checks, drains, provider deletion and owner recovery.
 - [x] Require strict authenticated resource identity and confirmed exact absence; preserve retryable metadata on uncertain outcomes.
@@ -6,7 +6,7 @@
 - [x] Extend full-request/relay drains and stale-generation protections; retain accounts, memberships, catalog, shared Git, historical preview tombstones and unrelated workspaces.
 - [x] Full check passed 647 tests/68 files (2 opt-in suites skipped), lint/types/build; complete mobile and lifecycle/provisioning/connection browser checks passed, with inspected screenshots and no unexpected console errors. Evidence: artifacts/sprite-delete-reset.
 - [x] Follow-up guards Delete after all metadata awaits (including confirmed absence) and reset creation after queue admission; real adapter/queue regressions cover revoked admin/session/membership, newer generation, event pause and post-dispatch cleanup. Reset defaults verified through interrupted-cleanup restart.
-- [ ] Root integration and dedicated test-resource live acceptance. No provider/cloud calls, deployment, publication or live participant modifications in this workstream.
+- [x] Root integration/publication and deployment `6c48d0f`; final check 656 tests/68 files plus two opt-in skips, full mobile and connection suites, context158. Dedicated browser Delete → Connect passed with old provider404/new200, private README marker removed, same shared Git HEAD and cleared obsolete runtime metadata. Final dedicated replacement cleanup passed: both provider names404, obsolete metadata cleared, shared Git retained. No attendee workspace was modified.
 
 ## Absent project checkout repair — local, pending integration
 

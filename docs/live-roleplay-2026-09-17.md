@@ -20,7 +20,7 @@ The run required substantial intervention: false agent-completion errors, manage
 
 This was a staggered functional exercise with pauses and repairs, **not a successful uninterrupted 40-concurrent-user load test**. No claim of physical-device keyboard support, complete project correctness, or measured cloud capacity follows from these results. Per-person evidence is in the local `artifacts/roleplay-20260917/participant-outcomes.md` audit and `pNN.md` notes. Existing real participant work was excluded from the roleplay.
 
-Runtime remains `24de48f`; the final report requires no deployment. The roleplay is complete; previews and workspaces are preserved. The separately requested admin Delete/reset escape hatch remains under implementation and is not claimed as delivered by this exercise.
+The roleplay completed on runtime `24de48f`. The separate admin Delete/reset escape hatch is now deployed as `6c48d0f`: dedicated live browser acceptance confirmed provider deletion, cleared old runtime metadata, explicit fresh-Sprite connection, restored shared files, discarded unshared test edits and unchanged shared Git. It was tested on a new disposable team, not the 40 attendees. The roleplay is complete; its previews and workspaces are preserved. See [the current handoff](handoff.md) for final acceptance and cleanup evidence.
 
 The sections below preserve the chronological record. Earlier counts, holds and pending fixes describe earlier stages, not current status.
 
