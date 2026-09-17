@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import type {
   PortalState,
   SessionView,
@@ -29,6 +29,7 @@ import { AdminTeams } from "./AdminTeams.tsx";
 import { api } from "./api.ts";
 import { Badge, Empty, Field, initials, Modal } from "./components.tsx";
 import { MobileMenu } from "./MobileMenu.tsx";
+import { type CreationRequest, ParticipantCreation } from "./ParticipantCreation.tsx";
 import { ProjectBrief } from "./ProjectBrief.tsx";
 import { Workspace } from "./Workspace.tsx";
 
@@ -68,10 +69,14 @@ export function App() {
   }
   const [adminProjectDirty, setProjectDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const projectDirty = adminProjectDirty || settingsDirty;
+  const [participantDirty, setParticipantDirty] = useState(false);
+  const projectDirty = adminProjectDirty || participantDirty || settingsDirty;
   const [tab, setTab] = useState<Tab>("discover");
-  const [modal, setModal] = useState<"event" | "team" | null>(null);
-  const [projectChoice, setProjectChoice] = useState("");
+  const [modal, setModal] = useState<"event" | null>(null);
+  const [creation, setCreation] = useState<CreationRequest | null>(null);
+  useEffect(() => {
+    setCreation((current) => (current?.eventId === eventId ? current : null));
+  }, [eventId]);
   const [workspaceId, setWorkspaceId] = useState<string | null>(() =>
     new URLSearchParams(window.location.hash.slice(1)).get("workspace"),
   );
@@ -84,8 +89,11 @@ export function App() {
       : "",
   );
   const [sentTo, setSentTo] = useState("");
+  const refreshVersion = useRef(0);
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     const current = await api<SessionView>("/session");
+    if (version !== refreshVersion.current) return;
     setSession(current);
     if (!current.user) {
       setState(null);
@@ -93,6 +101,7 @@ export function App() {
       return;
     }
     const data = await api<PortalState>("/state");
+    if (version !== refreshVersion.current) return;
     setState(data);
     const requestedWorkspace = new URLSearchParams(window.location.hash.slice(1)).get("workspace");
     const reopened = data.myWorkspaces.find((w) => w.id === requestedWorkspace);
@@ -181,9 +190,14 @@ export function App() {
       (c) =>
         c.eventId === eventId && (activeTab === "admin" || myTeams.some((t) => t.id === c.teamId)),
     ) ?? [];
-  function startTeam(projectId?: string) {
-    setProjectChoice(projectId ?? event?.projects[0]?.id ?? "custom");
-    setModal("team");
+  function startTeam(projectId?: string, opener?: HTMLElement) {
+    setCreation({
+      kind: "team",
+      eventId,
+      projectId,
+      fallbackProjectId: event?.projects[0]?.id,
+      opener,
+    });
   }
   function openTeam(team: TeamView) {
     const own = state?.myWorkspaces.find((w) => w.teamId === team.id);
@@ -210,21 +224,6 @@ export function App() {
       setEventId(created.id);
       setModal(null);
       openAdmin();
-    });
-  }
-  function submitTeam(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    void run(async () => {
-      await api("/teams", "POST", {
-        eventId,
-        name: form.get("name"),
-        ...(projectChoice === "custom"
-          ? { customProject: { name: form.get("projectName"), brief: form.get("brief") } }
-          : { projectId: projectChoice }),
-      });
-      setModal(null);
-      setTab("teams");
     });
   }
   function teamActions(team: TeamView) {
@@ -692,7 +691,7 @@ export function App() {
                     type="button"
                     className="button primary"
                     disabled={!canJoin}
-                    onClick={() => startTeam()}
+                    onClick={(e) => startTeam(undefined, e.currentTarget)}
                   >
                     <Plus size={16} /> Create a team
                   </button>
@@ -716,6 +715,22 @@ export function App() {
                         <h2>Projects to explore</h2>
                         <p>A starting point, a question, or an idea worth investigating.</p>
                       </div>
+                      <button
+                        type="button"
+                        className="button primary"
+                        disabled={
+                          !(
+                            event.status === "registration" ||
+                            event.status === "live" ||
+                            (admin && event.status === "draft")
+                          )
+                        }
+                        onClick={(e) =>
+                          setCreation({ kind: "project", eventId, opener: e.currentTarget })
+                        }
+                      >
+                        <Plus size={16} /> Create project
+                      </button>
                     </div>
                     <div className="project-grid">
                       {event.projects.map((p, i) => (
@@ -738,7 +753,7 @@ export function App() {
                               type="button"
                               className="text-link"
                               disabled={!canJoin}
-                              onClick={() => startTeam(p.id)}
+                              onClick={(e) => startTeam(p.id, e.currentTarget)}
                             >
                               Start a team <ArrowRight size={14} />
                             </button>
@@ -1031,125 +1046,88 @@ export function App() {
         </main>
       </div>
       {modal && (
-        <Modal
-          title={modal === "event" ? "Create an event" : "Start a team"}
-          onClose={() => !busy && setModal(null)}
-        >
+        <Modal title="Create an event" onClose={() => !busy && setModal(null)}>
           {error && (
             <p className="error modal-error" role="alert">
               {error}
             </p>
           )}
-          {modal === "event" ? (
-            <form className="form" onSubmit={submitEvent}>
-              <p className="form-intro">
-                You’ll be this event’s first admin. You can give other members admin access after
-                they join.
-              </p>
-              <Field label="Starting point">
-                <select name="templateId" defaultValue="blank">
-                  {state?.templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
+          <form className="form" onSubmit={submitEvent}>
+            <p className="form-intro">
+              You’ll be this event’s first admin. You can give other members admin access after they
+              join.
+            </p>
+            <Field label="Starting point">
+              <select name="templateId" defaultValue="blank">
+                {state?.templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Event name">
+              <input name="name" required minLength={2} maxLength={100} />
+            </Field>
+            <div className="form-grid">
+              <Field label="Date">
+                <input
+                  name="date"
+                  type="date"
+                  required
+                  defaultValue={new Date().toISOString().slice(0, 10)}
+                />
               </Field>
-              <Field label="Event name">
-                <input name="name" required minLength={2} maxLength={100} />
+              <Field label="Timezone">
+                <input name="timezone" required defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone} />
               </Field>
-              <div className="form-grid">
-                <Field label="Date">
-                  <input
-                    name="date"
-                    type="date"
-                    required
-                    defaultValue={new Date().toISOString().slice(0, 10)}
-                  />
-                </Field>
-                <Field label="Timezone">
-                  <input
-                    name="timezone"
-                    required
-                    defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone}
-                  />
-                </Field>
-              </div>
-              <Field label="Location">
-                <input name="location" required minLength={2} />
+            </div>
+            <Field label="Location">
+              <input name="location" required minLength={2} />
+            </Field>
+            <div className="form-grid">
+              <Field label="Participant capacity">
+                <input name="capacity" type="number" required min={1} max={500} defaultValue={40} />
               </Field>
-              <div className="form-grid">
-                <Field label="Participant capacity">
-                  <input
-                    name="capacity"
-                    type="number"
-                    required
-                    min={1}
-                    max={500}
-                    defaultValue={40}
-                  />
-                </Field>
-                <Field label="Planned model budget ($)">
-                  <input
-                    name="budget"
-                    type="number"
-                    required
-                    min={0}
-                    max={10000}
-                    defaultValue={20}
-                  />
-                </Field>
-              </div>
-              <div className="form-actions">
-                <button type="submit" className="button primary" disabled={busy}>
-                  Create event <ArrowRight size={15} />
-                </button>
-              </div>
-            </form>
-          ) : (
-            <form className="form" onSubmit={submitTeam}>
-              <p className="form-intro">
-                Choose a shared project for your team. You’ll join automatically and get your own
-                workspace.
-              </p>
-              <Field label="Team name">
-                <input name="name" required minLength={2} maxLength={80} />
+              <Field label="Planned model budget ($)">
+                <input name="budget" type="number" required min={0} max={10000} defaultValue={20} />
               </Field>
-              <Field label="Project">
-                <select value={projectChoice} onChange={(e) => setProjectChoice(e.target.value)}>
-                  {event?.projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                  <option value="custom">My own project idea</option>
-                </select>
-              </Field>
-              {projectChoice === "custom" && (
-                <>
-                  <Field label="Project title">
-                    <input name="projectName" required minLength={2} maxLength={100} />
-                  </Field>
-                  <Field label="Project brief">
-                    <textarea
-                      name="brief"
-                      required
-                      minLength={20}
-                      maxLength={10000}
-                      rows={5}
-                      placeholder="What do you want to explore or build? Include useful data sources and what a good result would look like."
-                    />
-                  </Field>
-                </>
-              )}
-              <div className="form-actions">
-                <button type="submit" className="button primary" disabled={busy}>
-                  Create and join team <ArrowRight size={15} />
-                </button>
-              </div>
-            </form>
-          )}
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="button primary" disabled={busy}>
+                Create event <ArrowRight size={15} />
+              </button>
+            </div>
+          </form>
         </Modal>
+      )}
+      {event && (
+        <ParticipantCreation
+          key={event.id}
+          event={event}
+          request={creation?.eventId === event.id ? creation : null}
+          onClose={() => setCreation(null)}
+          onDirtyChange={setParticipantDirty}
+          onProjectCreated={(project) => {
+            setState(
+              (current) =>
+                current && {
+                  ...current,
+                  events: current.events.map((item) =>
+                    item.id === event.id &&
+                    !item.projects.some((existing) => existing.id === project.id)
+                      ? { ...item, projects: [...item.projects, project] }
+                      : item,
+                  ),
+                },
+            );
+            void refresh().catch((cause: Error) => setError(cause.message));
+          }}
+          onTeamCreated={(currentRequest) => {
+            if (currentRequest) setTab("teams");
+            void refresh().catch((cause: Error) => setError(cause.message));
+          }}
+        />
       )}
       {addingAdmin && (
         <Modal title="Add an event admin" onClose={() => setAddingAdmin(false)}>

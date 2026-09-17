@@ -483,11 +483,12 @@ export class EventService {
     return ok({ team: team.value, workspace: joined.value });
   }
   createProject(actor: Identity, eventId: string, input: ProjectInput) {
-    if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
+    const event = this.engine.snapshot().events.find((event) => event.id === eventId);
+    if (!event || !this.canDiscover(actor, event)) return fail("Event not found", 404);
+    if (event.status === "draft" && !this.isAdmin(actor, eventId))
+      return fail("Event admin access required", 403);
     const parsed = projectInputSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join(". "));
-    const event = this.engine.snapshot().events.find((event) => event.id === eventId);
-    if (!event) return fail("Event not found", 404);
     if (event.status === "closed")
       return fail("This event has ended. Projects are read-only.", 409);
     if (event.projects.some((p) => p.name.toLowerCase() === parsed.data.name.toLowerCase()))

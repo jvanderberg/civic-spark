@@ -23,6 +23,13 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Complete full check/mobile/admin/portal browser matrices, screenshot inspection and bounded root source review; integration remains root-owned.
 - [ ] Integrate participant project creation and its guidance rendering in root's combined branch; no local deployment or publication.
 
+## Participant project creation
+
+- [x] Allow authenticated discovery-eligible registration/live visitors and members to create catalog projects before joining a team; retain draft privacy, closed read-only behavior and admin-only editing.
+- [x] Add Projects creation and a single-dialog New project handoff preserving team drafts, with plain-text event guidance and canonical description → PROJECT.md briefs.
+- [x] Complete local participant/domain/API/mobile/portal/admin verification and bounded root review, including delayed success across event changes and poll-before-response deduplication; no cloud or paid tests.
+- [ ] Root integration with editable event settings and combined validation/publication remain separate.
+
 ## Persistent workspace connections
 
 - [x] Keep Agent/Terminal connections independent of view visibility after lazy first activation; preserve bounded retries and explicit disconnect/access/lifecycle gates.

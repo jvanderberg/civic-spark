@@ -63,7 +63,7 @@ An installation can pin its portal to one existing event with `CIVIC_SPARK_SITE_
 2. Sign in and create an event from a blank or DIOD template. The creator becomes its first admin.
 3. Add another admin by the verified email of an account that has signed in, or promote an event member. At least one admin must remain.
 4. In Admin → Projects, create or edit projects with a name and Markdown brief, including data links. Open registration. Signed-in newcomers see project briefs and teams.
-5. Participants join a team or create a team from a listed project or a custom project title/brief. The creator joins automatically. The chosen brief is checked into `PROJECT.md`.
+5. Signed-in participants can create a listed project from Projects before joining a team. In the team form, New project opens project creation and returns to the preserved team draft with that project selected; saving the project does not create the team. Creating the team joins its creator and checks the chosen brief into `PROJECT.md`.
 6. Rehearse the browser → personal workspace → shared contribution → export path before the event.
 
 ### Event details and schedule
@@ -78,7 +78,9 @@ New-project guidance is event-scoped plain text (up to 5,000 characters). Missin
 
 ### Project briefs
 
-Event admins can create and edit listed projects without joining a team. Creation and editing require that event's admin role and an event that has not closed. The name is 2–100 characters; the Markdown brief is 20–10,000 characters (nonblank after trimming for the minimum). The stored Markdown preserves whitespace and URLs. Existing participant custom-project creation remains available through the team flow.
+Signed-in people who can discover a registration/live event can create listed projects before joining a team, including people whose current event role is visitor. Creation does not grant membership or admin rights, create teams/workspaces, consume participant capacity, or start runtime/model work. Draft events retain event-admin-only creation; inaccessible draft/closed events stay private, and visible closed events are read-only. Catalog editing remains event-admin-only. An execution pause blocks runtime work, not catalog creation. Removing membership remains cleanup rather than a ban from an open event.
+
+The project name is 2–100 characters; the Markdown brief is 20–10,000 characters (nonblank after trimming for the minimum). Stored Markdown preserves whitespace and URLs. Event-provided `projectBriefGuidance` is plain-text help beside the brief input, not a second source or automatically submitted content. Project creation refreshes the catalog without reloading. New project in the team form returns on cancel or save with the team draft preserved; only an explicit Create and join team submits that team.
 
 Catalog and team cards render Markdown headings, lists, emphasis, links, code, quotes and GFM tables. Long briefs open in a keyboard-accessible, scrollable disclosure so team actions remain reachable; wide code and tables scroll within the brief. Raw HTML is skipped, unsafe link protocols are filtered, and images display their alternative text without fetching remote content. Rendering does not change stored Markdown or `PROJECT.md`.
 
