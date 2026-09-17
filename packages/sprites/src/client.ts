@@ -24,6 +24,11 @@ import {
   TEXT_BODY_LIMIT,
 } from "../../workspace/src/types.ts";
 import { CommandBusy, CommandQueue } from "./command-queue.ts";
+import {
+  logSpriteCreate,
+  observeSpriteCreate,
+  type SpriteCreateLogger,
+} from "./create-diagnostics.ts";
 import { validateSpriteToken } from "./credentials.ts";
 import { spriteOrganizationListSchema, spriteResourceSchema } from "./metadata.ts";
 import { boundedProviderJson, classifyCreationFailure } from "./provisioning.ts";
@@ -47,6 +52,7 @@ export class SpriteClient {
     private org = process.env.CIVIC_SPARK_SPRITE_ORG,
     private acquire?: (name: string, passive?: boolean) => SpriteLease,
     private request: typeof fetch = fetch,
+    private createLogger: SpriteCreateLogger = logSpriteCreate,
   ) {}
   /** Provider metadata only: no guessed hostname or browser-visible organization token. */
   async previewUrl(
@@ -270,12 +276,16 @@ export class SpriteClient {
     requireMissing = false,
   ): Promise<SpriteCreateResult> {
     if (!spriteNamePattern.test(name)) return fail("Invalid Civic Spark Sprite name.");
-    const failure = (kind: SpriteCreationFailure): SpriteCreateResult => ({
-      ok: false,
-      status: 502,
-      error: spriteCreationMessages[kind],
-      creationFailure: kind,
-    });
+    let observedFailure: SpriteCreationFailure | null = null;
+    const failure = (kind: SpriteCreationFailure): SpriteCreateResult => {
+      observedFailure = kind;
+      return {
+        ok: false,
+        status: 502,
+        error: spriteCreationMessages[kind],
+        creationFailure: kind,
+      };
+    };
     // Retain local CLI-login support. Its free-form output cannot reliably carry
     // structured provider codes, so a failure remains unknown, never guessed.
     if (!process.env.SPRITE_TOKEN) {
@@ -302,6 +312,9 @@ export class SpriteClient {
     let lease: SpriteLease | undefined;
     let release: (() => void) | undefined;
     let dispatched = false;
+    let diagnostic: ReturnType<typeof observeSpriteCreate> | undefined;
+    let signal: AbortSignal | undefined;
+    let onAbort: (() => void) | undefined;
     try {
       lease = this.lease(name);
       release = await this.commands.acquire(lease?.signal);
@@ -324,24 +337,50 @@ export class SpriteClient {
       if (current.token !== endpoint.token || current.url.href !== endpoint.url.href)
         return failure("unknown");
       // One POST, no automatic retries or fallback mutation after an uncertain response.
+      const timeout = AbortSignal.timeout(120000);
+      signal = AbortSignal.any([timeout, ...(lease ? [lease.signal] : [])]);
+      diagnostic = observeSpriteCreate(
+        name,
+        this.org as string,
+        endpoint.token.split("/")[1] as string,
+        requireMissing,
+        this.createLogger,
+      );
+      onAbort = () =>
+        diagnostic?.aborted(
+          timeout.aborted && signal?.reason === timeout.reason
+            ? "timeout"
+            : lease?.signal.aborted && signal?.reason === lease.signal.reason
+              ? "lease"
+              : "other",
+        );
+      signal.addEventListener("abort", onAbort, { once: true });
       dispatched = true;
       const response = await this.request(endpoint.url, {
         method: "POST",
         headers: { Authorization: `Bearer ${endpoint.token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
         redirect: "error",
-        signal: AbortSignal.any([AbortSignal.timeout(120000), ...(lease ? [lease.signal] : [])]),
+        signal,
       });
+      diagnostic.headers(response.status);
       const body = await boundedProviderJson(response);
-      if (!response.ok) return failure(classifyCreationFailure(response.status, body));
+      diagnostic.body(body);
+      if (!response.ok) {
+        diagnostic.validated(false);
+        return failure(classifyCreationFailure(response.status, body));
+      }
       const created = spriteResourceSchema(name, this.org as string).safeParse(body);
-      return (requireMissing ? response.status === 201 : [200, 201].includes(response.status)) &&
-        created.success
-        ? ok(name)
-        : failure("unknown");
+      const confirmed =
+        (requireMissing ? response.status === 201 : [200, 201].includes(response.status)) &&
+        created.success;
+      diagnostic.validated(confirmed);
+      return confirmed ? ok(name) : failure("unknown");
     } catch {
       return failure(dispatched && !lease?.signal.aborted ? "transient" : "unknown");
     } finally {
+      if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+      diagnostic?.finish(observedFailure);
       release?.();
       lease?.release();
     }
