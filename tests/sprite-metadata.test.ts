@@ -28,6 +28,10 @@ function fixture(list: unknown, resource: unknown = null, status = 404, listStat
 
 it.each([
   ["live unrelated row", liveList],
+  [
+    "matching target and unrelated conflicting row",
+    { ...liveList, sprites: [...liveList.sprites, { name, organization: org, org_slug: org }] },
+  ],
   ["current empty list", { name: org, sprites: [] }],
   ["SDK null list with authenticated identity", { name: org, sprites: null }],
   ["legacy empty list", { sprites: [] }],
@@ -67,6 +71,34 @@ it.each([
   await expect(f.client.inspectReservation(name, true)).resolves.toBe("unknown");
   expect(f.request).toHaveBeenCalledTimes(2);
   expect(f.request.mock.calls.every(([url]) => new URL(String(url)).search !== "")).toBe(true);
+});
+
+it.each([
+  [{ name, organization: "wrong-org" }],
+  [{ name, org_slug: "wrong-org" }],
+  [{ name, organization: org, org_slug: "wrong-org" }],
+  [{ name, organization: "wrong-org", org_slug: org }],
+  [
+    { name, organization: org },
+    { name, organization: "wrong-org" },
+  ],
+])("target ownership conflict blocks named404 and guarded POST: %j", async (...rows) => {
+  const f = fixture({ ...liveList, sprites: [...liveList.sprites, ...rows] });
+  await expect(inspectRecoverySprite(name, org, origin, token, f.request)).rejects.toThrow(
+    "Provider organization",
+  );
+  await expect(f.client.inspectReservation(name, true)).resolves.toBe("unknown");
+  const guard = vi.fn(async () => {});
+  await expect(f.client.create(name, guard, true)).resolves.toMatchObject({
+    ok: false,
+    creationFailure: "unknown",
+  });
+  expect(guard).toHaveBeenCalledTimes(1);
+  expect(f.request).toHaveBeenCalledTimes(3);
+  for (const [url, options] of f.request.mock.calls) {
+    expect(String(url)).toBe(`${origin}/v1/sprites?max_results=1`);
+    expect(options?.method).toBe("GET");
+  }
 });
 
 it.each([401, 403, 429, 503])("List HTTP%s cannot authenticate either boundary", async (status) => {

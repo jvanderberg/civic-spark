@@ -105,10 +105,13 @@ export async function verifyRecoveryOrganization(
   apiOrigin: string,
   token: string,
   request: RecoveryFetch = fetch,
+  targetName?: string,
 ) {
   const response = await providerGet("/sprites?max_results=1", org, apiOrigin, token, request);
   if (response.status !== 200) throw new Error("Provider organization cannot be authenticated");
-  const result = spriteOrganizationListSchema(org).safeParse(await boundedProviderJson(response));
+  const result = spriteOrganizationListSchema(org, targetName).safeParse(
+    await boundedProviderJson(response),
+  );
   if (!result.success) throw new Error("Provider organization mismatch or invalid metadata");
 }
 export async function inspectRecoverySprite(
@@ -121,7 +124,7 @@ export async function inspectRecoverySprite(
   if (!/^civic-spark-[a-z0-9-]{1,45}$/.test(name))
     throw new Error("Invalid recovery reservation name");
   // Revalidate organization even on a retry; a stale marker is not proof of current absence.
-  await verifyRecoveryOrganization(org, apiOrigin, token, request);
+  await verifyRecoveryOrganization(org, apiOrigin, token, request, name);
   const response = await providerGet(
     `/sprites/${encodeURIComponent(name)}`,
     org,

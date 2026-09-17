@@ -229,7 +229,7 @@ export class SpriteClient {
         await response.body?.cancel();
         return "unknown" as const;
       }
-      const org = spriteOrganizationListSchema(this.org as string).safeParse(
+      const org = spriteOrganizationListSchema(this.org as string, name).safeParse(
         await boundedProviderJson(response),
       );
       if (!org.success) return "unknown" as const;
