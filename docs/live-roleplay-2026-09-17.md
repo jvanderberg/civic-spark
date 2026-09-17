@@ -145,3 +145,11 @@ Ellis/p30 completed the architecture-tour accessibility review at desktop, 360px
 ### Completion audit at 15:30 CDT
 
 The updated persona evidence records 26 Shared contributions: all 12 leads plus p02, p03, p07, p08, p11, p16, p21, p22, p24, p25, p27, p30, p31 and p39. Thirty-one people submitted at least one model request. Four collaborators are finishing review/Share (p12, p15, p28, p34); ten remain technically blocked (the nine initial-provisioning cases plus p18). Riley/p09 is a separate post-Share recovery check and is not counted as an unfinished contribution. These are role-completion counts, not a claim of 40 simultaneously healthy runtimes.
+
+### Checkout repair release and recovery evidence
+
+Current documented completion is 30 of 40 Shared contributions. Riley/p09 also completed live shared-only recovery: a fresh browser exposed the correct confirmation, recovery restored the shared source, and managed preview rendered at desktop, 360px and 390px. Parker’s severity/source fixes and the shared Findings summary were present. No model call or new Share was needed.
+
+The existing-resource absent-checkout repair is integrated as `24de48f` (reviewed source `e5c8be3`). It distinguishes a genuinely absent project root from empty/private/unreadable/symlink paths, preserves ordinary reattachment during active turns or listing failures, and publishes the staged shared checkout without overwriting a concurrently appeared destination. Final canonical validation passed 639 tests/68 files with two opt-in skips, lint/types/build, provisioning browser checks and 158-input packaging. The author worktree’s first broad run could not start runner tests because its pinned runtime SDK was absent; canonical validation used the installed locked runtime, with no test relaxation.
+
+Deployment started after a fresh read-only check found 39 ready workspace records, zero active turns and one confirmed missing resource. Quinn’s actual shared-files acceptance remains the next gate before releasing the blocked cohort.
