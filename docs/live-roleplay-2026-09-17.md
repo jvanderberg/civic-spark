@@ -2,13 +2,27 @@
 
 Site: https://civic-spark.fly.dev — Day in Our Data.
 
-## Current status — 16:10 CDT
+## Final outcome — 16:17 CDT
 
-**38 of 40 participants have reviewed and manually Shared contributions across all 12 teams.** All 40 have usable workspaces and have submitted their role-specific model request. The final two are P14 (bus-stop UI review) and P36 (crime UI change, resolving concurrent team work before publication). No provisioning blocker remains in this cohort.
+**All 40 participants reviewed and manually Shared contributions across 12 teams.** All 12 leads built and shared MVPs; collaborators used the shared work, made focused UI/data/accessibility contributions, and published through the normal Share interface. Each persona used the live browser under a prose role brief. All 40 had usable workspaces and submitted a role-specific AI request; this count does not imply only 40 total turns.
 
-Seven newly verified Shares: P04 accessibility `7a7ab78`, P06 tax year selector `9fb4e84`, P10 cycling phone filters `4beb8da`, P19 transit eligibility `52127eb`, P33 commission phone controls `056c20e`, P37 crime count/period semantics `2bbc5b5`, and P40 ECHO suppressed-count interpretation `000105a`. Each participant recorded managed preview review and the normal Share success state. Several still saw stale generic Sprite-command or HTTP 502 alerts despite successful work; these remain usability observations, not erased failures.
+The final contribution was P36's crime-explorer mobile status summary. A concurrent teammate change required the normal Resolve with agent flow; merge `b4de08b` preserved both histories. Desktop, 360px, 390px and deep-scroll previews were reviewed before manual Share completed with `0 files changed` / `No changes to share` at 16:17:41 CDT. P14's bus-stop phone details were shared as `b45ca3b`.
 
-The sections below are a chronological record; early holds and lower counts describe earlier stages, not current status. This remains a staggered functional exercise, not proof of sustained 40-person simultaneous inference capacity.
+Other final-cohort Shares: P04 accessibility `7a7ab78`, P06 tax year selector `9fb4e84`, P10 cycling phone filters `4beb8da`, P19 transit eligibility `52127eb`, P33 commission phone controls `056c20e`, P37 crime count/period semantics `2bbc5b5`, and P40 ECHO suppressed-count interpretation `000105a`.
+
+### What this established
+
+The live workflow completed: sign-in, team discovery/join, private workspace preparation, shared-source checkout, AI work, public managed preview, review, manual Share, and an actual concurrent-change merge. Participant notes and screenshots provide the evidence. P16 and P31 shared review artifacts before their lead MVPs; their completion is not counted as an implemented application UI improvement.
+
+### Problems and limits
+
+The run required substantial intervention: false agent-completion errors, management CPU/storage contention, provider identity/creation ambiguity, missing-resource recovery, and a false-ready absent checkout were found and repaired. Several participants still saw stale generic Sprite-command or HTTP 502 alerts despite successful work. Initial MVP data errors and incomplete brief coverage were recorded rather than treated as correct merely because a preview loaded. Browser-adapter targeting/wait/screenshot mistakes are distinguished from application defects below.
+
+This was a staggered functional exercise with pauses and repairs, **not a successful uninterrupted 40-concurrent-user load test**. No claim of physical-device keyboard support, complete project correctness, or measured cloud capacity follows from these results. Per-person evidence is in the local `artifacts/roleplay-20260917/participant-outcomes.md` audit and `pNN.md` notes. Existing real participant work was excluded from the roleplay.
+
+Runtime remains `24de48f`; the final report requires no deployment. The roleplay is complete; previews and workspaces are preserved. The separately requested admin Delete/reset escape hatch remains under implementation and is not claimed as delivered by this exercise.
+
+The sections below preserve the chronological record. Earlier counts, holds and pending fixes describe earlier stages, not current status.
 
 ## Method
 
