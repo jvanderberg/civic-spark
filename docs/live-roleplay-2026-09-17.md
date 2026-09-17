@@ -86,3 +86,10 @@ All 40 existing Luna participant agents received the full roleplay release, and 
 A separate Luna browser operator handles only documented failed initial test provisioning through the normal admin UI. Previously ready workspaces and ambiguous private work are excluded from deletion. Two previously ready resources returned provider 404 during deployment preflight, including the cycling lead; those require separate recovery and are not silently replaced. Existing ready resources checked idle before deployment.
 
 Per-person observations remain in `artifacts/roleplay-20260917/pNN.md`; operator recovery is recorded in `artifacts/roleplay-20260917/recovery.md`. No deterministic business-flow scripts replace participant decisions.
+
+
+## Management contention during full restart
+
+The live site became unresponsive under the resumed exercise. Measurements: external health timed out after 15 seconds; local health timed out after 8 seconds; CPU steal was 54% across a five-second sample, CPU pressure approximately 35%, available RAM 3.3 GiB, and the 10 GiB volume was 1% used. Node was observed waiting in `jbd2_log_wait_commit`. These are evidence of CPU contention and a synchronous storage wait, not proof of a single exclusive cause.
+
+With user authorization, the existing Machine was upgraded from two shared CPUs to two performance CPUs, retaining 4 GiB RAM, the existing image and volume. Health returned 200 in 150 ms after restart. All 40 personas received a maintenance hold and then resume instructions, with explicit direction to inspect existing progress and avoid duplicating prompts. The restart may interrupt an active turn; participant logs must record any continuation needed. A separate Astra investigation is examining redundant synchronous persistence under polling. This mitigation does not establish 40-person performance acceptance.

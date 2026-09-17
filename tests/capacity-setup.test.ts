@@ -50,6 +50,16 @@ it("renders explicit disk growth choices and resource sizes without a Sprite quo
   expect(config).toContain('auto_extend_size_limit = "50GB"');
   expect(config).toContain('memory = "2048mb"');
   expect(config).not.toContain("MAX_SPRITES");
+  expect(config).toContain('cpu_kind = "shared"');
+  expect(
+    flyConfig({
+      ...setup,
+      managementCpuKind: "performance",
+      managementCpus: 2,
+      managementMemoryMb: 4096,
+    }),
+  ).toContain('cpu_kind = "performance"');
+  expect(() => setupSchema.parse({ ...setup, managementCpuKind: "unknown" })).toThrow();
   expect(flyConfig({ ...setup, volumeAutoExtend: { enabled: false } })).not.toContain(
     "auto_extend_size_",
   );

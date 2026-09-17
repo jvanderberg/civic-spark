@@ -46,6 +46,7 @@ export const setupSchema = z
           .strict(),
       ])
       .default({ enabled: false }),
+    managementCpuKind: z.enum(["shared", "performance"]).default("shared"),
     managementCpus: z.number().int().min(1).max(8).default(1),
     managementMemoryMb: z.number().int().min(1024).max(32768).default(1024),
     maxProvisioning: z.number().int().min(1).max(20).default(2),
@@ -111,7 +112,7 @@ export function flyConfig(input: Setup) {
     .map(([k, v]) => `  ${k} = ${quote(v)}`)
     .join(
       "\n",
-    )}\n\n[deploy]\n  strategy = "immediate"\n\n[[mounts]]\n  source = "${volumeName}"\n  destination = "/data"\n${autoExtend}\n[http_service]\n  internal_port = 4311\n  force_https = true\n  auto_stop_machines = "off"\n  auto_start_machines = true\n  min_machines_running = 1\n\n[[http_service.checks]]\n  grace_period = "30s"\n  interval = "15s"\n  timeout = "5s"\n  method = "GET"\n  path = "/api/health"\n  [http_service.checks.headers]\n    Host = ${quote(new URL(input.origin).host)}\n\n[[vm]]\n  cpu_kind = "shared"\n  cpus = ${input.managementCpus}\n  memory = "${input.managementMemoryMb}mb"\n`;
+    )}\n\n[deploy]\n  strategy = "immediate"\n\n[[mounts]]\n  source = "${volumeName}"\n  destination = "/data"\n${autoExtend}\n[http_service]\n  internal_port = 4311\n  force_https = true\n  auto_stop_machines = "off"\n  auto_start_machines = true\n  min_machines_running = 1\n\n[[http_service.checks]]\n  grace_period = "30s"\n  interval = "15s"\n  timeout = "5s"\n  method = "GET"\n  path = "/api/health"\n  [http_service.checks.headers]\n    Host = ${quote(new URL(input.origin).host)}\n\n[[vm]]\n  cpu_kind = "${input.managementCpuKind}"\n  cpus = ${input.managementCpus}\n  memory = "${input.managementMemoryMb}mb"\n`;
 }
 export type Runner = (args: string[], input?: string) => string;
 let checkedFlyVersion = false;
@@ -344,7 +345,7 @@ async function main() {
   if (action === "plan") {
     console.log(`Configuration written: ${config}\nNo cloud resources changed.`);
     console.log(
-      `Persistent volume: ${input.volumeGb} GB initially. Auto-extension: ${input.volumeAutoExtend.enabled ? `${input.volumeAutoExtend.thresholdPercent}% used, +${input.volumeAutoExtend.incrementGb} GB, ceiling ${input.volumeAutoExtend.ceilingGb} GB` : "disabled"}. Management: ${input.managementCpus} shared CPUs / ${input.managementMemoryMb} MB.`,
+      `Persistent volume: ${input.volumeGb} GB initially. Auto-extension: ${input.volumeAutoExtend.enabled ? `${input.volumeAutoExtend.thresholdPercent}% used, +${input.volumeAutoExtend.incrementGb} GB, ceiling ${input.volumeAutoExtend.ceilingGb} GB` : "disabled"}. Management: ${input.managementCpus} ${input.managementCpuKind} CPUs / ${input.managementMemoryMb} MB.`,
     );
     console.log(
       "Public previews use each existing Sprite HTTPS URL. No preview apps, Machines, domains, origin pools or extra ports are provisioned.",

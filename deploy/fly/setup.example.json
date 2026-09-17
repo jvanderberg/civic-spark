@@ -12,6 +12,7 @@
   "volumeAutoExtend": {
     "enabled": false
   },
+  "managementCpuKind": "shared",
   "managementCpus": 2,
   "managementMemoryMb": 4096
 }
