@@ -220,20 +220,28 @@ it("a disconnected retained terminal releases idle polling without killing remot
     vi.spyOn(ws, "close").mockImplementation(() => {
       ws.emit("close", 1000);
     });
+    // Input is only accepted on an open socket; there is no handshake here.
+    Object.defineProperty(ws, "readyState", { value: WebSocket.OPEN, configurable: true });
     return ws;
   };
   try {
     lifecycle.touch(w.id);
     const first = socket();
     terminals.attach(w.id, sprite, first, async () => true);
-    first.emit("close", 1000);
+    // Typing is use: it keeps the retained bridge and refreshes workspace activity.
     now += 4 * 60000;
-    ptys[0]?.data?.("A running command produced output\n");
+    first.emit("message", Buffer.from(JSON.stringify({ type: "input", data: "ls\r" })));
+    await vi.waitFor(() => expect(ptys[0]?.write).toHaveBeenCalledWith("ls\r"));
     now += 2 * 60000;
     lifecycle.releaseIdle(now);
     expect(service.runtime(w.id).held).toBe(false);
     expect(ptys[0]?.kill).not.toHaveBeenCalled();
-    now += 6 * 60000;
+    first.emit("close", 1000);
+    // Output alone is not use: a tmux status line or TUI redraw must not keep the
+    // Sprite in billed running state after the person has gone idle.
+    now += 4 * 60000;
+    ptys[0]?.data?.("status line refresh\n");
+    now += 2 * 60000;
     lifecycle.releaseIdle(now);
     expect(service.runtime(w.id)).toMatchObject({ held: true, reason: "idle" });
     expect(ptys[0]?.kill).toHaveBeenCalledOnce();

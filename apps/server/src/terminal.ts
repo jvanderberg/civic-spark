@@ -16,6 +16,7 @@ export class TerminalSessions {
   constructor(
     private allowed: (id: string) => boolean = () => true,
     private client = new SpriteClient(),
+    private touch: (id: string) => void = () => {},
   ) {}
   private sessions = new Map<string, Session>();
   attach(id: string, sprite: string, socket: WebSocket, authorized: () => Promise<boolean>) {
@@ -56,7 +57,8 @@ export class TerminalSessions {
       const active = session;
       this.sessions.set(id, active);
       proc.onData((data) => {
-        active.lastUsedAt = Date.now();
+        // Output is not use: tmux status refreshes and TUIs emit forever, which
+        // would block idle release and keep the Sprite in billed running state.
         active.history = (active.history + data)
           .slice(-200000)
           .replaceAll("\x1b[6n", "")
@@ -113,6 +115,7 @@ export class TerminalSessions {
           if (!(await check())) return;
           if (input.type === "input") {
             active.lastUsedAt = Date.now();
+            this.touch(id);
             active.process.write(input.data);
           } else active.process.resize(input.cols, input.rows);
         })

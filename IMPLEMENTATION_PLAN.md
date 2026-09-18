@@ -121,7 +121,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 - [x] Root integration/deployment of individual controls (`3cea3ec`), live eight-case UI acceptance and dedicated individual pause/reopen; no live deletion
 - [x] Durable pause-all workspace holds and event-wide execution pause; cancellation/drain, retryable partial stops, restart gates and on-demand same-Sprite wake
 - [x] Shared Git downloads remain available while paused; no private-source export or prototype fallback
-- [x] Release inactive polling and retained terminal bridges after configurable inactivity; active browser model Tasks holds and recent terminal input/output protection; native preview traffic uses provider activity tracking
+- [x] Release inactive polling and retained terminal bridges after configurable inactivity; active browser model Tasks holds and recent terminal input protection (output never delays release); native preview traffic uses provider activity tracking
 - [x] Explicit post-restore owner recovery from canonical shared Git after authenticated missing-resource reconciliation, preserving names/identities/preview origins
 - [x] Isolated domain/API/provider/race/recovery tests and phone/desktop lifecycle browser coverage; see [mechanics and limits](docs/sprite-lifecycle.md)
 - [x] Dedicated live provider exec-stop/pause-all/owner-wake and event-pause/shared-download/unpause acceptance; same Sprite retained, no participant-event pause or paid inference. VM sleep remains provider-controlled; see current handoff.

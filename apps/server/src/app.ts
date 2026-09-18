@@ -108,7 +108,7 @@ export async function createApp(
   const client: SpriteClient = new SpriteClient(undefined, (name, passive) =>
     lifecycle.acquire(name, passive),
   );
-  const terminals = new TerminalSessions(allowed, client);
+  const terminals = new TerminalSessions(allowed, client, (id) => lifecycle.touch(id));
   const agents = new AgentSessions(client, allowed, (id) => lifecycle.touch(id));
   const sharing = new Set<string>();
   const integrations = new WorkspaceIntegrations(service, root, sharing, client);

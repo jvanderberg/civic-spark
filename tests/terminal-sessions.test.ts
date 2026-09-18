@@ -87,3 +87,35 @@ it("reattaches the same shell and buffer without counting open sockets or resize
   await vi.waitFor(() => expect(proc.resize).toHaveBeenCalledWith(80, 24));
   expect(sessions.recentlyUsed("workspace", 5 * 60000, Date.now() + 5 * 60000)).toBe(false);
 });
+
+it("counts typed input as use but never shell output, and records workspace activity on input", async () => {
+  const touch = vi.fn();
+  let now = Date.now();
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  sessions = new TerminalSessions(
+    () => true,
+    { lease: () => undefined } as unknown as SpriteClient,
+    touch,
+  );
+  const socket = new Socket();
+  sessions.attach(
+    "workspace",
+    "civic-spark-isolated-test",
+    socket as unknown as WebSocket,
+    async () => true,
+  );
+  const idle = 5 * 60000;
+  // A tmux status line or TUI redraw keeps producing output while nobody is typing.
+  now += 4 * 60000;
+  proc.onData.mock.calls[0]?.[0]("status line refresh");
+  now += 2 * 60000;
+  proc.onData.mock.calls[0]?.[0]("another refresh");
+  expect(sessions.recentlyUsed("workspace", idle, now)).toBe(false);
+  expect(touch).not.toHaveBeenCalled();
+  socket.emit("message", Buffer.from(JSON.stringify({ type: "input", data: "ls\r" })));
+  await vi.waitFor(() => expect(proc.write).toHaveBeenCalledWith("ls\r"));
+  expect(touch).toHaveBeenCalledWith("workspace");
+  expect(sessions.recentlyUsed("workspace", idle, now + idle - 1)).toBe(true);
+  expect(sessions.recentlyUsed("workspace", idle, now + idle)).toBe(false);
+  vi.restoreAllMocks();
+});
