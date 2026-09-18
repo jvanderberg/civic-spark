@@ -1,3 +1,13 @@
+# Current checkpoint: terminal output no longer keeps Sprites running LIVE
+
+Runtime `a37a603` is pushed to GitHub main and deployed at https://civic-spark.fly.dev on the original Machine `d8d962e3b65118` and volume `vol_vp26nn5023pkey24`; health 200 and deployed `apps/server/src/terminal.ts` / `app.ts` hashes match the commit. All 50 workspace runtime records were held (idle/admin) before and after the restart; no active model turns, no running Sprites.
+
+Cause found on 2026-09-18: the retained terminal bridge refreshed its idle clock on every byte of pty output. tmux's 15-second status line and TUIs emit indefinitely, so idle release never detached the tty exec and the attached stream counted as provider activity. One acceptance workspace (participant "Bobula", `civic-spark-3552dcb0…`) sat in billed running state for 11+ hours after the 9/17 redeploy; it was destroyed out-of-band with `sprite destroy --force`, so its workspace record now points at a missing Sprite and will offer owner recovery or admin Delete. Only typed input counts now, and input also records workspace activity, so a terminal survives while the person is active anywhere in the app and detaches after the idle window otherwise. tmux stays alive for reattachment.
+
+Also verified live: read-only provider GETs on `/services`, `/exec` and `/checkpoints` wake a cold Sprite to warm, while the metadata GET used by inventory does not. Warm and cold are unbilled for compute; the Sprites dashboard warming every Sprite it lists is expected, not a leak. Admin list amounts remain the documented continuous-uptime estimate, not measured billing.
+
+Checks: `npm run check` 657 tests / 68 files, lint, both typechecks, build; `npm run test:deploy-context` 158 packaged inputs; isolated terminal browser smoke passed. No UI changed. The operator's private `.data/fly/setup.json` and `.data/fly/civic-spark/receipt.json` were not found on this host and were reconstructed from the verified live app config (13 env keys, VM, volume and auto-extend matched the generated plan exactly); they now live under the `clever-puma` worktree's ignored `.data/fly/`. Preserve them or move them to the operator's canonical checkout.
+
 # Current checkpoint: admin Sprite Delete/reset LIVE
 
 Runtime `6c48d0f` is pushed to GitHub main and deployed at https://civic-spark.fly.dev. All three bounded review findings are resolved: deletion authorization is rechecked after provider metadata awaits, queued fresh creation rechecks current owner/session/generation, and Agent/Terminal views remount on actual Sprite identity replacement without discarding editor drafts or ordinary reconnect context.
