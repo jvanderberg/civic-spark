@@ -71,7 +71,8 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 
 - [ ] Remove arbitrary Sprite allocation blockers while retaining safe bounded concurrency and owner/pause isolation; address preview-origin capacity without origin reuse.
 - [ ] Expose initial disk sizing and optional bounded auto-expansion in repeatable setup.
-- [ ] Measure realistic 60-participant load, audit polling/Git/database/memory/transport/storage bottlenecks, and implement evidenced fixes.
+- [x] Measured fifty-person load on the deployed demo (September 20, 2026 UTC): 17/50 passed; the management host's single event loop saturated on native I/O at ~25 concurrent people (235 KB uncompressed `/api/state` per 5 s poll per person, 12 Sprite CLI spawns/s of helper polling, 300–400 agent text deltas/s). See [scripted rehearsal](docs/scripted-participant-load.md).
+- [ ] Implement the evidenced fixes: slim, compressed and ETag-cached portal state with slower or pushed refresh; batched agent text deltas; idle backoff for per-person helper polling; event-loop delay and CPU telemetry in diagnostics. Re-run fifty people afterwards.
 - [ ] Exercise crash/restart and disk-full failure/recovery using isolated fixtures; report measured limits and remaining live acceptance.
 
 ## Editable event configuration — live

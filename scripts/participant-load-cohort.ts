@@ -9,12 +9,12 @@ async function main() {
   const [filename, mode] = process.argv.slice(2);
   if (!filename || !["--validate", "--live"].includes(mode ?? ""))
     throw new Error(
-      "Usage: npm run test:participant-cohort -- roster.json --validate|--live (1-15 people)",
+      "Usage: npm run test:participant-cohort -- roster.json --validate|--live (1-50 people)",
     );
   const roster = z
     .array(z.string().min(1))
     .min(1)
-    .max(15)
+    .max(50)
     .parse(JSON.parse(readFileSync(filename, "utf8")));
   const scenarios = roster.map((file) =>
     scenarioSchema.parse(JSON.parse(readFileSync(resolve(dirname(filename), file), "utf8"))),
@@ -43,17 +43,33 @@ async function main() {
   );
   mkdirSync(output, { recursive: true, mode: 0o700 });
   console.log(`Cohort evidence: ${output}`);
-  // One independent browser/context per person; all start together, provisioning
-  // still respects the application's normal admission limit.
+  // One isolated browser context per person (separate cookies, storage and
+  // sockets), sharing a browser process per ten people so fifty fit in memory.
+  // All start together; provisioning still respects the application's limit.
+  const browsers = await Promise.all(
+    Array.from({ length: Math.ceil(scenarios.length / 10) }, () =>
+      chromium.launch({ headless: !scenarios.some((s) => s.browser.headed) }),
+    ),
+  );
+  // Spread arrivals like a real room filling up; this also keeps sign-ins under
+  // the per-address demo throttle when many people share one test machine.
+  const staggerMs = z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(60000)
+    .parse(process.env.CIVIC_SPARK_LOAD_STAGGER_MS ?? "0");
   const results = await Promise.all(
-    scenarios.map(async (scenario) => {
+    scenarios.map(async (scenario, index) => {
+      await new Promise((resolve) => setTimeout(resolve, staggerMs * index));
       const directory = join(output, scenario.id);
       mkdirSync(directory, { mode: 0o700 });
       const key = process.env[scenario.credentialEnv]?.trim() as string;
-      let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+      const browser = browsers[Math.floor(index / 10)];
+      if (!browser) throw new Error("Browser allocation failed");
+      let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
       try {
-        browser = await chromium.launch({ headless: !scenario.browser.headed });
-        const context = await browser.newContext({
+        context = await browser.newContext({
           acceptDownloads: true,
           viewport: { width: scenario.browser.width, height: scenario.browser.height },
           colorScheme: scenario.browser.theme,
@@ -73,10 +89,11 @@ async function main() {
           error: redact(error instanceof Error ? error.message : String(error), key),
         };
       } finally {
-        await browser?.close();
+        await context?.close();
       }
     }),
   );
+  await Promise.all(browsers.map((browser) => browser.close()));
   writeFileSync(join(output, "cohort.json"), JSON.stringify(results, null, 2), { mode: 0o600 });
   console.log(JSON.stringify(results, null, 2));
   if (results.some((result) => !result.passed)) process.exitCode = 1;
