@@ -3,6 +3,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { discardWorkspaceRecovery } from "../../../packages/backup/src/recovery.ts";
+import { diagnostic } from "../../../packages/diagnostics/src/index.ts";
 import type { Identity } from "../../../packages/domain/src/access-types.ts";
 import type { SpriteInventory } from "../../../packages/domain/src/lifecycle.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
@@ -97,6 +98,11 @@ export class WorkspaceLifecycle {
       // Release our polling/connections, not arbitrary user processes. Provider
       // activity detection decides when the VM can safely suspend.
       this.service.setRuntime(w.id, { held: true, reason: "idle" });
+      diagnostic({
+        event: "lifecycle.idle",
+        workspaceId: w.id,
+        idleMs: now - Date.parse(runtime.lastUsedAt),
+      });
       this.disconnect(w.id);
     }
   }

@@ -2,7 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as Xterm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "./api.ts";
+import { api, apiStatus } from "./api.ts";
 import { useSystemTheme } from "./theme.ts";
 import "./terminal.css";
 
@@ -192,7 +192,14 @@ export function Terminal({
       } catch (error) {
         if (disposed || attempt !== generation) return;
         pending = false;
-        // Preparation can fail for auth or installation reasons; preserve the actual error.
+        // A just-woken Sprite can fail its first preparation upstream; use the
+        // bounded reconnect budget before showing that as an error. Auth and
+        // installation failures keep their actual message.
+        const status = apiStatus(error);
+        if ((status === undefined || status >= 500) && attempts < 3) {
+          retry();
+          return;
+        }
         fail(error instanceof Error ? error.message : "Could not prepare terminal tools.");
       }
     };

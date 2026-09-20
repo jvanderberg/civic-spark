@@ -19,7 +19,7 @@ import {
   type Changes as WorkspaceChanges,
 } from "../../../packages/workspace/src/types.ts";
 import { Agent } from "./Agent.tsx";
-import { api } from "./api.ts";
+import { api, apiStatus } from "./api.ts";
 import { Changes } from "./Changes.tsx";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { Badge, Modal } from "./components.tsx";
@@ -54,8 +54,17 @@ export function Workspace({
     Boolean(participant.spriteName && participant.spriteStatus === "ready" && !eventPaused),
   );
   const [wakeError, setWakeError] = useState("");
+  const [slotWait, setSlotWait] = useState(false);
+  const wakeRetries = useRef(0);
+  const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (wakeTimer.current) clearTimeout(wakeTimer.current);
+    },
+    [],
+  );
   const paused = eventPaused || Boolean(participant.runtime?.held);
-  const blocked = paused || waking || Boolean(wakeError);
+  const blocked = paused || waking || slotWait || Boolean(wakeError);
   useEffect(() => {
     if (blocked || !participant.spriteName) return;
     let last = 0;
@@ -87,7 +96,22 @@ export function Workspace({
             : undefined,
         );
         await onChanged();
+        wakeRetries.current = 0;
+        setSlotWait(false);
       } catch (error) {
+        // Resume shares the preparation limit; a busy answer is not a failure.
+        if (apiStatus(error) === 429 && wakeRetries.current < 60) {
+          wakeRetries.current += 1;
+          setSlotWait(true);
+          if (wakeTimer.current) clearTimeout(wakeTimer.current);
+          wakeTimer.current = setTimeout(
+            () => void wake(connectNew),
+            Math.min(20000, 3000 * 2 ** Math.min(wakeRetries.current - 1, 3)),
+          );
+          return;
+        }
+        wakeRetries.current = 0;
+        setSlotWait(false);
         setWakeError(error instanceof Error ? error.message : "Could not resume the Sprite.");
         // A concurrent Resume can have recorded fresh absence while this request failed.
         await onChanged().catch(() => {});
@@ -316,7 +340,9 @@ export function Workspace({
                   ? "Your Sprite was deleted. Connect to start again from shared team work."
                   : waking
                     ? "Reconnecting to your existing Sprite…"
-                    : "Your saved workspace is preserved. Resume to continue."}
+                    : slotWait
+                      ? "Waiting for a free preparation slot. Resuming automatically."
+                      : "Your saved workspace is preserved. Resume to continue."}
             </p>
             {wakeError && (
               <p className="error" role="alert">

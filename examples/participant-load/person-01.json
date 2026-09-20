@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "id": "scripted-person-01",
+  "baseUrl": "https://event.example.test",
+  "authMode": "demo",
+  "eventName": "Example event",
+  "projectName": "Neighborhood explorer",
+  "participant": { "name": "Scripted Person 01", "email": "scripted-person-01@example.test" },
+  "teamName": "Scripted test 01",
+  "credentialEnv": "CIVIC_SPARK_LOAD_GLM_KEY",
+  "timing": {
+    "completionWaitMs": 300000,
+    "completionChecks": 6,
+    "agentTurnMs": 1200000,
+    "provisioningMs": 600000,
+    "retries": 3,
+    "retryMs": 3000,
+    "pollMs": 2000,
+    "thinkMs": 1000
+  },
+  "browser": { "headed": false, "width": 1440, "height": 900, "theme": "light" }
+}

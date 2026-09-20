@@ -1,3 +1,10 @@
+## Deterministic participant rehearsal — local
+
+- [x] Add a per-person JSON Playwright runner for sign-in, exact project selection, dedicated team/workspace, hello file/Share, terminal ls, GLM MVP request, five-minute bounded completion loop, MVP Share and React ZIP inspection.
+- [x] Keep keys in environment variables, reconcile shared history before retries, reject reused workspaces, and retain sanitized milestone/result evidence without executing participant code locally.
+- [x] Full check passed with two workers: 662 tests, two opt-in skips, lint, both typechecks and build. Browser matrix passed at desktop/360/390/short sizes in both themes, including streamed completion text, a transient Share failure and a lost successful Share response; screenshots inspected.
+- [x] Corrected single-person live acceptance passed in 7m18s: exact hello/MVP shared commits, first five-minute completion question, successful assistant sentinel and verified 20-entry React ZIP. Five HTTP502 and one HTTP409 console errors were retained; this is functional acceptance, not a clean-console or concurrency claim. Initial trial was interrupted and its dedicated OpenCode process stopped, retaining files/Git. See [scripted rehearsal](docs/scripted-participant-load.md).
+
 ## Administrative Sprite deletion reset — deployed `6c48d0f`
 
 - [x] Trace row Delete through API/admin/generation checks, drains, provider deletion and owner recovery.
@@ -272,3 +279,12 @@ Deployment setup, exact commands, constraints and validation gaps: [Fly deployme
 - [x] Expose Rebuild from shared work with private-state-loss confirmation; cancel, reload, status and ordinary wake never recreate.
 - [x] Validate local HTTP/provider races and phone/desktop/short viewport confirmation/cancel/reload: full check, 71 focused tests (38 recovery cases), provisioning browser and complete mobile matrix passed.
 - [ ] Root review/integration/deployment and physical-device acceptance. No live recovery mutations authorized in this worktree.
+
+## Concurrent scripted participant diagnostics
+
+- [x] Add a bounded five-person JSON cohort runner with independent browsers, per-person evidence and browser/backend request correlation.
+- [x] Add opt-in structured request/Sprite diagnostics, safe command failure classification and private helper exception metadata; preserve operation results and omit keys/content/raw command output.
+- [x] Deployed diagnostics to the existing demo Machine/volume and ran five dedicated people on different projects (September 20, 2026 UTC). Four passed end to end with zero browser HTTP errors; one failed its completion loop through a scripted-observer defect while the platform completed the turn and then paused the idle workspace as designed. Correlated one 429 (own provisioning cap), four 423 (idle hold) and one transient 502 (`sprite exec` 30 s CLI timeout during agent prepare on a just-resumed Sprite; retry succeeded). No 409 reproduced. See [scripted rehearsal](docs/scripted-participant-load.md).
+- [x] Participant runner locates turns by their fresh user echo, coalesces streamed text, persists observed agent events and fails fast when the workspace is held or the agent connection ends; cohort launcher accepts up to fifteen people.
+- [x] Provisioning concurrency raised to 5 in the operator setup; the app retries busy preparation and busy resume automatically with a waiting status instead of an error and Retry button.
+- [x] Diagnostics now record agent/terminal WebSocket close codes and durations, agent runner exits, idle releases and preparation attempts; agent preparation retries up to three times server-side with backoff and once more quietly in the app.

@@ -9,6 +9,9 @@
   "scripts": {
     "backup": "tsx scripts/backup.ts",
     "test:capacity": "tsx scripts/capacity-load.ts",
+    "test:participant": "tsx scripts/participant-load.ts",
+    "test:participant-cohort": "tsx scripts/participant-load-cohort.ts",
+    "test:participant-browser": "tsx scripts/participant-load-browser-smoke.ts",
     "test:capacity-streams": "CIVIC_SPARK_CAPACITY_STREAMS=1 vitest run tests/capacity-streams.test.ts",
     "test:backup": "vitest run tests/backup.test.ts",
     "dev": "concurrently -k -n api,web 'npm:dev:server' 'npm:dev:web'",

@@ -44,6 +44,7 @@ import {
   storageHeadroom,
   validateDeployment,
 } from "./deployment.ts";
+import { installDiagnostics } from "./diagnostics.ts";
 import type { EmailDelivery } from "./email.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
 import { WorkspaceLifecycle } from "./lifecycle.ts";
@@ -94,6 +95,7 @@ export async function createApp(
     }
   }
   const app = Fastify({ logger: false, bodyLimit: 1500000 });
+  installDiagnostics(app);
   let incomingBodyBytes = 0;
   app.decorateRequest("capacityBodyBytes", 0);
   const releaseBody = (request: { capacityBodyBytes: number }) => {

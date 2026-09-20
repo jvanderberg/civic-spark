@@ -14,7 +14,7 @@ import {
 } from "../../../packages/agents/src/protocol.ts";
 import { AgentImages, readAgentImage } from "./AgentImages.tsx";
 import { AgentTimeline } from "./AgentTimeline.tsx";
-import { api } from "./api.ts";
+import { api, apiStatus } from "./api.ts";
 import { Button } from "./vendor/t3code/Button.tsx";
 import { ComposerBanner } from "./vendor/t3code/ComposerBanner.tsx";
 import { ComposerPrimaryActions } from "./vendor/t3code/ComposerPrimaryActions.tsx";
@@ -388,7 +388,24 @@ export function Agent({
           return;
         }
       }
-      await api(`/workspaces/${workspace}/agent/prepare`, "POST");
+      // Preparation can time out at the Sprite CLI right after a wake. Retry it
+      // quietly a bounded number of times while the preparing state is shown.
+      for (let round = 1; ; round++) {
+        try {
+          await api(`/workspaces/${workspace}/agent/prepare`, "POST");
+          break;
+        } catch (cause) {
+          const status = apiStatus(cause);
+          if ((status !== undefined && status < 500) || round >= 3) throw cause;
+          await new Promise((resolve) => setTimeout(resolve, 2000 * 2 ** (round - 1)));
+          if (
+            !mounted.current ||
+            attempt !== connectionAttempt.current ||
+            !activity.current.available
+          )
+            return;
+        }
+      }
       if (!mounted.current || attempt !== connectionAttempt.current) return;
       const url = new URL(`/api/workspaces/${workspace}/agent`, location.href);
       url.protocol = location.protocol === "https:" ? "wss:" : "ws:";

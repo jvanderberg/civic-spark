@@ -4,6 +4,15 @@ import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { z } from "zod";
 import {
+  commandFailure,
+  type DiagnosticRecord,
+  diagnostic,
+  diagnosticContext,
+  helperDiagnosticSchema,
+  operationLabels,
+  spriteWorkspaceId,
+} from "../../diagnostics/src/index.ts";
+import {
   type SpriteCreationFailure,
   type SpriteProviderBinding,
   spriteCreationMessages,
@@ -159,22 +168,26 @@ export class SpriteClient {
     maxBuffer = 16 * 1024 * 1024,
     beforeDispatch?: () => Promise<void>,
   ): Promise<Result<Buffer>> {
+    const started = performance.now();
+    let dispatched: number | undefined;
+    let failure: Partial<DiagnosticRecord> = {};
+    const name = args.includes("-s")
+      ? args[args.indexOf("-s") + 1]
+      : args[0] === "create"
+        ? args.at(-1)
+        : undefined;
     let lease: SpriteLease | undefined;
     let closed: Promise<void> | undefined;
     let releaseCommand: (() => void) | undefined;
     let releaseTransfer: (() => void) | undefined;
     try {
-      const name = args.includes("-s")
-        ? args[args.indexOf("-s") + 1]
-        : args[0] === "create"
-          ? args.at(-1)
-          : undefined;
       if (name) lease = this.acquire?.(name);
       if (maxBuffer > 16 * 1024 * 1024)
         releaseTransfer = await this.transfers.acquire(lease?.signal);
       releaseCommand = await this.commands.acquire(lease?.signal);
       await beforeDispatch?.();
       lease?.signal.throwIfAborted();
+      dispatched = performance.now();
       const pending = execute("sprite", this.args(args), {
         timeout,
         maxBuffer,
@@ -186,6 +199,15 @@ export class SpriteClient {
       const { stdout } = await pending;
       return ok(stdout);
     } catch (error) {
+      failure =
+        error instanceof CommandBusy
+          ? { outcome: "queue_busy" }
+          : commandFailure(
+              error,
+              dispatched === undefined ? 0 : performance.now() - dispatched,
+              timeout,
+              lease?.signal.aborted ?? false,
+            );
       if (error instanceof CommandBusy) return fail(error.message, 429);
       return fail(
         "Sprite command failed. Check your CLI login and connectivity; no account credentials were logged.",
@@ -193,6 +215,16 @@ export class SpriteClient {
       );
     } finally {
       await closed;
+      diagnostic({
+        event: "sprite.command",
+        workspaceId: spriteWorkspaceId(name),
+        durationMs: Math.round(performance.now() - started),
+        queueMs: Math.round((dispatched ?? performance.now()) - started),
+        executionMs: dispatched === undefined ? 0 : Math.round(performance.now() - dispatched),
+        timeoutMs: timeout,
+        outcome: "ok",
+        ...failure,
+      });
       lease?.release();
       releaseCommand?.();
       releaseTransfer?.();
@@ -534,10 +566,29 @@ export class SpriteClient {
     scriptName = "files.py",
     upload?: { local: string; remote: string },
   ): Promise<Result<T>> {
+    return diagnosticContext.run(
+      { ...diagnosticContext.getStore(), operationId: randomUUID() },
+      () => this.tracedFileOperation(name, payload, schema, scriptName, upload),
+    );
+  }
+  private async tracedFileOperation<T>(
+    name: string,
+    payload: { operation: string; [key: string]: unknown },
+    schema: z.ZodType<T>,
+    scriptName: string,
+    upload?: { local: string; remote: string },
+  ): Promise<Result<T>> {
     if (!upload && ["list", "changes", "manifest", "status", "logs"].includes(payload.operation)) {
       const key = JSON.stringify([name, scriptName, payload]);
       const pending = this.reads.get(key);
-      if (pending) return pending as Promise<Result<T>>;
+      if (pending) {
+        diagnostic({
+          event: "sprite.coalesced",
+          workspaceId: spriteWorkspaceId(name),
+          ...operationLabels(scriptName, payload.operation),
+        });
+        return pending as Promise<Result<T>>;
+      }
       const request = this.performFileOperation(name, payload, schema, scriptName).finally(() =>
         this.reads.delete(key),
       );
@@ -580,16 +631,36 @@ export class SpriteClient {
           : BLOB_BODY_LIMIT
         : 16 * 1024 * 1024,
     );
-    if (!response.ok) return response;
+    const details = {
+      event: "sprite.operation" as const,
+      workspaceId: spriteWorkspaceId(name),
+      ...operationLabels(scriptName, payload.operation),
+    };
+    if (!response.ok) {
+      diagnostic({ ...details, status: response.status, outcome: "process_failed" });
+      return response;
+    }
     try {
       const parsed = z
         .discriminatedUnion("ok", [
           z.object({ ok: z.literal(true), value: schema }),
-          z.object({ ok: z.literal(false), error: z.string(), status: z.number() }),
+          z.object({
+            ok: z.literal(false),
+            error: z.string(),
+            status: z.number(),
+            diagnostic: helperDiagnosticSchema.optional(),
+          }),
         ])
         .parse(JSON.parse(response.value.toString()));
-      return parsed;
+      diagnostic({
+        ...details,
+        status: parsed.ok ? 200 : parsed.status,
+        outcome: parsed.ok ? "ok" : "helper_failed",
+        ...(!parsed.ok ? { helper: parsed.diagnostic } : {}),
+      });
+      return parsed.ok ? parsed : fail(parsed.error, parsed.status);
     } catch {
+      diagnostic({ ...details, status: 502, outcome: "invalid_response" });
       return fail("The workspace returned an invalid file response", 502);
     }
   }

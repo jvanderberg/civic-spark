@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "scripted-person-02",
+  "baseUrl": "https://event.example.test",
+  "authMode": "demo",
+  "eventName": "Example event",
+  "projectName": "Community dashboard",
+  "participant": { "name": "Scripted Person 02", "email": "scripted-person-02@example.test" },
+  "teamName": "Scripted test 02",
+  "credentialEnv": "CIVIC_SPARK_LOAD_GLM_KEY",
+  "browser": { "headed": false, "width": 390, "height": 844, "theme": "dark" }
+}
