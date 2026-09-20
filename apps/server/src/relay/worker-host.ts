@@ -195,6 +195,8 @@ export class RelayWorkerHost {
       const runner = new AgentRunner(workspaceId, sprite, {
         frame: (frame) => this.send({ type: "agent.frames", session, frames: [frame] }),
         activity: () => this.send({ type: "agent.activity", session }),
+        changed: (scope, coalesceMs) =>
+          this.send({ type: "agent.changed", session, scope, coalesceMs }),
         busy: (busy) => this.send({ type: "agent.busy", session, busy }),
         ended: () => {
           this.agents.delete(session);

@@ -45,6 +45,8 @@ export type AgentRunnerEvents = {
   activity(): void;
   /** `busy` (pending prompt or working turn) changed. */
   busy?(busy: boolean): void;
+  /** Workspace state the turn probably changed: files after tool steps, team after a finished turn. */
+  changed?(scope: "files" | "team", coalesceMs?: number): void;
   /** The runner process is gone; called once. */
   ended(): void;
 };
@@ -147,6 +149,14 @@ export class AgentRunner {
       )
         this.pendingPrompt = false;
       this.events.frame(JSON.stringify(event));
+      // Tool steps usually write files; announce them at most every 5 s. A
+      // finished turn may also have committed, so team status is stale too.
+      // After the frame, so a notification never splits a frame batch.
+      if (!event.replayed && event.type === "tool") this.events.changed?.("files", 5000);
+      if (!event.replayed && event.type === "done") {
+        this.events.changed?.("files");
+        this.events.changed?.("team");
+      }
       this.publishBusy();
     };
     const flushText = () => {

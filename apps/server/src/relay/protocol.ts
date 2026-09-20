@@ -60,6 +60,7 @@ export type FromWorker =
   | { type: "agent.frames"; session: string; frames: string[] }
   | { type: "agent.replay"; session: string; client: number; frames: string[] }
   | { type: "agent.activity"; session: string }
+  | { type: "agent.changed"; session: string; scope: "files" | "team"; coalesceMs?: number }
   | { type: "agent.busy"; session: string; busy: boolean }
   | { type: "agent.ended"; session: string }
   | { type: "terminal.output"; session: string; frame: string }

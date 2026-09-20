@@ -32,6 +32,7 @@ import { type ResolutionRequest, TeamUpdates } from "./TeamUpdates.tsx";
 import { Terminal } from "./Terminal.tsx";
 import { useWorkspaceViewport } from "./use-workspace-viewport.ts";
 import { WorkspacePreparation } from "./WorkspacePreparation.tsx";
+import { useWorkspaceEvents } from "./workspace-events.ts";
 
 type WorkspaceView = "files" | "changes" | "agent" | "terminal" | "local";
 
@@ -169,10 +170,18 @@ export function Workspace({
   const current = useRef({ file, text });
   current.current = { file, text };
   const updating = useRef(false);
+  const refreshQueued = useRef(false);
+  const refreshedAt = useRef(0);
+  const live = !blocked && !(spritesEnabled && !remote);
   const refreshFiles = useCallback(async () => {
-    if (blocked || updating.current || document.hidden) return;
-    updating.current = true;
-    try {
+    if (!live || document.hidden) return;
+    if (updating.current) {
+      // A notification during a refresh that began over a second ago may
+      // describe a change that refresh did not see; run once more after it.
+      if (Date.now() - refreshedAt.current > 1000) refreshQueued.current = true;
+      return;
+    }
+    const refreshOnce = async () => {
       const [paths, diff] = await Promise.all([
         api<string[]>(`/workspaces/${participant.id}/files`),
         api<WorkspaceChanges>(`/workspaces/${participant.id}/changes`)
@@ -204,35 +213,50 @@ export function Workspace({
           setExternalChange(false);
         }
       } else if (snapshot.file) setExternalChange(true);
+    };
+    updating.current = true;
+    try {
+      do {
+        refreshQueued.current = false;
+        refreshedAt.current = Date.now();
+        await refreshOnce();
+      } while (refreshQueued.current && !document.hidden);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Refresh failed");
     } finally {
       updating.current = false;
     }
-  }, [participant.id, blocked]);
+  }, [participant.id, live]);
   const updated = useCallback(() => {
     void refreshFiles();
   }, [refreshFiles]);
+  // The server pushes a note when files may have changed (agent tool steps and
+  // turns, saves, team updates, Share); the tab refreshes only then, after a
+  // reconnect or a return from the background, and on a slow safety timer.
+  const connected = useWorkspaceEvents(participant.id, live, (signal) => {
+    if (signal === "files" || signal === "resync") void refreshFiles();
+  });
   useEffect(() => {
-    if (blocked || (spritesEnabled && !remote)) return;
-    void refreshFiles();
-    // Files change quickly only while the agent works; otherwise poll slowly
-    // and never while the tab is hidden. Each poll is a Sprite command.
+    if (live) void refreshFiles();
+  }, [refreshFiles, live]);
+  useEffect(() => {
+    if (!live) return;
+    // Without the notification channel, fall back to the former timers. Each
+    // refresh is three Sprite commands; never poll while the tab is hidden.
+    // Connection changes only retime the safety poll; they never fetch.
     const timer = setInterval(
       () => {
         if (!document.hidden) void refreshFiles();
       },
-      agentWorking ? 5000 : 20000,
+      connected ? 90000 : agentWorking ? 5000 : 20000,
     );
-    const visible = () => {
-      if (!document.hidden) void refreshFiles();
-    };
-    document.addEventListener("visibilitychange", visible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", visible);
-    };
-  }, [refreshFiles, spritesEnabled, remote, blocked, agentWorking]);
+    return () => clearInterval(timer);
+  }, [refreshFiles, live, agentWorking, connected]);
+  useEffect(() => {
+    // Returning to the files or changes view after a while refreshes once.
+    if ((view === "files" || view === "changes") && Date.now() - refreshedAt.current > 15000)
+      void refreshFiles();
+  }, [view, refreshFiles]);
   async function open(path: string) {
     if (dirty && !window.confirm("Discard unsaved edits and open another file?")) return false;
     setLoading(true);

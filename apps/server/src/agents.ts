@@ -13,6 +13,8 @@ export type AgentSessionEvents = {
   frame(frame: string): void;
   /** Throttled participant use. */
   activity(): void;
+  /** Workspace state the turn probably changed: files after tool steps, team after a turn. */
+  changed?(scope: "files" | "team", coalesceMs?: number): void;
   /** The runner is gone (exit, spawn failure or relay worker loss); called once. */
   ended(): void;
 };
@@ -62,6 +64,7 @@ export class AgentSessions {
     private allowed: (id: string) => boolean = () => true,
     private activity: (id: string) => void = () => {},
     private backend: AgentBackend = localAgentBackend,
+    private changed: (id: string, scope: "files" | "team", coalesceMs?: number) => void = () => {},
   ) {}
   private sessions = new Map<string, Session>();
   private preparing = new Map<string, Promise<boolean>>();
@@ -171,6 +174,7 @@ export class AgentSessions {
             }
           },
           activity: () => this.activity(id),
+          changed: (scope, coalesceMs) => this.changed(id, scope, coalesceMs),
           ended: () => {
             ended = true;
             lease?.signal.removeEventListener("abort", abort);

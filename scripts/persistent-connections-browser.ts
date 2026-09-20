@@ -34,14 +34,17 @@ page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => {
   if (message.type() !== "error") return;
   const url = new URL(message.location().url || address);
-  // API sign-out deliberately invalidates the session while workspace reads
-  // may still be in flight. Only these known reads may return 401 in this phase.
+  // API sign-out deliberately invalidates the session while the portal poll
+  // and workspace reads may still be in flight. Only these known reads may
+  // return 401 in this phase.
   if (
     signingOut &&
     message.text() ===
       "Failed to load resource: the server responded with a status of 401 (Unauthorized)" &&
     url.origin === address &&
-    /^\/api\/workspaces\/[^/]+\/(files|changes)$/.test(url.pathname)
+    /^\/api\/(state|session|workspaces\/[^/]+\/(files|changes|file|team-status|agent-git))$/.test(
+      url.pathname,
+    )
   )
     expectedSignoutErrors.push(url.pathname);
   else errors.push(message.text());
@@ -63,6 +66,8 @@ await page.route("**/api/state", async (route) => {
   const response = await route.fetch({
     headers: { ...route.request().headers(), "if-none-match": "" },
   });
+  // After sign-out the poll is rejected; pass that through unchanged.
+  if (!response.ok()) return route.fulfill({ response });
   const state = (await response.json()) as PortalState;
   polls++;
   for (const workspace of state.myWorkspaces) {
@@ -126,8 +131,8 @@ for (const kind of ["agent", "terminal"] as const) {
   });
 }
 const view = (name: string) => page.getByRole("button", { name, exact: true }).click();
-const waitFor = async (predicate: () => boolean, message: string) => {
-  const end = Date.now() + 10000;
+const waitFor = async (predicate: () => boolean, message: string, timeout = 10000) => {
+  const end = Date.now() + timeout;
   while (!predicate()) {
     assert(Date.now() < end, message);
     await page.waitForTimeout(25);
@@ -259,8 +264,9 @@ try {
       );
     }
   }
+  // The portal polls every 15 s while visible; one more poll proves it runs.
   const beforePolls = polls;
-  await waitFor(() => polls >= beforePolls + 2, "Parent readiness polling did not run");
+  await waitFor(() => polls >= beforePolls + 1, "Parent readiness polling did not run", 20000);
   assert.equal(wakes, 1, "Readiness polling must not repeat wake or toggle availability");
   assert.equal(prepares, 2);
   assert.deepEqual(counts(), [1, 1]);
@@ -312,9 +318,11 @@ try {
   await page.waitForTimeout(500);
   assert.deepEqual(counts(), [2, 2], "No late sockets after lifecycle gate");
   paused = false;
+  // The next 15 s portal poll reports the unpause; both views then reconnect.
   await waitFor(
     () => sockets.agent.length === 3 && sockets.terminal.length === 3,
     "Explicit unpause",
+    25000,
   );
   revoked = true;
   await page.locator(".workspace-screen").waitFor({ state: "detached" });

@@ -197,8 +197,12 @@ it("batches agent frames per session per tick in order with busy and activity si
   );
   await c.tick();
   await c.tick();
-  const after = c.sent.slice(2);
+  const after = c.sent.slice(2).filter((m) => m.type !== "agent.changed");
   expect(after.map((m) => m.type)).toEqual(["agent.activity", "agent.frames", "agent.busy"]);
+  // A finished turn announces probable file and team changes to the main process.
+  expect(
+    c.sent.filter((m) => m.type === "agent.changed").map((m) => (m as { scope: string }).scope),
+  ).toEqual(["files", "team"]);
   expect((after[1] as { frames: string[] }).frames.map((f) => JSON.parse(f).type)).toEqual([
     "user",
     "status",

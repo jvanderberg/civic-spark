@@ -62,7 +62,9 @@ const recordSchema = z.object({
   processSpawns: z.number().int().nonnegative().optional(),
   httpRequests: z.number().int().nonnegative().optional(),
   httpBytes: z.number().int().nonnegative().optional(),
-  channel: z.enum(["agent", "terminal"]).optional(),
+  channel: z.enum(["agent", "terminal", "events"]).optional(),
+  eventsOpen: z.number().int().nonnegative().optional(), // Open workspace events sockets.
+  eventsPushed: z.number().int().nonnegative().optional(), // Change notifications sent since start.
   transport: z.enum(["process", "session"]).optional(), // How a Sprite command reached the Sprite.
   phase: z.enum(["start", "end"]).optional(), // Helper session and relay worker lifecycle.
   code: z.number().int().optional(), // WebSocket close code only; reasons are never logged.

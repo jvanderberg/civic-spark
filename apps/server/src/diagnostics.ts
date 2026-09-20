@@ -11,7 +11,10 @@ import {
   diagnosticContext,
 } from "../../../packages/diagnostics/src/index.ts";
 
-export function installDiagnostics(app: FastifyInstance) {
+export function installDiagnostics(
+  app: FastifyInstance,
+  extra?: () => Pick<DiagnosticRecord, "eventsOpen" | "eventsPushed">,
+) {
   const requests = new WeakMap<
     FastifyRequest,
     { requestId: string; traceId?: string; started: number }
@@ -51,12 +54,12 @@ export function installDiagnostics(app: FastifyInstance) {
         : {}),
     });
   });
-  installLoopTelemetry();
+  installLoopTelemetry(extra);
 }
 
 // Every ten seconds: event-loop delay percentiles, process CPU share, and
 // handle counts. This is what shows a saturated loop while handlers look fast.
-function installLoopTelemetry() {
+function installLoopTelemetry(extra?: () => Pick<DiagnosticRecord, "eventsOpen" | "eventsPushed">) {
   if (process.env.CIVIC_SPARK_DIAGNOSTICS !== "1") return;
   const histogram = monitorEventLoopDelay({ resolution: 20 });
   histogram.enable();
@@ -83,6 +86,7 @@ function installLoopTelemetry() {
       children: names.filter((name) => name === "ChildProcess").length,
       sockets: names.filter((name) => name === "Socket" || name === "TLSSocket").length,
       rssMb: Math.round(process.memoryUsage.rss() / 1048576),
+      ...extra?.(),
       ...Object.fromEntries(
         (Object.keys(counters) as CounterName[]).map((name) => [
           name,

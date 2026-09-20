@@ -40,6 +40,8 @@ export function relayAgentBackend(pool: RelayPool): AgentBackend {
             }
             case "agent.activity":
               return events.activity();
+            case "agent.changed":
+              return events.changed?.(message.scope, message.coalesceMs);
             case "agent.busy":
               busy = message.busy;
               return;

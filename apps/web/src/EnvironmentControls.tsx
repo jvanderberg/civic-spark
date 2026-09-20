@@ -2,6 +2,7 @@ import { ExternalLink, Play, RotateCw, Square, TerminalSquare } from "lucide-rea
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.ts";
 import type { ResolutionRequest } from "./TeamUpdates.tsx";
+import { useWorkspaceEvents } from "./workspace-events.ts";
 import "./environment.css";
 
 type Preview = {
@@ -39,31 +40,44 @@ export function EnvironmentControls({
   const [launching, setLaunching] = useState(false);
   const [details, setDetails] = useState(false);
   const [error, setError] = useState("");
-  const refresh = useCallback(async () => {
+  const refreshPending = useCallback(async () => {
     if (document.hidden) return;
     const result = await api<{ pending: Pending | null }>(`/workspaces/${workspace}/agent-git`);
     setPending(result.pending);
+  }, [workspace]);
+  const refreshPreview = useCallback(async () => {
+    if (document.hidden) return;
     try {
       setPreview(await api<Preview>(`/workspaces/${workspace}/preview`));
     } catch {
       /* No runtime configuration exists before the first preparation. Launch reports errors. */
     }
   }, [workspace]);
+  const refresh = useCallback(async () => {
+    await refreshPending();
+    await refreshPreview();
+  }, [refreshPending, refreshPreview]);
+  // The server announces preview launches/stops (browser or agent CLI) and
+  // conflict tickets as they happen; each scope refreshes only itself.
+  const connected = useWorkspaceEvents(workspace, !disabled, (signal) => {
+    if (signal === "preview" || signal === "resync") void refreshPreview().catch(() => undefined);
+    if (signal === "agent-git" || signal === "resync") void refreshPending().catch(() => undefined);
+  });
+  const progressing = launching || preview?.phase === "installing" || preview?.phase === "starting";
+  useEffect(() => {
+    if (!disabled) void refresh().catch(() => undefined);
+  }, [disabled, refresh]);
   useEffect(() => {
     if (disabled) return;
-    void refresh().catch(() => undefined);
-    // Fast only while a launch is in flight; moderate while the agent works
-    // (it may start a preview); slow when nothing is changing.
+    // Launch progress still polls quickly. Otherwise a slow safety timer backs
+    // up the pushed notifications, or the former timers apply without them.
+    // Retiming never fetches by itself.
     const timer = setInterval(
-      () => void refresh().catch(() => undefined),
-      launching || preview?.phase === "installing" || preview?.phase === "starting"
-        ? 1000
-        : working
-          ? 10000
-          : 30000,
+      () => void (progressing ? refreshPreview() : refresh()).catch(() => undefined),
+      progressing ? 1000 : connected ? 120000 : working ? 10000 : 30000,
     );
     return () => clearInterval(timer);
-  }, [disabled, refresh, launching, preview?.phase, working]);
+  }, [disabled, refresh, refreshPreview, progressing, working, connected]);
   async function action(name: "start" | "restart" | "stop" | "logs" | "open") {
     const launch = name === "start" || name === "restart";
     if (launch) {

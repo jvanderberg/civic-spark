@@ -19,6 +19,7 @@ import type { EventService } from "../../../packages/domain/src/service.ts";
 import type { Result } from "../../../packages/domain/src/types.ts";
 import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
+import { type ChangeNotifier, silentNotifier } from "./events.ts";
 
 const requestSchema = z.object({
   id: z.uuid(),
@@ -63,6 +64,7 @@ export class WorkspaceIntegrations {
     root: string,
     private busy: Set<string>,
     private client = new SpriteClient(),
+    private notify: ChangeNotifier = silentNotifier,
   ) {
     this.directory = join(root, "agent-integrations");
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
@@ -82,6 +84,11 @@ export class WorkspaceIntegrations {
   }
   private save(id: string, pending: Pending) {
     writeFileSync(this.path(id), JSON.stringify(pending), { mode: 0o600 });
+    this.notify.changed(id, "agent-git");
+  }
+  private clear(id: string) {
+    rmSync(this.path(id), { force: true });
+    this.notify.changed(id, "agent-git");
   }
   ensure(id: string, owner: Identity, sprite: string, authorized: () => Promise<boolean>) {
     const access = this.service.executionAllowed(id);
@@ -233,6 +240,9 @@ export class WorkspaceIntegrations {
     let checking = false;
     let monitoring = true;
     const launching = ["start", "restart"].includes(operation);
+    // Browser and agent CLI launches both pass here, so every tab learns that a
+    // launch began and, later, how it ended.
+    if (launching || operation === "stop") this.notify.changed(id, "preview");
     const cancel = () => {
       if (!monitoring) return;
       cancellation ??= this.client.preview(sprite, "stop").catch(() => undefined);
@@ -274,6 +284,7 @@ export class WorkspaceIntegrations {
       monitoring = false;
       clearInterval(monitor);
       await cancellation;
+      if (launching || operation === "stop") this.notify.changed(id, "preview");
     }
   }
   async openPreview(id: string, owner: Identity, authorized: () => Promise<boolean>) {
@@ -404,7 +415,9 @@ export class WorkspaceIntegrations {
         ),
       );
       const acknowledged = await this.client.acknowledgeShare(sprite, exported.revision, commit);
-      rmSync(this.path(id), { force: true });
+      this.clear(id);
+      this.notify.changed(id, "files");
+      this.notify.shared(id);
       return {
         status: "published",
         commit,
@@ -430,7 +443,7 @@ export class WorkspaceIntegrations {
     try {
       const { sprite, remote } = await this.fetched(id, owner);
       if (remote !== pending.remote) {
-        rmSync(this.path(id), { force: true });
+        this.clear(id);
         throw new Error(
           "Team changes advanced. Ask the agent to publish again for a fresh conflict preview.",
         );
@@ -444,6 +457,7 @@ export class WorkspaceIntegrations {
         }),
       );
       this.save(id, { ...pending, owner: owner.id, status: "resolving", backup: result.backup });
+      this.notify.changed(id, "files");
       return {
         ...result,
         instructions:

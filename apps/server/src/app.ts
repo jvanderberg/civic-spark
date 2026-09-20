@@ -47,6 +47,7 @@ import {
 } from "./deployment.ts";
 import { installDiagnostics } from "./diagnostics.ts";
 import type { EmailDelivery } from "./email.ts";
+import { type ChangeNotifier, type Fingerprints, WorkspaceEvents } from "./events.ts";
 import { WorkspaceIntegrations } from "./integrations.ts";
 import { WorkspaceLifecycle } from "./lifecycle.ts";
 import { inspectIdleWorkspaceForWake } from "./missing-workspace.ts";
@@ -101,7 +102,7 @@ export async function createApp(
     }
   }
   const app = Fastify({ logger: false, bodyLimit: 1500000 });
-  installDiagnostics(app);
+  installDiagnostics(app, () => ({ eventsOpen: events.open, eventsPushed: events.pushed }));
   installResponseEncoding(app);
   let incomingBodyBytes = 0;
   app.decorateRequest("capacityBodyBytes", 0);
@@ -131,9 +132,60 @@ export async function createApp(
     (id) => lifecycle.touch(id),
     relay?.terminals,
   );
-  const agents = new AgentSessions(client, allowed, (id) => lifecycle.touch(id), relay?.agents);
+  // Change notifications for open workspace tabs. The probe covers state the
+  // host cannot observe: a teammate's push (team repository head) and a
+  // preview process that ended inside the Sprite. A preview known to be
+  // stopped is not re-read; every launch passes through the host.
+  const events: WorkspaceEvents = new WorkspaceEvents(
+    allowed,
+    async (id, owner, previous) => {
+      const workspace = service.workspace(owner, id);
+      if (!workspace.ok) return undefined;
+      const observed: Fingerprints = {};
+      const team = await service.teamReferenceAsync(owner, id);
+      if (team.ok) observed.team = team.value.remote;
+      if (
+        workspace.value.spriteStatus === "ready" &&
+        workspace.value.spriteName &&
+        !previous.preview?.startsWith("stopped")
+      ) {
+        try {
+          const status = await integrations.preview(id, owner, "status");
+          observed.preview = [
+            status.running ? "running" : "stopped",
+            status.ready,
+            status.phase ?? "",
+            status.port,
+            status.error ?? "",
+          ].join("|");
+        } catch {
+          /* Unchanged until the next check. */
+        }
+      }
+      return observed;
+    },
+    30000,
+    (id) => service.runtime(id).generation,
+  );
+  const notifier: ChangeNotifier = {
+    changed: (id, scope, coalesceMs) => events.publish(id, scope, coalesceMs),
+    shared: (id) => {
+      const records = service.provisioningRecords();
+      const teamId = records.find((w) => w.id === id)?.teamId;
+      for (const record of records)
+        if (record.teamId === teamId && events.subscribers(record.id))
+          events.publish(record.id, "team");
+    },
+  };
+  const agents = new AgentSessions(
+    client,
+    allowed,
+    (id) => lifecycle.touch(id),
+    relay?.agents,
+    notifier.changed,
+  );
   const sharing = new Set<string>();
-  const integrations = new WorkspaceIntegrations(service, root, sharing, client);
+  const integrations = new WorkspaceIntegrations(service, root, sharing, client, notifier);
   const lifecycle: WorkspaceLifecycle = new WorkspaceLifecycle(
     service,
     lifecycleProvider ?? new SpriteLifecycle(),
@@ -141,6 +193,7 @@ export async function createApp(
       agents.stop(id);
       terminals.stop(id);
       integrations.stop(id);
+      events.stop(id);
       const name = service.provisioningRecords().find((w) => w.id === id)?.spriteName;
       if (name) client.closeSession(name);
     },
@@ -263,6 +316,7 @@ export async function createApp(
     terminals.close();
     agents.close();
     integrations.close();
+    events.close();
     await client.close();
     await relay?.close();
     await provisioning.close();
@@ -390,9 +444,11 @@ export async function createApp(
     // handlers enforce owner/execution access and close rejected sockets.
     if (
       r.ws &&
-      ["/api/workspaces/:id/agent", "/api/workspaces/:id/terminal"].includes(
-        r.routeOptions.url ?? "",
-      )
+      [
+        "/api/workspaces/:id/agent",
+        "/api/workspaces/:id/terminal",
+        "/api/workspaces/:id/events",
+      ].includes(r.routeOptions.url ?? "")
     )
       return;
     const workspace = service.workspace(actor(r.actor), match[1] as string);
@@ -644,6 +700,7 @@ export async function createApp(
       try {
         return await integrations.confirm(r.params.id, actor(r.actor), input.id, input.allow);
       } catch (e) {
+        notifier.changed(r.params.id, "agent-git");
         return reply
           .code(409)
           .send({ error: e instanceof Error ? e.message : "Conflict confirmation failed" });
@@ -729,6 +786,31 @@ export async function createApp(
     },
   );
   app.get<{ Params: { id: string } }>(
+    "/api/workspaces/:id/events",
+    { websocket: true },
+    (socket, r) => {
+      const p = service.workspace(actor(r.actor), r.params.id);
+      if (r.headers.origin !== baseURL || !allowed(r.params.id) || !p.ok) {
+        socket.close(1008, "Workspace events unavailable");
+        return;
+      }
+      const owner = actor(r.actor);
+      try {
+        events.attach(r.params.id, owner, socket, async () => {
+          const session = await auth.api.getSession({ headers: fromNodeHeaders(r.headers) });
+          return Boolean(
+            session &&
+              (prototype ? session.user.email.toLowerCase() : session.user.id) === owner.id &&
+              service.workspace(owner, r.params.id).ok &&
+              allowed(r.params.id),
+          );
+        });
+      } catch {
+        socket.close(1011, "Workspace events could not start");
+      }
+    },
+  );
+  app.get<{ Params: { id: string } }>(
     "/api/workspaces/:id/terminal",
     { websocket: true },
     (socket, r) => {
@@ -786,6 +868,7 @@ export async function createApp(
       const p = service.workspace(actor(r.actor), r.params.id, true);
       if (!p.ok) return send(reply, p);
       const input = mutationSchema.parse(r.body);
+      notifier.changed(r.params.id, "files", 1000);
       if (p.value.spriteStatus === "ready" && p.value.spriteName)
         return send(reply, await client.mutateBlob(p.value.spriteName, input));
       return send(reply, service.workspaceFiles(actor(r.actor), r.params.id, "mutate", input));
@@ -818,6 +901,7 @@ export async function createApp(
         .parse(r.body);
       const p = service.workspace(actor(r.actor), r.params.id, true);
       if (!p.ok) return send(reply, p);
+      notifier.changed(r.params.id, "files", 1000);
       if (p.value.spriteStatus === "ready" && p.value.spriteName)
         return send(reply, await client.saveFile(p.value.spriteName, b));
       return send(
@@ -826,7 +910,7 @@ export async function createApp(
       );
     },
   );
-  const teamUpdates = registerTeamUpdateRoutes(app, service, agents, sharing, client);
+  const teamUpdates = registerTeamUpdateRoutes(app, service, agents, sharing, client, notifier);
   app.post<{ Params: { id: string } }>("/api/workspaces/:id/share", async (r, reply) => {
     const input = z
       .object({
@@ -913,6 +997,8 @@ export async function createApp(
     } finally {
       sharing.delete(r.params.id);
       teamUpdates.invalidate(r.params.id);
+      notifier.changed(r.params.id, "files");
+      notifier.shared(r.params.id);
       if (temp) rmSync(temp, { recursive: true, force: true });
     }
   });
@@ -926,9 +1012,10 @@ export async function createApp(
       ),
     ),
   );
-  app.post<{ Params: { id: string } }>("/api/workspaces/:id/sync", async (r, reply) =>
-    send(reply, service.sync(actor(r.actor), r.params.id)),
-  );
+  app.post<{ Params: { id: string } }>("/api/workspaces/:id/sync", async (r, reply) => {
+    notifier.changed(r.params.id, "files", 1000);
+    return send(reply, service.sync(actor(r.actor), r.params.id));
+  });
   app.post<{ Params: { id: string } }>("/api/contributions/:id/accept", async (r, reply) =>
     send(reply, service.accept(actor(r.actor), r.params.id)),
   );

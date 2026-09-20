@@ -1,6 +1,7 @@
 import "./team-updates.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";
+import { useWorkspaceEvents } from "./workspace-events.ts";
 
 type TeamStatus = {
   head: string;
@@ -73,21 +74,21 @@ export function TeamUpdates({
     },
     [workspace, onOutgoing],
   );
+  // The server announces team repository changes, updates and finished agent
+  // turns; the timer is a slow safety net while that channel is connected.
+  const connected = useWorkspaceEvents(workspace, !disabled, (signal) => {
+    if (signal === "team" || signal === "resync") void poll();
+  });
   useEffect(() => {
     // Sharing or an agent edit prompts an immediate check in addition to the timer.
     void refreshKey;
-    if (disabled) return;
-    void poll();
-    const timer = setInterval(() => void poll(), 15000);
-    const visible = () => {
-      if (!document.hidden) void poll();
-    };
-    document.addEventListener("visibilitychange", visible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", visible);
-    };
+    if (!disabled) void poll();
   }, [disabled, poll, refreshKey]);
+  useEffect(() => {
+    if (disabled) return;
+    const timer = setInterval(() => void poll(), connected ? 120000 : 15000);
+    return () => clearInterval(timer);
+  }, [disabled, poll, connected]);
   const verify = useCallback(
     async (expected: { head: string; remote: string }) => {
       setBusy(true);
