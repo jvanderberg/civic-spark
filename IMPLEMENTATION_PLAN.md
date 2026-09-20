@@ -83,7 +83,8 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Agent text deltas are merged per message for 50 ms before replay and fan-out and activity touches are throttled; file polling slows to 20 s when the agent is idle and stops while hidden; preview status polls every 30 s when nothing is changing.
 - [x] Diagnostics add response bytes per request and a ten-second `loop` record with event-loop delay p50/p99/max, CPU share, handle, child and socket counts.
 - [x] Serve read-only helper polls through one long-lived, passive `sprite exec` helper session per Sprite (JSON lines, correlated ids, bounded replies, idle shutdown, lifecycle teardown, one-shot fallback) with `sprite.command`/`sprite.session` diagnostics; writes and uploads stay one-shot. Fake-spawn and dispatcher tests only; no live Sprite run yet.
-- [ ] Re-run fifty people on the deployed fixes and compare against the September 20 baseline; then act on the code audit for further Sprite offload and traffic reduction.
+- [x] Fifty-person re-run on the deployed fixes with one vCPU passed 47/50 (baseline 17/50 on two vCPUs): all workspaces ready, helper sessions served 96 % of Sprite commands, first byte 0.75 s early and 7–11 s at peak instead of 34 s, one HTTP error. See [scripted rehearsal](docs/scripted-participant-load.md).
+- [ ] Next load work from the audit: relay agent and terminal streams through a bridge process, replace preview/agent-git polling with push or longer intervals, and cap the `changes` payload; re-run fifty afterwards.
 - [ ] Exercise crash/restart and disk-full failure/recovery using isolated fixtures; report measured limits and remaining live acceptance.
 
 ## Editable event configuration — live
