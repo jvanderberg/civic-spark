@@ -8,12 +8,21 @@ export class ApiError extends Error {
   }
 }
 export const apiStatus = (error: unknown) => (error instanceof ApiError ? error.status : undefined);
+// Conditional GETs: unchanged polls return 304 and reuse the cached body, so
+// the server sends no payload and the client parses nothing.
+const cached = new Map<string, { etag: string; text: string }>();
+const cacheLimit = 64;
 export async function api<T>(path: string, method = "GET", body?: object): Promise<T> {
+  const previous = method === "GET" ? cached.get(path) : undefined;
   const response = await fetch(`/api${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: {
+      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(previous ? { "If-None-Match": previous.etag } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (response.status === 304 && previous) return JSON.parse(previous.text) as T;
   if (response.status === 204 || response.status === 205) return undefined as T;
   let text: string;
   try {
@@ -32,6 +41,11 @@ export async function api<T>(path: string, method = "GET", body?: object): Promi
     // A restarting development server or proxy can return empty/plain-text/HTML
     // errors. Never expose its raw body or turn it into a misleading JSON error.
     throw new Error(unavailable);
+  }
+  const etag = response.headers.get("etag");
+  if (method === "GET" && response.ok && etag) {
+    if (cached.size >= cacheLimit) cached.delete(cached.keys().next().value as string);
+    cached.set(path, { etag, text });
   }
   if (!response.ok) {
     const error =

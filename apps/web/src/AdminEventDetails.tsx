@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Event, EventSettings } from "../../../packages/domain/src/types.ts";
+
+// Settings never include the project list, so summaries and full events both fit.
+type EventDetails = Omit<Event, "projects">;
+
 import { api } from "./api.ts";
 import { Field, Modal } from "./components.tsx";
 
-export function eventSettings(event: Event): EventSettings {
+export function eventSettings(event: EventDetails): EventSettings {
   return {
     name: event.name,
     date: event.date,
@@ -25,7 +29,7 @@ export function AdminEventDetails({
   refresh,
   onDirtyChange,
 }: {
-  event: Event;
+  event: EventDetails;
   refresh: () => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {

@@ -1,11 +1,13 @@
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { EventView } from "../../../packages/domain/src/access-types.ts";
 import type { Event } from "../../../packages/domain/src/types.ts";
 import { api } from "./api.ts";
 import { Field, Modal } from "./components.tsx";
-import { ProjectBrief } from "./ProjectBrief.tsx";
+import { ProjectBriefLoader } from "./ProjectBriefLoader.tsx";
 
-type Project = Event["projects"][number];
+type Project = EventView["projects"][number];
+type FullProject = Event["projects"][number];
 type Draft = {
   id: string | null;
   name: string;
@@ -19,7 +21,7 @@ export function AdminProjects({
   refresh,
   onDirtyChange,
 }: {
-  event: Event;
+  event: Pick<EventView, "id" | "projects" | "projectBriefGuidance" | "name" | "status">;
   refresh: () => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
@@ -27,6 +29,14 @@ export function AdminProjects({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  async function loadBrief(projectId: string) {
+    try {
+      return (await api<FullProject>(`/events/${event.id}/projects/${projectId}`)).description;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load the project brief.");
+      return null;
+    }
+  }
   const [notice, setNotice] = useState("");
   const dirty =
     !!draft && (draft.name !== draft.originalName || draft.brief !== draft.originalBrief);
@@ -41,20 +51,23 @@ export function AdminProjects({
       window.removeEventListener("beforeunload", guard);
     };
   }, [dirty, onDirtyChange]);
-  function edit(project?: Project) {
+  async function edit(project?: Project) {
     if (draft && draft.id === (project?.id ?? null)) {
       setOpen(true);
       return;
     }
     if (dirty && !window.confirm("Discard your unsaved project draft and open another project?"))
       return;
+    // The portal list carries summaries; load the full brief only when editing.
+    const brief = project ? await loadBrief(project.id) : "";
+    if (brief === null) return;
     setDraft({
       id: project?.id ?? null,
       name: project?.name ?? "",
-      brief: project?.description ?? "",
+      brief,
       revision: project?.revision ?? 0,
       originalName: project?.name ?? "",
-      originalBrief: project?.description ?? "",
+      originalBrief: brief,
     });
     setError("");
     setNotice("");
@@ -112,7 +125,11 @@ export function AdminProjects({
         {event.projects.map((project) => (
           <article className="project-card" key={project.id}>
             <h3>{project.name}</h3>
-            <ProjectBrief markdown={project.description} />
+            <ProjectBriefLoader
+              eventId={event.id}
+              projectId={project.id}
+              revision={project.revision}
+            />
             <footer>
               <button
                 type="button"
@@ -153,15 +170,18 @@ export function AdminProjects({
                     onClick={() => {
                       if (!window.confirm("Discard this draft and load the latest saved project?"))
                         return;
-                      setDraft({
-                        id: latest.id,
-                        name: latest.name,
-                        brief: latest.description,
-                        revision: latest.revision ?? 0,
-                        originalName: latest.name,
-                        originalBrief: latest.description,
+                      void loadBrief(latest.id).then((brief) => {
+                        if (brief === null) return;
+                        setDraft({
+                          id: latest.id,
+                          name: latest.name,
+                          brief,
+                          revision: latest.revision ?? 0,
+                          originalName: latest.name,
+                          originalBrief: brief,
+                        });
+                        setError("");
                       });
-                      setError("");
                     }}
                   >
                     Load latest version

@@ -179,7 +179,9 @@ it("authorizes event settings, rejects stale/invalid writes, preserves unrelated
     expect(service.portal(otherAdmin.actor, false).events.find((e) => e.id === other.id)).toEqual(
       otherBefore,
     );
-    expect(after.events.find((e) => e.id === event.id)?.projects).toEqual(projectsBefore);
+    expect(after.events.find((e) => e.id === event.id)?.projects).toEqual(
+      projectsBefore.map(({ description: _brief, ...p }) => p),
+    );
     expect(value(service.repositoryHistory(admin.actor, team.team.id, {}))).toEqual(history);
     expect(value(service.readFile(member.actor, team.workspace.id, "PROJECT.md")).content).toBe(
       "Private unsent changes",
@@ -265,6 +267,7 @@ it("adds stable legacy row IDs and neutral defaults without replacing stored eve
     const migrated = service.portal(actor, false).events[0];
     expect(migrated).toMatchObject({
       ...legacy,
+      projects: legacy.projects.map(({ description: _brief, ...p }) => p),
       revision: 0,
       projectBriefGuidance: defaultProjectBriefGuidance,
       startTime: "",

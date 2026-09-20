@@ -90,7 +90,9 @@ it("creates event-admin projects, preserves Markdown and seeds only the selected
     const project = service
       .portal(admin.actor, false)
       .events[0]?.projects.find((p) => p.id === projectId);
-    expect(project).toMatchObject({ name: "Connections", description: brief });
+    expect(project).toMatchObject({ name: "Connections" });
+    expect(project).not.toHaveProperty("description");
+    expect(value(service.project(admin.actor, event.id, projectId)).description).toBe(brief);
     expect(service.portal(member.actor, false).events).toHaveLength(0);
     value(service.transition(admin.actor, event.id, "registration"));
     value(service.transition(outsider.actor, other.id, "registration"));
@@ -307,7 +309,8 @@ it("updates catalog projects by event and stable ID with exact briefs, stale-wri
     const catalog = service
       .portal(admin.actor, false)
       .events.find((e) => e.id === event.id)?.projects;
-    expect(catalog?.slice(1)).toEqual(original.slice(1));
+    // The portal catalog carries summaries; briefs are compared through the project endpoint.
+    expect(catalog?.slice(1)).toEqual(original.slice(1).map(({ description: _brief, ...p }) => p));
     expect(catalog?.map((p) => p.id)).toEqual(original.map((p) => p.id));
     expect(value(service.repositoryHistory(admin.actor, team.team.id, {}))).toEqual(history);
     expect(value(service.readFile(member.actor, team.workspace.id, "PROJECT.md")).content).toBe(
@@ -317,9 +320,12 @@ it("updates catalog projects by event and stable ID with exact briefs, stale-wri
       ok: false,
       status: 404,
     });
-    expect(
-      service.portal(member.actor, false).teams.find((t) => t.id === team.team.id),
-    ).toMatchObject({ projectName: payload.name, projectBrief: editedBrief });
+    const teamView = service.portal(member.actor, false).teams.find((t) => t.id === team.team.id);
+    expect(teamView).toMatchObject({ projectName: payload.name });
+    expect(teamView).not.toHaveProperty("projectBrief");
+    expect(value(service.project(member.actor, event.id, project.id)).description).toBe(
+      editedBrief,
+    );
     const fresh = value(
       service.createTeam(member.actor, {
         eventId: event.id,
@@ -341,7 +347,11 @@ it("updates catalog projects by event and stable ID with exact briefs, stale-wri
       .portal(admin.actor, false)
       .events.find((e) => e.id === event.id)
       ?.projects.find((p) => p.id === project.id);
-    expect(persisted).toEqual(updated.json());
+    const { description: persistedBrief, ...persistedSummary } = updated.json();
+    expect(persisted).toEqual(persistedSummary);
+    expect(value(fixture.service.project(admin.actor, event.id, project.id)).description).toBe(
+      persistedBrief,
+    );
     expect(fixture.service.updateProject(admin.actor, event.id, project.id, payload)).toMatchObject(
       { ok: false, status: 409 },
     );
@@ -397,12 +407,13 @@ it("allows signed-in project creation before teams only in discoverable open eve
       });
       expect(result.statusCode).toBe(200);
       const id = result.json().id;
-      expect(
-        service
-          .portal(visitor.actor, false)
-          .events.find((e) => e.id === event.id)
-          ?.projects.find((p) => p.id === id)?.description,
-      ).toBe(brief);
+      const summary = service
+        .portal(visitor.actor, false)
+        .events.find((e) => e.id === event.id)
+        ?.projects.find((p) => p.id === id);
+      expect(summary).toMatchObject({ id, name: `Open project ${index}` });
+      expect(summary).not.toHaveProperty("description");
+      expect(value(service.project(visitor.actor, event.id, id)).description).toBe(brief);
       if (identity !== admin) {
         expect(
           (

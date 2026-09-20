@@ -51,6 +51,7 @@ import { WorkspaceLifecycle } from "./lifecycle.ts";
 import { inspectIdleWorkspaceForWake } from "./missing-workspace.ts";
 import { prototypeSignIn } from "./prototype-auth.ts";
 import { WorkspaceProvisioning } from "./provisioning.ts";
+import { installResponseEncoding } from "./response-encoding.ts";
 import { registerTeamUpdateRoutes } from "./team-updates.ts";
 import { TerminalSessions } from "./terminal.ts";
 
@@ -96,6 +97,7 @@ export async function createApp(
   }
   const app = Fastify({ logger: false, bodyLimit: 1500000 });
   installDiagnostics(app);
+  installResponseEncoding(app);
   let incomingBodyBytes = 0;
   app.decorateRequest("capacityBodyBytes", 0);
   const releaseBody = (request: { capacityBodyBytes: number }) => {
@@ -488,6 +490,11 @@ export async function createApp(
   app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled, siteEventId));
   app.post("/api/events", async (r, reply) =>
     send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body))),
+  );
+  app.get<{ Params: { id: string; projectId: string } }>(
+    "/api/events/:id/projects/:projectId",
+    async (r, reply) =>
+      send(reply, service.project(actor(r.actor), r.params.id, r.params.projectId)),
   );
   app.patch<{ Params: { id: string } }>("/api/events/:id", async (r, reply) =>
     send(
@@ -975,7 +982,17 @@ export async function createApp(
   });
   const web = resolve("dist/web");
   if (existsSync(web)) {
-    app.register(fastifyStatic, { root: web });
+    // Hashed bundles are immutable; everything else revalidates. Precompressed
+    // .br/.gz siblings are served directly when the client accepts them.
+    app.register(fastifyStatic, {
+      root: resolve(web, "assets"),
+      prefix: "/assets/",
+      preCompressed: true,
+      maxAge: "365d",
+      immutable: true,
+      decorateReply: false,
+    });
+    app.register(fastifyStatic, { root: web, preCompressed: true });
     app.setNotFoundHandler((r, reply) =>
       r.url.startsWith("/api/")
         ? reply.code(404).send({ error: "Not found" })

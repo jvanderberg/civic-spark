@@ -30,7 +30,7 @@ import { api } from "./api.ts";
 import { Badge, Empty, Field, initials, Modal } from "./components.tsx";
 import { MobileMenu } from "./MobileMenu.tsx";
 import { type CreationRequest, ParticipantCreation } from "./ParticipantCreation.tsx";
-import { ProjectBrief } from "./ProjectBrief.tsx";
+import { ProjectBriefLoader } from "./ProjectBriefLoader.tsx";
 import { Workspace } from "./Workspace.tsx";
 
 type AdminSection = "event" | "sprites" | "projects" | "teams" | "people";
@@ -135,8 +135,21 @@ export function App() {
   }, [refresh]);
   useEffect(() => {
     if (!session?.user) return;
-    const timer = setInterval(() => void refresh().catch((e: Error) => setError(e.message)), 5000);
-    return () => clearInterval(timer);
+    // Background refresh is slow and skipped while hidden; the user's own
+    // actions refresh immediately, and returning to the tab refreshes at once.
+    const poll = () => {
+      if (document.hidden) return;
+      void refresh().catch((e: Error) => setError(e.message));
+    };
+    const timer = setInterval(poll, 15000);
+    const visible = () => {
+      if (!document.hidden) poll();
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
+    };
   }, [session?.user, refresh]);
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -269,7 +282,7 @@ export function App() {
         </div>
         <h3>{team.name}</h3>
         <p className="project-name">{team.projectName}</p>
-        <ProjectBrief markdown={team.projectBrief} />
+        <ProjectBriefLoader eventId={team.eventId} projectId={team.projectId} />
         <div className="member-names">
           <Users size={15} />
           <span>{team.memberNames.join(", ") || "Be the first to join"}</span>
@@ -739,7 +752,11 @@ export function App() {
                             PROJECT {String(i + 1).padStart(2, "0")}
                           </span>
                           <h2>{p.name}</h2>
-                          <ProjectBrief markdown={p.description} />
+                          <ProjectBriefLoader
+                            eventId={event.id}
+                            projectId={p.id}
+                            revision={p.revision}
+                          />
                           <div className="button-row">
                             {p.tags.map((tag) => (
                               <Badge key={tag}>{tag}</Badge>

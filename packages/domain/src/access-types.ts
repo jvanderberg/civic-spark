@@ -41,7 +41,11 @@ export type Workspace = Participant & {
   teamName: string;
   runtime?: import("./lifecycle.ts").WorkspaceRuntime;
 };
-export type EventView = Event & {
+// Portal lists carry project summaries only; the Markdown brief is fetched on
+// demand per project so polling the portal never re-sends every brief.
+export type ProjectSummary = Omit<Event["projects"][number], "description">;
+export type EventView = Omit<Event, "projects"> & {
+  projects: ProjectSummary[];
   execution?: import("./lifecycle.ts").EventExecution;
   role: "admin" | "member" | "visitor";
 };
@@ -58,7 +62,6 @@ export type TeamView = Team & {
   memberCount: number;
   joined: boolean;
   projectName: string;
-  projectBrief: string;
 };
 export type SessionView = {
   user: Identity | null;

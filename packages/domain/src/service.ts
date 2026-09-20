@@ -387,6 +387,13 @@ export class EventService {
       (m) => m.eventId === eventId && m.userId === actor.id && m.role === "admin",
     );
   }
+  // Full project including its Markdown brief, for on-demand display.
+  project(actor: Identity, eventId: string, projectId: string): Result<Event["projects"][number]> {
+    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    if (!event || !this.canDiscover(actor, event)) return fail("Event not found", 404);
+    const project = event.projects.find((p) => p.id === projectId);
+    return project ? ok(project) : fail("Project not found", 404);
+  }
   private canDiscover(actor: Identity, event: Event) {
     return (
       this.state.eventMembers.some((m) => m.eventId === event.id) &&
@@ -437,6 +444,7 @@ export class EventService {
       user: actor,
       events: events.map((e) => ({
         ...e,
+        projects: e.projects.map(({ description: _brief, ...project }) => project),
         execution: this.execution(e.id),
         role:
           this.state.eventMembers.find((m) => m.eventId === e.id && m.userId === actor.id)?.role ??
@@ -454,9 +462,6 @@ export class EventService {
           projectName:
             events.find((e) => e.id === t.eventId)?.projects.find((p) => p.id === t.projectId)
               ?.name ?? "Project",
-          projectBrief:
-            events.find((e) => e.id === t.eventId)?.projects.find((p) => p.id === t.projectId)
-              ?.description ?? "",
         })),
       members: this.state.eventMembers
         .filter(

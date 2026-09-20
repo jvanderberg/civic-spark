@@ -283,7 +283,7 @@ export async function verifyAdminEventDetails() {
     await page.getByRole("heading", { name: "Final saved event", exact: true }).waitFor();
     assert.equal(await page.title(), "Final saved event");
     assert.equal(await page.getByText("Remote guidance", { exact: true }).count(), 0);
-    const persisted: Event = latest();
+    const persisted = latest();
     await current.app.close();
     current = await createApp(root, false, undefined, undefined, "email", event.id);
     assert.deepEqual(current.service.portal(actor, false).events[0], persisted);
