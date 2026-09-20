@@ -29,3 +29,42 @@
 .team-updates-menu > .button:last-child {
   margin-top: 10px;
 }
+.team-updates-menu .button-row {
+  flex-wrap: wrap;
+}
+.team-updates-menu .team-replace-mine {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--app-border);
+}
+.team-updates-menu .team-replace-mine label {
+  display: block;
+  margin: 8px 0 4px;
+  font-weight: 500;
+}
+:root .team-updates-menu .team-replace-mine input {
+  width: 100%;
+  height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  background: var(--app-input);
+  color: var(--app-text);
+  font: inherit;
+  font-size: 13px;
+}
+:root .team-updates-menu .button.destructive {
+  color: var(--app-error-text);
+  border-color: var(--app-error-text);
+  background: var(--app-error);
+}
+:root .team-updates-menu .button.destructive:disabled {
+  color: var(--app-muted);
+  border-color: var(--app-border);
+  background: transparent;
+}
+@media (max-width: 600px) {
+  :root .team-updates-menu .team-replace-mine input {
+    font-size: 16px;
+  }
+}

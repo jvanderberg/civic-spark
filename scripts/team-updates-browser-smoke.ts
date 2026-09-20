@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { Result } from "../packages/domain/src/types.ts";
+import { git } from "../packages/git/src/repository.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 
 const root = mkdtempSync(join(tmpdir(), "civic-spark-changes-browser-"));
@@ -143,6 +144,38 @@ try {
   await page.getByText("Team version loaded.", { exact: false }).waitFor();
   assert.equal(calls, 3);
   await page.getByRole("button", { name: "Later", exact: true }).click();
+  // Use my version: the typed-confirmation escape hatch publishes this workspace
+  // over the team head through Share, never through team-update.
+  incoming = true;
+  await top.click();
+  await page.getByRole("button", { name: "Get updates", exact: true }).click();
+  await page.getByText("Some changes overlap").waitFor();
+  assert.equal(calls, 4);
+  const dir = service.workspacePath(id);
+  writeFileSync(join(dir, "mine.txt"), "My version\n");
+  const replace = page.getByRole("button", { name: "Replace team version", exact: true });
+  await page.getByRole("button", { name: "Use my version", exact: true }).click();
+  assert.equal(await replace.isDisabled(), true, "Requires the typed confirmation");
+  await page
+    .getByRole("region", { name: "Team updates", exact: true })
+    .getByLabel("Type YES to confirm", { exact: true })
+    .fill("YES");
+  assert.equal(await replace.isEnabled(), true);
+  const replaceBox = await replace.boundingBox();
+  assert(replaceBox && replaceBox.x >= 0 && replaceBox.x + replaceBox.width <= 390);
+  await page.screenshot({ path: join(artifacts, "team-updates-use-mine.png") });
+  await replace.click();
+  await page.getByText("team repository now matches", { exact: false }).waitFor();
+  assert.equal(calls, 4, "Use my version never calls team-update");
+  const repo = join(root, "repos", `${team.team.id}.git`);
+  assert.equal(
+    git(repo, ["rev-parse", "main"]).toString().trim(),
+    git(dir, ["rev-parse", "HEAD"]).toString().trim(),
+  );
+  assert.equal(git(dir, ["log", "-1", "--format=%s"]).toString().trim(), "Keep my version");
+  // The team head is now this workspace's commit, so nothing is incoming.
+  incoming = false;
+  await page.getByRole("button", { name: "Later", exact: true }).click();
   outgoing = true;
   await top.click();
   await page.getByText("Your workspace includes the latest team commits.").waitFor();
@@ -154,7 +187,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Share", exact: true }).isEnabled(), true);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: team update indicator, clean pull, conflict choices, Later does not mutate, replacement confirmation, light/dark/mobile menu.",
+    "PASS: team update indicator, clean pull, conflict choices, Later does not mutate, replacement confirmation, typed-YES Use my version through Share, light/dark/mobile menu.",
   );
 } finally {
   await browser.close();

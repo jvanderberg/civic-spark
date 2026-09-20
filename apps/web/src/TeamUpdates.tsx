@@ -1,5 +1,5 @@
 import "./team-updates.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api } from "./api.ts";
 import { useWorkspaceEvents } from "./workspace-events.ts";
 
@@ -52,6 +52,11 @@ export function TeamUpdates({
   const [checkError, setCheckError] = useState("");
   const [notice, setNotice] = useState("");
   const [conflict, setConflict] = useState<Update | null>(null);
+  const [mine, setMine] = useState(false);
+  const [mineTitle, setMineTitle] = useState("Keep my version");
+  const [confirmation, setConfirmation] = useState("");
+  const mineTitleId = useId();
+  const confirmId = useId();
   const polling = useRef(false);
   const resolution = useRef<{ id: string; head: string; remote: string } | null>(null);
   const lastCompleted = useRef<string | null>(null);
@@ -171,8 +176,41 @@ export function TeamUpdates({
       if (request) onResolve(request);
     }
   }
+  // Escape hatch for a stuck team: commit the saved changes and make the team
+  // repository equal this workspace. The server keeps the displaced team head.
+  async function replaceWithMine() {
+    if (disabled || dirty || working || status?.agentWorking || busy) return;
+    if (confirmation !== "YES" || !mineTitle.trim()) return;
+    setBusy(true);
+    onBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const changes = await api<{ revision?: string }>(`/workspaces/${workspace}/changes`);
+      if (!changes.revision) throw new Error("Could not read your changes. Retry in a moment.");
+      await api(`/workspaces/${workspace}/share`, "POST", {
+        title: mineTitle.trim(),
+        revision: changes.revision,
+        replaceShared: true,
+      });
+      setConflict(null);
+      setMine(false);
+      setConfirmation("");
+      setNotice(
+        "The team repository now matches this workspace. The previous team version is kept as a backup.",
+      );
+      onUpdated();
+      await poll(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not replace the team version.");
+    } finally {
+      setBusy(false);
+      onBusy(false);
+    }
+  }
   const blocked = disabled || busy || dirty || working || status?.agentWorking;
   const conflicted = Boolean(conflict || status?.merging || status?.resolution);
+  const canKeepMine = !blocked && !status?.merging && !status?.resolution;
   return (
     <div className="team-updates">
       <button
@@ -243,7 +281,66 @@ export function TeamUpdates({
                 >
                   Use team version
                 </button>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={!canKeepMine}
+                  aria-expanded={mine}
+                  onClick={() => setMine(!mine)}
+                >
+                  Use my version
+                </button>
               </div>
+              {mine && (
+                <div className="team-replace-mine">
+                  <p>
+                    This commits your saved changes with the message below, then makes the team
+                    repository match this workspace exactly. Newer shared work from teammates is
+                    kept at a backup ref in the team repository, and their workspaces will ask them
+                    to update or replace their copies.
+                  </p>
+                  <label htmlFor={mineTitleId}>Commit message</label>
+                  <input
+                    id={mineTitleId}
+                    value={mineTitle}
+                    maxLength={160}
+                    onChange={(event) => setMineTitle(event.target.value)}
+                    disabled={busy}
+                    autoComplete="off"
+                  />
+                  <label htmlFor={confirmId}>Type YES to confirm</label>
+                  <input
+                    id={confirmId}
+                    value={confirmation}
+                    onChange={(event) => setConfirmation(event.target.value)}
+                    disabled={busy}
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                  />
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="button destructive"
+                      disabled={!canKeepMine || confirmation !== "YES" || !mineTitle.trim()}
+                      onClick={() => void replaceWithMine()}
+                    >
+                      {busy ? "Replacing…" : "Replace team version"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setMine(false);
+                        setConfirmation("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : status?.incoming ? (
             <>
