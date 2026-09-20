@@ -102,7 +102,7 @@ export function AdminBackups({ eventId }: { eventId: string }) {
     act(async () => {
       const response = await fetch(`/api/events/${eventId}/backups/upload`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-tar" },
+        headers: { "Content-Type": "application/zip" },
         body: file,
       });
       const body: unknown = await response.json().catch(() => null);
@@ -204,7 +204,7 @@ export function AdminBackups({ eventId }: { eventId: string }) {
         <input
           ref={fileInput}
           type="file"
-          accept=".tar,application/x-tar"
+          accept=".zip,application/zip,application/x-zip-compressed"
           hidden
           aria-label="Backup archive file"
           onChange={(e) => {
@@ -296,7 +296,7 @@ export function AdminBackups({ eventId }: { eventId: string }) {
                     <a
                       className="button small"
                       href={`/api/events/${eventId}/backups/${backup.backupId}/download`}
-                      download={`civic-spark-backup-${backup.backupId}.tar`}
+                      download
                     >
                       <Download size={14} /> Download
                     </a>

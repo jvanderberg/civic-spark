@@ -12,7 +12,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 import Database from "better-sqlite3";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp } from "../apps/server/src/app.ts";
@@ -28,7 +27,7 @@ import {
   type RestoreReport,
   readPendingRestore,
 } from "../packages/backup/src/live.ts";
-import { archiveTar, archiveTarSize, extractTar } from "../packages/backup/src/tar.ts";
+import { unzipFile, zipDirectory } from "../packages/backup/src/zip.ts";
 import type { PortalState, SessionView } from "../packages/domain/src/access-types.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 
@@ -218,9 +217,22 @@ it("creates, lists, downloads, re-uploads and deletes live backups through the a
     headers: headers(f.admin),
   });
   expect(download.statusCode).toBe(200);
-  expect(download.headers["content-type"]).toBe("application/x-tar");
-  expect(download.rawPayload.length).toBe(archiveTarSize(archive));
-  expect(Number(download.headers["content-length"])).toBe(download.rawPayload.length);
+  expect(download.headers["content-type"]).toBe("application/zip");
+  expect(download.headers["content-disposition"]).toMatch(/civic-spark-backup-\d{8}T\d{6}Z\.zip/);
+  // The ZIP holds the real files under one folder, readable with any archive tool.
+  const zipPath = join(base, "download.zip");
+  writeFileSync(zipPath, download.rawPayload);
+  const extracted = join(base, "extracted");
+  mkdirSync(extracted, { mode: 0o700 });
+  const names = await unzipFile(zipPath, extracted);
+  expect(names).toContain("manifest.json");
+  expect(names).toContain("data/demo/state.sqlite");
+  expect(names.some((name) => name.startsWith("data/demo/repos/"))).toBe(true);
+  expect(names).toContain("operator/receipt.json");
+  expect(JSON.parse(readFileSync(join(extracted, "manifest.json"), "utf8")).backupId).toBe(
+    created.backupId,
+  );
+  expect(readdirSync(directory).filter((name) => name.startsWith("."))).toEqual([]);
 
   const deleted = await f.app.inject({
     method: "DELETE",
@@ -237,20 +249,23 @@ it("creates, lists, downloads, re-uploads and deletes live backups through the a
         headers: headers(f.admin),
       })
     ).statusCode,
-  ).toBe(404);
+  ).toBe(400);
 
   const upload = await f.app.inject({
     method: "POST",
     url: `/api/events/${f.eventId}/backups/upload`,
-    headers: { ...headers(f.admin), "content-type": "application/x-tar" },
+    headers: { ...headers(f.admin), "content-type": "application/zip" },
     payload: download.rawPayload,
   });
   expect(upload.statusCode, upload.body).toBe(200);
-  expect(upload.json<{ backupId: string }>().backupId).toBe(created.backupId);
+  expect(upload.json<{ backupId: string; teams: number }>()).toMatchObject({
+    backupId: created.backupId,
+    teams: 1,
+  });
   const again = await f.app.inject({
     method: "POST",
     url: `/api/events/${f.eventId}/backups/upload`,
-    headers: { ...headers(f.admin), "content-type": "application/x-tar" },
+    headers: { ...headers(f.admin), "content-type": "application/zip" },
     payload: download.rawPayload,
   });
   expect(again.statusCode).toBe(400);
@@ -258,25 +273,25 @@ it("creates, lists, downloads, re-uploads and deletes live backups through the a
   const garbage = await f.app.inject({
     method: "POST",
     url: `/api/events/${f.eventId}/backups/upload`,
-    headers: { ...headers(f.admin), "content-type": "application/x-tar" },
-    payload: Buffer.from("not a tar archive at all"),
+    headers: { ...headers(f.admin), "content-type": "application/zip" },
+    payload: Buffer.from("not a zip archive at all, but long enough to have a tail"),
   });
   expect(garbage.statusCode).toBe(400);
+  expect(garbage.json<{ error: string }>().error).toContain("not a ZIP");
   // Streams larger than the JSON body limit are accepted and judged on their content.
   const big = join(privateBase(), "big");
-  mkdirSync(big, { mode: 0o700 });
-  writeFileSync(join(big, "manifest.enc"), Buffer.alloc(3 * 1024 * 1024, 9));
-  writeFileSync(join(big, "FINALIZED"), "0".repeat(64));
+  mkdirSync(join(big, "notes"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(big, "notes", "large.bin"), Buffer.alloc(3 * 1024 * 1024, 9));
   const bigChunks: Buffer[] = [];
-  for await (const chunk of archiveTar(big)) bigChunks.push(chunk as Buffer);
+  for await (const chunk of zipDirectory(big, "folder")) bigChunks.push(chunk as Buffer);
   const oversized = await f.app.inject({
     method: "POST",
     url: `/api/events/${f.eventId}/backups/upload`,
-    headers: { ...headers(f.admin), "content-type": "application/x-tar" },
+    headers: { ...headers(f.admin), "content-type": "application/zip" },
     payload: Buffer.concat(bigChunks),
   });
   expect(oversized.statusCode).toBe(400);
-  expect(oversized.json<{ error: string }>().error).toMatch(/checksum|damaged/);
+  expect(oversized.json<{ error: string }>().error).toContain("no data folder");
   expect(readdirSync(directory).filter((name) => name.startsWith("."))).toEqual([]);
   expect((await status(f.app, f.eventId, f.admin)).backups.map((b) => b.backupId)).toEqual([
     created.backupId,
@@ -288,7 +303,7 @@ it("creates, lists, downloads, re-uploads and deletes live backups through the a
   const foreign = await other.app.inject({
     method: "POST",
     url: `/api/events/${other.eventId}/backups/upload`,
-    headers: { ...headers(other.admin), "content-type": "application/x-tar" },
+    headers: { ...headers(other.admin), "content-type": "application/zip" },
     payload: download.rawPayload,
   });
   expect(foreign.statusCode, foreign.body).toBe(200);
@@ -526,38 +541,54 @@ it("captures consistent Git and SQLite copies without the writer lock, auth secr
   expect(currentRelease({ CIVIC_SPARK_RELEASE: release })).toBe(release);
 });
 
-it("round-trips archive directories through the flat tar format and rejects foreign entries", async () => {
+it("round-trips directories through ZIP, strips a shared top folder and rejects unsafe names", async () => {
   const base = privateBase();
-  const source = join(base, "archive");
-  mkdirSync(source, { mode: 0o700 });
-  writeFileSync(join(source, "manifest.enc"), Buffer.alloc(513, 1));
-  writeFileSync(join(source, "FINALIZED"), "f".repeat(64));
-  writeFileSync(join(source, "00000000.enc"), Buffer.alloc(0));
-  writeFileSync(join(source, "00000001.enc"), Buffer.alloc(1024, 2));
-  writeFileSync(join(source, "notes.txt"), "never exported");
+  const source = join(base, "tree");
+  mkdirSync(join(source, "data", "nested"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(source, "manifest.json"), '{"ok":true}');
+  writeFileSync(join(source, "data", "empty"), Buffer.alloc(0));
+  writeFileSync(join(source, "data", "nested", "blob.bin"), Buffer.alloc(200000, 5));
+  writeFileSync(join(source, "data", "text.txt"), "héllo wörld\n".repeat(1000));
   const chunks: Buffer[] = [];
-  for await (const chunk of archiveTar(source)) chunks.push(chunk as Buffer);
-  const tar = Buffer.concat(chunks);
-  expect(tar.length).toBe(archiveTarSize(source));
-  expect(tar.length % 512).toBe(0);
-  const destination = join(base, "extracted");
+  for await (const chunk of zipDirectory(source, "civic-spark-backup-test"))
+    chunks.push(chunk as Buffer);
+  const zipPath = join(base, "round.zip");
+  writeFileSync(zipPath, Buffer.concat(chunks));
+  // A standard tool reads it too.
+  const listing = execFileSync("unzip", ["-l", zipPath]).toString();
+  expect(listing).toContain("civic-spark-backup-test/data/nested/blob.bin");
+  const destination = join(base, "out");
   mkdirSync(destination, { mode: 0o700 });
-  const names = await extractTar(Readable.from([tar]), destination, tar.length);
-  expect(names.sort()).toEqual(["00000000.enc", "00000001.enc", "FINALIZED", "manifest.enc"]);
+  const names = await unzipFile(zipPath, destination);
+  expect(names.sort()).toEqual([
+    "data/empty",
+    "data/nested/blob.bin",
+    "data/text.txt",
+    "manifest.json",
+  ]);
   for (const name of names)
     expect(readFileSync(join(destination, name))).toEqual(readFileSync(join(source, name)));
-  const truncated = join(base, "truncated");
-  mkdirSync(truncated, { mode: 0o700 });
-  await expect(
-    extractTar(Readable.from([tar.subarray(0, tar.length - 1024)]), truncated, tar.length),
-  ).rejects.toThrow(/ended before/);
-  const oversized = join(base, "oversized");
-  mkdirSync(oversized, { mode: 0o700 });
-  await expect(extractTar(Readable.from([tar]), oversized, 100)).rejects.toThrow(/exceeds/);
-  const renamed = Buffer.from(tar);
-  renamed.write("../evil.enc\0", 0, "utf8");
-  const hostile = join(base, "hostile");
-  mkdirSync(hostile, { mode: 0o700 });
-  await expect(extractTar(Readable.from([renamed]), hostile, tar.length)).rejects.toThrow();
-  expect(readdirSync(base).includes("evil.enc")).toBe(false);
+  // A ZIP made by another tool, with Finder metadata, extracts the same way.
+  const external = join(base, "external.zip");
+  mkdirSync(join(source, "__MACOSX"), { mode: 0o700 });
+  writeFileSync(join(source, "__MACOSX", "._manifest.json"), "resource fork");
+  writeFileSync(join(source, ".DS_Store"), "finder");
+  execFileSync("zip", ["-qr", external, "."], { cwd: source });
+  const fromTool = join(base, "from-tool");
+  mkdirSync(fromTool, { mode: 0o700 });
+  expect((await unzipFile(external, fromTool)).sort()).toEqual(names.sort());
+  // Names that escape the destination are refused before anything is written.
+  const hostile = join(base, "hostile.zip");
+  const escaping: Buffer[] = [];
+  for await (const chunk of zipDirectory(join(source, "data"), ".."))
+    escaping.push(chunk as Buffer);
+  writeFileSync(hostile, Buffer.concat(escaping));
+  const target = join(base, "hostile-out");
+  mkdirSync(target, { mode: 0o700 });
+  await expect(unzipFile(hostile, target)).rejects.toThrow(/Unsafe/);
+  expect(readdirSync(target)).toEqual([]);
+  const truncated = join(base, "truncated.zip");
+  const whole = Buffer.concat(chunks);
+  writeFileSync(truncated, whole.subarray(0, Math.floor(whole.length / 2)));
+  await expect(unzipFile(truncated, join(base, "nowhere"))).rejects.toThrow(/ZIP/);
 });

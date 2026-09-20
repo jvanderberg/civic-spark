@@ -30,12 +30,13 @@ import {
   fenceName,
   installationSchema,
   type Manifest,
-  manifestDigest,
+  manifestSchema,
   readManifest,
   sealArchive,
   unpackArchive,
 } from "./backup.ts";
 import { invalidateAuthentication, modeRoot, verifyTree } from "./verify.ts";
+import { zipDirectory } from "./zip.ts";
 
 export type Installation = z.infer<typeof installationSchema>;
 export type AuthMode = Installation["authMode"];
@@ -412,36 +413,105 @@ export function deleteBackup(directory: string, backupId: string) {
   syncPath(directory);
 }
 
-/** Store an uploaded archive directory after proving it is a complete, readable backup. */
-export async function importArchive(
-  directory: string,
-  staged: string,
-  installation: Pick<Installation, "authMode">,
-) {
-  const summary = await withScratch(directory, async (scratch) => {
-    const manifest = await readManifest(staged, null, scratch);
-    if (manifest.installation.authMode !== installation.authMode)
-      throw new Error("This backup was made in a different sign-in mode");
-    const expected = new Set([
-      "manifest.enc",
-      "FINALIZED",
-      ...manifest.entries.flatMap((e) => (e.blob ? [e.blob] : [])),
-    ]);
-    if (readdirSync(staged).some((n) => !expected.delete(n)) || expected.size)
-      throw new Error("Backup has missing or unexpected files");
-    return manifest;
-  });
-  const destination = join(directory, archiveDirectoryName(summary));
-  if (existsSync(destination)) {
-    if (manifestDigest(destination) === manifestDigest(staged)) {
-      rmSync(staged, { recursive: true, force: true });
-      throw new Error("This backup is already stored");
-    }
-    throw new Error("A different backup with the same identifier is already stored");
+/** Unpack a stored backup and stream it as a readable ZIP of the real files. */
+export async function exportBackup(directory: string, backupId: string) {
+  directory = resolve(directory);
+  const archive = findArchive(directory, backupId);
+  storageHeadroom(directory, archiveSize(archive).bytes);
+  const scratch = mkdtempSync(join(directory, ".civic-spark-export-partial-"));
+  chmodSync(scratch, 0o700);
+  try {
+    const { manifest } = await unpackArchive(archive, null, scratch, () => {});
+    const name = `civic-spark-backup-${stamp(new Date(manifest.createdAt))}`;
+    const stream = zipDirectory(scratch, name);
+    const cleanup = () => rmSync(scratch, { recursive: true, force: true });
+    stream.once("close", cleanup);
+    stream.once("error", cleanup);
+    return { stream, filename: `${name}.zip` };
+  } catch (error) {
+    rmSync(scratch, { recursive: true, force: true });
+    throw error;
   }
-  renameSync(staged, destination);
-  syncPath(directory);
-  return summarize(summary, destination);
+}
+
+/**
+ * Store an extracted backup tree (from an uploaded ZIP) as a verified archive. The tree
+ * needs a `data` directory; `manifest.json` and `operator/` are reused when present.
+ */
+export async function importBackupTree(
+  directory: string,
+  tree: string,
+  installation: Installation,
+  uploadedBy: { id: string; email: string },
+) {
+  directory = resolve(directory);
+  const data = join(tree, "data");
+  if (!existsSync(data) || !lstatSync(data).isDirectory())
+    throw new Error("The ZIP is not a Civic Spark backup: it has no data folder");
+  const manifestPath = join(tree, "manifest.json");
+  const previous = existsSync(manifestPath)
+    ? z
+        .object({
+          backupId: z.uuid(),
+          createdAt: z.iso.datetime(),
+          installation: installationSchema,
+          consistency: manifestSchema.shape.consistency,
+        })
+        .loose()
+        .safeParse(JSON.parse(readFileSync(manifestPath, "utf8")))
+    : null;
+  const recorded = previous?.success ? previous.data : null;
+  if (recorded && recorded.installation.authMode !== installation.authMode)
+    throw new Error("This backup was made in a different sign-in mode");
+  const identity = recorded
+    ? { backupId: recorded.backupId, createdAt: recorded.createdAt }
+    : { backupId: randomUUID(), createdAt: new Date().toISOString() };
+  if (existsSync(join(directory, archiveDirectoryName(identity))))
+    throw new Error("This backup is already stored");
+  // Never keep tokens, this host's signing secret or a writer lock from someone's copy.
+  rmSync(join(data, writerLock), { force: true });
+  for (const mode of ["", "demo", "prototype"])
+    rmSync(join(data, mode, authSecretFile), { force: true });
+  removeSidecars(data);
+  invalidateAuthentication(data);
+  const summary = verifyTree(data, installation.authMode);
+  const operator = join(tree, "operator");
+  if (
+    !existsSync(join(operator, "configuration.json")) ||
+    !existsSync(join(operator, "receipt.json"))
+  ) {
+    rmSync(operator, { recursive: true, force: true });
+    makeDirectory(operator);
+    writePrivate(
+      join(operator, "configuration.json"),
+      JSON.stringify({ installation: recorded?.installation ?? installation }, null, 2),
+    );
+    writePrivate(
+      join(operator, "receipt.json"),
+      JSON.stringify({ version: 1, capture: "uploaded-tree" }, null, 2),
+    );
+  }
+  for (const entry of inventory(operator, "operator"))
+    if (entry.kind === "file") chmodSync(join(operator, entry.path.slice(9)), 0o600);
+  writePrivate(
+    join(operator, "upload.json"),
+    JSON.stringify({ uploadedAt: new Date().toISOString(), uploadedBy }, null, 2),
+  );
+  const manifest = await sealArchive({
+    dataRoot: data,
+    operatorRoot: operator,
+    destination: join(directory, archiveDirectoryName(identity)),
+    key: null,
+    identity,
+    manifest: {
+      installation: recorded?.installation ?? installation,
+      sourceDataRoot: tree,
+      consistency: recorded?.consistency ?? "live-online-snapshot",
+      operatorFiles: { configuration: "configuration.json", receipt: "receipt.json" },
+      inventory: summary,
+    },
+  });
+  return summarize(manifest, join(directory, archiveDirectoryName(identity)));
 }
 
 export const restoreReportSchema = z

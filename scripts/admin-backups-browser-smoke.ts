@@ -154,7 +154,8 @@ export async function verifyAdminBackups() {
       `${origin}${await row.getByRole("link", { name: "Download" }).getAttribute("href")}`,
     );
     assert.equal(download.status(), 200);
-    assert.equal(download.headers()["content-type"], "application/x-tar");
+    assert.equal(download.headers()["content-type"], "application/zip");
+    assert.match(download.headers()["content-disposition"] ?? "", /civic-spark-backup-.*\.zip/);
     assert((await download.body()).length > 1024, "Download streams the archive");
 
     for (const theme of ["light", "dark"] as const)
