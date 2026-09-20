@@ -50,13 +50,40 @@ function conflicts(root: string) {
     .split("\0")
     .filter(Boolean);
 }
+/** Move the Changes baseline to the merged team commit without ever moving it backwards. */
+function advanceBase(root: string, remote: string) {
+  let base: string | undefined;
+  try {
+    base = git(root, ["rev-parse", "--verify", "refs/civic-spark/base"]).toString().trim();
+  } catch {
+    /* No baseline yet. */
+  }
+  if (!base || ancestor(root, base, remote))
+    git(root, ["update-ref", "refs/civic-spark/base", remote]);
+}
 export function teamStatus(root: string, remote: string): TeamStatus {
   sha.parse(remote);
   const head = git(root, ["rev-parse", "HEAD"]).toString().trim();
   const receipt = join(directory(root), "civic-spark-agent-merge.json");
-  const resolution = existsSync(receipt)
+  let resolution = existsSync(receipt)
     ? (JSON.parse(readFileSync(receipt, "utf8")) as { head: string; remote: string })
     : undefined;
+  const merging = existsSync(join(directory(root), "MERGE_HEAD"));
+  const unresolved = conflicts(root);
+  if (
+    resolution &&
+    !merging &&
+    !unresolved.length &&
+    ancestor(root, resolution.head, head) &&
+    ancestor(root, resolution.remote, head)
+  ) {
+    // The agent merge is complete and both histories are retained. The person
+    // may already have moved on (for example by sharing the merge), so finish
+    // the resolution here instead of waiting for an explicit check.
+    advanceBase(root, resolution.remote);
+    unlinkSync(receipt);
+    resolution = undefined;
+  }
   return {
     head,
     remote,
@@ -64,8 +91,8 @@ export function teamStatus(root: string, remote: string): TeamStatus {
     incoming: !ancestor(root, remote, head),
     outgoing: head !== remote && ancestor(root, remote, head),
     dirty: Boolean(git(root, ["status", "--porcelain", "-z"]).length),
-    merging: existsSync(join(directory(root), "MERGE_HEAD")),
-    conflicts: conflicts(root),
+    merging,
+    conflicts: unresolved,
   };
 }
 export function resolutionPrompt(head: string, remote: string) {
@@ -178,17 +205,11 @@ export function verifyTeamUpdate(root: string, head: string, remote: string): Te
   };
   if (receipt.head !== head || receipt.remote !== remote)
     throw new Error("The pending merge changed. Reopen team updates.");
+  // Status finalizes a completed merge itself; a receipt that survives it is unfinished.
   const state = teamStatus(root, remote);
-  if (
-    state.merging ||
-    state.conflicts.length ||
-    !ancestor(root, head, state.head) ||
-    !ancestor(root, remote, state.head)
-  )
+  if (existsSync(path))
     throw new Error(
       "The agent has not finished a merge preserving both versions yet. Continue the resolution in Agent.",
     );
-  git(root, ["update-ref", "refs/civic-spark/base", remote]);
-  unlinkSync(path);
   return { status: "updated", head: state.head, remote, conflicts: [], backup: receipt.backup };
 }

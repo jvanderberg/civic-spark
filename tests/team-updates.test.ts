@@ -193,3 +193,75 @@ it("Sprite Python adapter matches clean/conflict/agent/replace behavior with no 
   );
   expect(readFileSync(copy, "utf8")).toContain("<<<<<<<");
 });
+
+it("finalizes a finished agent merge from status alone and never moves the baseline backwards", () => {
+  const f = setup();
+  writeFileSync(join(f.local, "story.txt"), "Local version\n");
+  git(f.local, ["add", "story.txt"]);
+  git(f.local, ["commit", "-m", "Local story"]);
+  f.update("story.txt", "Team version\n");
+  f.fetch();
+  const input = { head: f.head(), remote: f.remote(), mode: "agent" as const };
+  expect(applyTeamUpdate(f.local, input).status).toBe("agent");
+  const receipt = join(f.local, ".git/civic-spark-agent-merge.json");
+  expect(teamStatus(f.local, f.remote()).resolution).toBeDefined();
+  writeFileSync(join(f.local, "story.txt"), "Local and team versions combined\n");
+  git(f.local, ["add", "story.txt"]);
+  git(f.local, ["commit", "-m", "Resolve team update"]);
+  // Nobody pressed Check agent result: polling sees the completed merge.
+  const status = teamStatus(f.local, f.remote());
+  expect(status.resolution).toBeUndefined();
+  expect(status.outgoing).toBe(true);
+  expect(existsSync(receipt)).toBe(false);
+  expect(git(f.local, ["rev-parse", "refs/civic-spark/base"]).toString().trim()).toBe(input.remote);
+  expect(() => verifyTeamUpdate(f.local, input.head, input.remote)).toThrow("No agent merge");
+  // Shared first, then checked: the baseline already points past the team commit and stays there.
+  git(f.local, ["update-ref", "refs/civic-spark/base", "HEAD"]);
+  writeFileSync(receipt, JSON.stringify({ head: input.head, remote: input.remote }));
+  expect(teamStatus(f.local, f.remote()).resolution).toBeUndefined();
+  expect(git(f.local, ["rev-parse", "refs/civic-spark/base"]).toString().trim()).toBe(f.head());
+  expect(existsSync(receipt)).toBe(false);
+});
+
+it("Sprite Python adapter finalizes a finished agent merge from status alone", () => {
+  const f = setup();
+  const script = readFileSync(
+    new URL("../packages/sprites/src/team_git.py", import.meta.url),
+    "utf8",
+  ).replace(
+    "ROOT = pathlib.Path('/home/sprite/project')",
+    `ROOT = pathlib.Path(${JSON.stringify(f.local)})`,
+  );
+  const run = (payload: object) => {
+    const result = spawnSync("python3", ["-c", script], {
+      input: JSON.stringify(payload),
+      encoding: "utf8",
+    });
+    return JSON.parse(result.stdout);
+  };
+  writeFileSync(join(f.local, "story.txt"), "Local\n");
+  git(f.local, ["add", "story.txt"]);
+  git(f.local, ["commit", "-m", "Local"]);
+  f.update("story.txt", "Remote\n");
+  f.fetch();
+  const input = { head: f.head(), remote: f.remote() };
+  expect(run({ operation: "apply", mode: "agent", ...input }).value.status).toBe("agent");
+  expect(run({ operation: "status", remote: f.remote() }).value.resolution).toEqual(input);
+  writeFileSync(join(f.local, "story.txt"), "Local and remote combined\n");
+  git(f.local, ["add", "story.txt"]);
+  git(f.local, ["commit", "-m", "Resolve team update"]);
+  const status = run({ operation: "status", remote: f.remote() }).value;
+  expect(status.resolution).toBeUndefined();
+  expect(status.outgoing).toBe(true);
+  expect(existsSync(join(f.local, ".git/civic-spark-agent-merge.json"))).toBe(false);
+  expect(git(f.local, ["rev-parse", "refs/civic-spark/base"]).toString().trim()).toBe(input.remote);
+  expect(run({ operation: "verify", ...input }).ok).toBe(false);
+  // A baseline that already points past the team commit is left alone.
+  git(f.local, ["update-ref", "refs/civic-spark/base", "HEAD"]);
+  writeFileSync(
+    join(f.local, ".git/civic-spark-agent-merge.json"),
+    JSON.stringify({ head: input.head, remote: input.remote }),
+  );
+  expect(run({ operation: "status", remote: f.remote() }).value.resolution).toBeUndefined();
+  expect(git(f.local, ["rev-parse", "refs/civic-spark/base"]).toString().trim()).toBe(f.head());
+});

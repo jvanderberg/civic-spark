@@ -47,6 +47,16 @@ def ancestor(older, newer):
         return False
 
 
+def advance_base(remote):
+    # Move the Changes baseline to the merged team commit without ever moving it backwards.
+    try:
+        base = git('rev-parse', '--verify', 'refs/civic-spark/base').decode().strip()
+    except subprocess.CalledProcessError:
+        base = None
+    if base is None or ancestor(base, remote):
+        git('update-ref', 'refs/civic-spark/base', remote)
+
+
 def status(remote):
     valid_sha(remote)
     head = git('rev-parse', 'HEAD').decode().strip()
@@ -56,7 +66,15 @@ def status(remote):
     receipt = directory() / 'civic-spark-agent-merge.json'
     if receipt.exists():
         saved = json.loads(receipt.read_text())
-        result['resolution'] = {'head': valid_sha(saved['head']), 'remote': valid_sha(saved['remote'])}
+        saved_head, saved_remote = valid_sha(saved['head']), valid_sha(saved['remote'])
+        if not result['merging'] and not result['conflicts'] and ancestor(saved_head, head) and ancestor(saved_remote, head):
+            # The agent merge is complete and both histories are retained. The person
+            # may already have moved on (for example by sharing the merge), so finish
+            # the resolution here instead of waiting for an explicit check.
+            advance_base(saved_remote)
+            receipt.unlink()
+        else:
+            result['resolution'] = {'head': saved_head, 'remote': saved_remote}
     return result
 
 
@@ -184,11 +202,10 @@ def verify(request):
     saved = json.loads(path.read_text())
     if saved['head'] != head or saved['remote'] != remote:
         raise ValueError('The pending merge changed. Reopen team updates.')
+    # Status finalizes a completed merge itself; a receipt that survives it is unfinished.
     state = status(remote)
-    if state['merging'] or state['conflicts'] or not ancestor(head, state['head']) or not ancestor(remote, state['head']):
+    if path.exists():
         raise ValueError('The agent has not finished a merge preserving both versions yet. Continue the resolution in Agent.')
-    git('update-ref', 'refs/civic-spark/base', remote)
-    path.unlink()
     return {'status': 'updated', 'head': state['head'], 'remote': remote, 'conflicts': [], 'backup': saved['backup']}
 
 
