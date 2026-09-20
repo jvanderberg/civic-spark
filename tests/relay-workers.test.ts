@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -11,14 +12,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import WebSocket from "ws";
+import { AgentSessions } from "../apps/server/src/agents.ts";
 import { createApp } from "../apps/server/src/app.ts";
+import { WorkspaceIntegrations } from "../apps/server/src/integrations.ts";
 import type { AgentEvent } from "../packages/agents/src/protocol.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "./auth-fixture.ts";
 
 // Real relay worker processes with a fake `sprite` executable: the fake plays
-// the agent runner, the terminal shell and the trusted Python adapters. No
-// participant code, live Sprite or paid model is involved.
+// the agent runner, the terminal shell, the real relay.py against a host-side
+// spool directory, and the trusted Python adapters. No participant code, live
+// Sprite or paid model is involved.
 const unwrap = <T>(result: Result<T>) => {
   if (!result.ok) throw new Error(result.error);
   return result.value;
@@ -45,10 +49,13 @@ async function fixture(workers: string) {
   const bin = join(root, "bin");
   const project = join(root, "project");
   const marks = join(root, "marks");
+  const spool = join(root, "spool");
   for (const dir of [bin, project, marks]) mkdirSync(dir);
   writeFileSync(join(project, "README.md"), "# Fixture\n");
   // Every fake child records its parent pid so the test can prove which
   // process owns it: the main process (in-process mode) or a relay worker.
+  // The relay branch runs the committed relay.py itself, pointed at a spool
+  // directory on this host instead of the Sprite's.
   writeFileSync(
     join(bin, "sprite"),
     [
@@ -56,6 +63,7 @@ async function fixture(workers: string) {
       "import json, os, subprocess, sys",
       `ROOT = ${JSON.stringify(project)}`,
       `MARKS = ${JSON.stringify(marks)}`,
+      `SPOOL = ${JSON.stringify(spool)}`,
       "def mark(kind):",
       "    with open(os.path.join(MARKS, kind + '-' + str(os.getpid())), 'w') as f:",
       "        f.write(str(os.getppid()))",
@@ -84,6 +92,12 @@ async function fixture(workers: string) {
       "        elif m['type'] == 'stop':",
       "            break",
       "    sys.exit(0)",
+      "if args[-1].endswith('/relay.py'):",
+      "    mark('relay')",
+      "    source = [a for a in args if a.endswith(':/home/sprite/.civic-spark-agent/relay.py')][0].rsplit(':', 1)[0]",
+      "    code = open(source).read().replace('/home/sprite/.civic-spark-agent/integration', SPOOL)",
+      "    exec(compile(code, '<trusted-relay>', 'exec'))",
+      "    sys.exit(0)",
       "mark('command')",
       "if args[-1] == 'true': sys.exit(0)",
       `fix = lambda s: s.replace('/home/sprite/project', ROOT).replace('/home/sprite/.civic-spark-file-lock', ${JSON.stringify(join(root, ".file-lock"))})`,
@@ -98,6 +112,9 @@ async function fixture(workers: string) {
   chmodSync(join(bin, "sprite"), 0o755);
   vi.stubEnv("PATH", `${bin}:${process.env.PATH}`);
   vi.stubEnv("CIVIC_SPARK_RELAY_WORKERS", workers);
+  // Tool setup inside the Sprite is not under test; the prepare route still
+  // registers the workspace with the integration relay.
+  vi.spyOn(AgentSessions.prototype, "prepare").mockResolvedValue(true);
   const provider = {
     inspect: vi.fn(async () => ({
       status: "running" as const,
@@ -147,6 +164,33 @@ async function fixture(workers: string) {
         pid: Number(name.slice(kind.length + 1)),
         parent: Number(readFileSync(join(marks, name), "utf8")),
       }));
+  const prepare = async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${workspace.id}/agent/prepare`,
+      headers,
+    });
+    expect(response.json()).toEqual({ ready: true });
+  };
+  // What the in-Sprite `civic-spark` CLI does: spool one request file and
+  // wait for relay.py to write the response file with the same id.
+  const cli = async (request: object, timeoutMs = 10000) => {
+    const id = crypto.randomUUID();
+    mkdirSync(spool, { recursive: true, mode: 0o700 });
+    writeFileSync(join(spool, `${id}.request`), JSON.stringify(request), { mode: 0o600 });
+    const response = join(spool, `${id}.response`);
+    try {
+      const started = Date.now();
+      while (!existsSync(response)) {
+        if (Date.now() - started > timeoutMs) return undefined;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return JSON.parse(readFileSync(response, "utf8")) as Record<string, unknown>;
+    } finally {
+      rmSync(join(spool, `${id}.request`), { force: true });
+      rmSync(response, { force: true });
+    }
+  };
   const open = (channel: "agent" | "terminal") => {
     const socket = new WebSocket(
       `${address.replace("http", "ws")}/api/workspaces/${workspace.id}/${channel}`,
@@ -174,6 +218,8 @@ async function fixture(workers: string) {
     address,
     marksOf,
     open,
+    prepare,
+    cli,
     provider,
   };
 }
@@ -195,6 +241,13 @@ it("relays agent turns, terminal output with history, helper sessions and one-sh
   const workerPid = worker.child?.pid;
   expect(workerPid).toBeDefined();
 
+  // Integration relay: prepare registers the workspace but starts no child
+  // until an agent or terminal session exists.
+  await f.prepare();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(f.marksOf("relay")).toHaveLength(0);
+  expect(f.integrations.active(f.workspace.id)).toBe(false);
+
   // Agent: the runner child belongs to the worker, replay arrives before live
   // frames, deltas of one message are merged, and a reconnect replays the turn.
   const agent = f.open("agent");
@@ -203,6 +256,16 @@ it("relays agent turns, terminal output with history, helper sessions and one-sh
     expect(agent.frames.some((e) => e.type === "state" && e.runtimeReady === true)).toBe(true),
   );
   expect(f.marksOf("runner").map((m) => m.parent)).toEqual([workerPid]);
+  // The relay child started with the session, under the same worker, and a
+  // CLI request spooled inside the "Sprite" is answered by the main process.
+  await vi.waitFor(() => expect(f.marksOf("relay").map((m) => m.parent)).toEqual([workerPid]));
+  expect(f.integrations.active(f.workspace.id)).toBe(true);
+  const status = await f.cli({ operation: "git-status" });
+  expect(status).toMatchObject({
+    ok: true,
+    value: { pending: null, instructions: expect.any(String) },
+  });
+  const relayPid = f.marksOf("relay")[0]?.pid as number;
   const promptId = crypto.randomUUID();
   agent.socket.send(
     JSON.stringify({ type: "prompt", provider: "claude", text: "hi", id: promptId }),
@@ -270,6 +333,11 @@ it("relays agent turns, terminal output with history, helper sessions and one-sh
   expect(await Promise.all([agent.closed, second.closed, again.closed])).toEqual([
     1011, 1011, 1000,
   ]);
+  // The relay child lost its worker: the main process drops the handle (a
+  // request in flight can no longer be answered) and the orphan exits on its
+  // closed pipe.
+  await vi.waitFor(() => expect(f.integrations.active(f.workspace.id)).toBe(false));
+  await vi.waitFor(() => expect(alive(relayPid)).toBe(false));
   const paused = await f.app.inject({
     method: "POST",
     url: `/api/events/${f.event.id}/execution`,
@@ -309,6 +377,22 @@ it("relays agent turns, terminal output with history, helper sessions and one-sh
   // The orphaned runner from the crashed worker receives no more input; it is
   // not the main process's child and cannot keep the server loop busy.
   expect(runnerPid).not.toBe(process.pid);
+  // The pause ended the relay registration, so the reconnect alone started no
+  // relay child. The browser prepares again before it reconnects; with the
+  // session already up the child starts at once, under the replacement
+  // worker, and answers again.
+  expect(f.marksOf("relay")).toHaveLength(1);
+  await f.prepare();
+  await vi.waitFor(() =>
+    expect(
+      f
+        .marksOf("relay")
+        .map((m) => m.parent)
+        .sort(),
+    ).toEqual([workerPid, worker.child?.pid].sort()),
+  );
+  expect((await f.cli({ operation: "git-status" }))?.ok).toBe(true);
+  const newRelay = f.marksOf("relay").find((m) => m.pid !== relayPid)?.pid as number;
 
   // Shutdown: workers exit with the app and their children are gone.
   const pids = relay.pool.workers.map((w) => w.child?.pid as number);
@@ -316,12 +400,23 @@ it("relays agent turns, terminal output with history, helper sessions and one-sh
   await f.close();
   for (const pid of pids) expect(alive(pid)).toBe(false);
   await vi.waitFor(() => expect(alive(newRunner)).toBe(false));
+  await vi.waitFor(() => expect(alive(newRelay)).toBe(false));
   expect(relay.pool.workers.every((w) => !w.alive)).toBe(true);
 }, 40000);
 
-it("keeps every Sprite child in the server process when CIVIC_SPARK_RELAY_WORKERS=0", async () => {
+it("keeps every Sprite child in the server process when CIVIC_SPARK_RELAY_WORKERS=0, ends the integration relay a grace period after the last session, and stops it on lifecycle disconnect", async () => {
+  const defaults = [WorkspaceIntegrations.checkIntervalMs, WorkspaceIntegrations.idleGraceMs];
+  WorkspaceIntegrations.checkIntervalMs = 100;
+  WorkspaceIntegrations.idleGraceMs = 200;
+  cleanups.push(() => {
+    [WorkspaceIntegrations.checkIntervalMs, WorkspaceIntegrations.idleGraceMs] = defaults as [
+      number,
+      number,
+    ];
+  });
   const f = await fixture("0");
   expect(f.relay).toBeUndefined();
+  await f.prepare();
   const agent = f.open("agent");
   await agent.opened;
   await vi.waitFor(() =>
@@ -337,4 +432,36 @@ it("keeps every Sprite child in the server process when CIVIC_SPARK_RELAY_WORKER
   expect(files.json()).toEqual(["README.md"]);
   expect(f.marksOf("runner").map((m) => m.parent)).toEqual([process.pid]);
   expect(f.marksOf("command").map((m) => m.parent)).toEqual([process.pid]);
-}, 20000);
+  await vi.waitFor(() => expect(f.marksOf("relay").map((m) => m.parent)).toEqual([process.pid]));
+  expect((await f.cli({ operation: "git-status" }))?.ok).toBe(true);
+
+  // The runner exits: the agent session ends and, one grace period later, so
+  // does the relay child. The registration survives, so the next attach
+  // starts a new child without another prepare.
+  const first = f.marksOf("relay")[0]?.pid as number;
+  process.kill(f.marksOf("runner")[0]?.pid as number);
+  expect(await agent.closed).toBe(1011);
+  await vi.waitFor(() => expect(alive(first)).toBe(false), { timeout: 5000 });
+  expect(f.integrations.active(f.workspace.id)).toBe(false);
+  const again = f.open("agent");
+  await again.opened;
+  await vi.waitFor(() =>
+    expect(again.frames.some((e) => e.type === "state" && e.runtimeReady === true)).toBe(true),
+  );
+  await vi.waitFor(() => expect(f.marksOf("relay")).toHaveLength(2));
+  const second = f.marksOf("relay").find((m) => m.pid !== first)?.pid as number;
+  expect(f.integrations.active(f.workspace.id)).toBe(true);
+  expect((await f.cli({ operation: "git-status" }))?.ok).toBe(true);
+
+  // Lifecycle disconnect (pause) ends the child and forgets the registration.
+  const paused = await f.app.inject({
+    method: "POST",
+    url: `/api/events/${f.event.id}/execution`,
+    headers: f.headers,
+    payload: { action: "pause-event" },
+  });
+  expect(paused.json()).toMatchObject({ paused: true, failures: 0 });
+  expect(await again.closed).toBe(1008);
+  await vi.waitFor(() => expect(alive(second)).toBe(false));
+  expect(f.integrations.active(f.workspace.id)).toBe(false);
+}, 30000);

@@ -42,6 +42,7 @@ const recordSchema = z.object({
   restarts: z.number().int().nonnegative().optional(),
   agents: z.number().int().nonnegative().optional(), // Sessions owned by a relay worker.
   terminals: z.number().int().nonnegative().optional(),
+  integrations: z.number().int().nonnegative().optional(), // Agent integration relays.
   helpers: z.number().int().nonnegative().optional(),
   commands: z.number().int().nonnegative().optional(),
   bytes: z.number().int().nonnegative().optional(), // Response body bytes as sent.

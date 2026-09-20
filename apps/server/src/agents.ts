@@ -79,6 +79,10 @@ export class AgentSessions {
   isWorking(id: string) {
     return Boolean(this.sessions.get(id)?.handle.busy);
   }
+  /** A runner session exists for the workspace, attached clients or not. */
+  hasSession(id: string) {
+    return this.sessions.has(id);
+  }
   async credentials(sprite: string) {
     const result = await this.client.exec(sprite, [
       "python3",

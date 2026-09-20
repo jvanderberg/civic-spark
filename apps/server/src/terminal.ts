@@ -207,6 +207,10 @@ export class TerminalSessions {
     socket.on("close", detached);
     socket.on("error", detached);
   }
+  /** A PTY session exists for the workspace, including the detach grace period. */
+  hasSession(id: string) {
+    return this.sessions.has(id);
+  }
   recentlyUsed(id: string, within: number, now = Date.now()) {
     const session = this.sessions.get(id);
     return Boolean(session && now - session.lastUsedAt < within);

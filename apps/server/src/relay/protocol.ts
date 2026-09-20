@@ -4,14 +4,17 @@ import type {
   HelperSessionOptions,
   HelperSessionOutcome,
 } from "../../../../packages/sprites/src/helper-session.ts";
+import type { IntegrationRequest, IntegrationResponse } from "./integration-runner.ts";
 
 /**
  * Messages between the main server process and a relay worker over the fork
  * IPC channel (advanced serialization, ordered per worker). Agent and terminal
  * frames are already-serialized browser payloads; the worker batches agent
  * frames per session per tick, and terminal output arrives one coalesced frame
- * per 16 ms tick. Session, client and command ids are chosen by the main
- * process so a restarted worker never confuses old and new sessions.
+ * per 16 ms tick. Integration relay traffic is request/response: the worker
+ * forwards each validated relay.py request and writes back the main process's
+ * answer. Session, client and command ids are chosen by the main process so a
+ * restarted worker never confuses old and new sessions.
  */
 export type ToWorker =
   | { type: "agent.start"; session: string; workspaceId: string; sprite: string }
@@ -25,6 +28,9 @@ export type ToWorker =
   | { type: "terminal.input"; session: string; data: string }
   | { type: "terminal.resize"; session: string; cols: number; rows: number }
   | { type: "terminal.kill"; session: string }
+  | { type: "integration.start"; session: string; workspaceId: string; sprite: string }
+  | { type: "integration.reply"; session: string; id: string; response: IntegrationResponse }
+  | { type: "integration.stop"; session: string }
   | {
       type: "command.run";
       id: string;
@@ -66,6 +72,8 @@ export type FromWorker =
   | { type: "terminal.output"; session: string; frame: string }
   | { type: "terminal.history"; session: string; client: number; data: string }
   | { type: "terminal.ended"; session: string; startFailed: boolean }
+  | { type: "integration.request"; session: string; request: IntegrationRequest }
+  | { type: "integration.ended"; session: string }
   | { type: "command.done"; id: string; stdout: Buffer }
   | { type: "command.failed"; id: string; error: CommandError }
   | { type: "session.ready"; session: string }
