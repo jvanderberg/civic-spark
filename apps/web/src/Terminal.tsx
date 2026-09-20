@@ -256,9 +256,10 @@ export function Terminal({
       terminalRef.current = null;
     };
   }, [workspace, available, activated]);
-  // A hidden terminal still streams tmux output through the server. Detach a
-  // few seconds after the tab is hidden and reattach to the same tmux session
-  // when it is shown again; nothing typed is lost.
+  // A hidden terminal still streams tmux output through the server. Detach
+  // after the tab has been hidden for a while and reattach to the same tmux
+  // session when it is shown again; nothing typed is lost. Brief tab switches
+  // keep the socket so the screen never needs to be rebuilt from history.
   const detachedWhileHidden = useRef(false);
   useEffect(() => {
     if (!available) return;
@@ -272,7 +273,7 @@ export function Terminal({
     const timer = setTimeout(() => {
       detachedWhileHidden.current = true;
       controls.current.disconnect();
-    }, 5000);
+    }, 30000);
     return () => clearTimeout(timer);
   }, [visible, available]);
   return (

@@ -119,3 +119,70 @@ it("counts typed input as use but never shell output, and records workspace acti
   expect(sessions.recentlyUsed("workspace", idle, now + idle)).toBe(false);
   vi.restoreAllMocks();
 });
+
+it("nudges a full tmux redraw when a reattached client reports an unchanged size", async () => {
+  sessions = new TerminalSessions(() => true, {
+    lease: () => undefined,
+  } as unknown as SpriteClient);
+  const resize = (socket: Socket, cols: number, rows: number) =>
+    socket.emit("message", Buffer.from(JSON.stringify({ type: "resize", cols, rows })));
+  const first = new Socket();
+  sessions.attach(
+    "workspace",
+    "civic-spark-isolated-test",
+    first as unknown as WebSocket,
+    async () => true,
+  );
+  resize(first, 120, 40);
+  await vi.waitFor(() => expect(proc.resize).toHaveBeenCalledWith(120, 40));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  // A real size change already repaints; no nudge.
+  expect(proc.resize.mock.calls).toEqual([[120, 40]]);
+  first.close();
+  const second = new Socket();
+  sessions.attach(
+    "workspace",
+    "civic-spark-isolated-test",
+    second as unknown as WebSocket,
+    async () => true,
+  );
+  resize(second, 120, 40);
+  await vi.waitFor(() => expect(proc.resize).toHaveBeenCalledWith(119, 40));
+  await vi.waitFor(() => expect(proc.resize.mock.calls.length).toBe(3));
+  expect(proc.resize.mock.calls.slice(1)).toEqual([
+    [119, 40],
+    [120, 40],
+  ]);
+  // Later resizes from the same client pass straight through.
+  resize(second, 90, 30);
+  await vi.waitFor(() => expect(proc.resize).toHaveBeenCalledWith(90, 30));
+  expect(proc.resize.mock.calls.length).toBe(4);
+});
+
+it("replays a truncated history ring from an escape or line boundary", async () => {
+  sessions = new TerminalSessions(() => true, {
+    lease: () => undefined,
+  } as unknown as SpriteClient);
+  const first = new Socket();
+  sessions.attach(
+    "workspace",
+    "civic-spark-isolated-test",
+    first as unknown as WebSocket,
+    async () => true,
+  );
+  const feed = proc.onData.mock.calls[0]?.[0] as (data: string) => void;
+  feed("x".repeat(150000));
+  feed("8;2;60m tail\x1b[31mred\r\n");
+  feed("y".repeat(60000));
+  first.close();
+  const second = new Socket();
+  sessions.attach(
+    "workspace",
+    "civic-spark-isolated-test",
+    second as unknown as WebSocket,
+    async () => true,
+  );
+  const replay = JSON.parse(String(second.send.mock.calls[0]?.[0])) as { data: string };
+  expect(replay.data.startsWith("\x1b[31mred\r\n")).toBe(true);
+  expect(replay.data.endsWith("y".repeat(60000))).toBe(true);
+});

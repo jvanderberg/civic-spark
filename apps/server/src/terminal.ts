@@ -60,7 +60,10 @@ type Session = {
   /** Sockets that received history and now get live output. */
   live: Set<WebSocket>;
   lastUsedAt: number;
+  /** Last PTY size applied; the runner starts at 100×28. */
+  size: { cols: number; rows: number };
 };
+const redrawNudgeMs = 150;
 const detachAfterMs = 180000; // Brief tab switches reattach to the live shell.
 export class TerminalSessions {
   constructor(
@@ -112,7 +115,7 @@ export class TerminalSessions {
         throw error;
       }
       if (ended) throw new Error("Sprite terminal could not start");
-      started = { handle, clients, live, lastUsedAt: Date.now() };
+      started = { handle, clients, live, lastUsedAt: Date.now(), size: { cols: 100, rows: 28 } };
       lease?.signal.addEventListener("abort", abort, { once: true });
       session = started;
       this.sessions.set(id, started);
@@ -173,6 +176,7 @@ export class TerminalSessions {
         socket.close(1008, "Workspace access ended");
     }, 5000);
     let queue = Promise.resolve();
+    let firstResize = true;
     socket.on("message", (raw) => {
       if (Buffer.byteLength(raw.toString()) > 65536) {
         socket.close(1009, "Terminal message too large");
@@ -186,7 +190,26 @@ export class TerminalSessions {
             active.lastUsedAt = Date.now();
             this.touch(id);
             active.handle.write(input.data);
-          } else active.handle.resize(input.cols, input.rows);
+            return;
+          }
+          const { cols, rows } = input;
+          const unchanged = active.size.cols === cols && active.size.rows === rows;
+          active.size = { cols, rows };
+          if (firstResize && unchanged) {
+            // A reattached client rebuilt its screen from the history ring, which
+            // starts mid-stream. tmux repaints the whole screen only on a size
+            // change, so nudge the size and restore it.
+            active.handle.resize(Math.max(10, cols - 1), rows);
+            setTimeout(() => {
+              if (
+                this.sessions.get(id) === active &&
+                active.size.cols === cols &&
+                active.size.rows === rows
+              )
+                active.handle.resize(cols, rows);
+            }, redrawNudgeMs);
+          } else active.handle.resize(cols, rows);
+          firstResize = false;
         })
         .catch(() => socket.close(1008, "Invalid terminal message"));
     });

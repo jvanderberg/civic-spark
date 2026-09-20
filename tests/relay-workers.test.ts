@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -157,13 +158,18 @@ async function fixture(workers: string) {
   service.setSprite(workspace.id, sprite, "ready", null);
   const headers = { cookie: owner.cookie, origin: "http://127.0.0.1:4310" };
   const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  // Marks are named by PID; order them by creation so "first, then replacement"
+  // assertions do not depend on which process got the smaller number.
   const marksOf = (kind: string) =>
     readdirSync(marks)
       .filter((name) => name.startsWith(`${kind}-`))
       .map((name) => ({
         pid: Number(name.slice(kind.length + 1)),
         parent: Number(readFileSync(join(marks, name), "utf8")),
-      }));
+        created: statSync(join(marks, name)).birthtimeMs,
+      }))
+      .sort((a, b) => a.created - b.created)
+      .map(({ pid, parent }) => ({ pid, parent }));
   const prepare = async () => {
     const response = await app.inject({
       method: "POST",

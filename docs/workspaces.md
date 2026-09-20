@@ -24,7 +24,7 @@ Directory access is feature-detected. Desktop Chrome/Edge are the initial target
 
 ## Terminal
 
-xterm.js connects over an authenticated same-origin WebSocket to a server-side Sprite CLI PTY. The CLI runs a tmux shell inside `/home/sprite/project`. Browser disconnection leaves the shell available for reconnect; a bounded output buffer restores the display. Terminal capability queries are excluded from replay so reconnecting does not inject stale responses into the shell. Inputs and periodic connection checks revalidate the session and membership.
+xterm.js connects over an authenticated same-origin WebSocket to a server-side Sprite CLI PTY. The CLI runs a tmux shell inside `/home/sprite/project`. Browser disconnection leaves the shell available for reconnect; a bounded output buffer restores the display, replayed from an escape-sequence or line boundary, and a reattached client whose size is unchanged receives a brief size nudge so tmux repaints the whole screen instead of leaving a full-screen program half drawn. A terminal hidden behind another workspace tab keeps its socket for 30 seconds before detaching. Terminal capability queries are excluded from replay so reconnecting does not inject stale responses into the shell. Inputs and periodic connection checks revalidate the session and membership.
 
 Only the fixed `sprite` executable launches on the management host. Shell input goes to the remote Sprite. The prototype repairs the missing executable bit on node-pty 1.1.0's macOS prebuilt helper during `npm install`; Linux installations may need node-pty's native build prerequisites.
 

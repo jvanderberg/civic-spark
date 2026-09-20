@@ -20,6 +20,7 @@ export class TerminalRunner {
   private readonly process: pty.IPty;
   private chunks: string[] = [];
   private bytes = 0;
+  private truncated = false;
   private pendingOutput = "";
   private flushTimer: NodeJS.Timeout | undefined;
   clients = 0;
@@ -70,6 +71,7 @@ export class TerminalRunner {
       while (this.bytes > historyLimit && this.chunks.length > 1) {
         const first = this.chunks.shift() ?? "";
         this.bytes -= first.length;
+        this.truncated = true;
       }
       if (!this.clients) return;
       this.pendingOutput += data;
@@ -82,7 +84,14 @@ export class TerminalRunner {
     });
   }
   history() {
-    return this.chunks.join("");
+    const joined = this.chunks.join("");
+    if (!this.truncated) return joined;
+    // A dropped chunk can split an escape sequence; replaying its tail prints
+    // the remaining parameters as text. Start at the next sequence or line.
+    const boundary = Math.min(
+      ...[joined.indexOf("\x1b"), joined.indexOf("\n")].filter((index) => index >= 0),
+    );
+    return Number.isFinite(boundary) && boundary > 0 ? joined.slice(boundary) : joined;
   }
   write(data: string) {
     this.process.write(data);
