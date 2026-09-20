@@ -51,6 +51,10 @@ Enable backend diagnostics with `CIVIC_SPARK_DIAGNOSTICS=1`; the Fly setup helpe
 
 Each invocation writes a timestamped directory under `artifacts/participant-load/` containing `steps.jsonl`, `result.json`, milestone/failure screenshots and, on success, `project.zip`. Results include workspace/team IDs, verified commit hashes, completion-check count, timings and browser console/page errors. Console errors are retained even if the workflow recovers; a passing workflow does not imply a clean console. Artifacts and generated JSON stay ignored by Git.
 
+## Operator tooling and run archive
+
+The instance-side helpers (roster generation, capacity, backend log capture, correlation, per-minute telemetry, cleanup) are tracked under [scripts/participant-load](../scripts/participant-load/README.md) with a start-to-finish runbook. Every run's report is archived under [docs/participant-load-runs](participant-load-runs/README.md).
+
 ## Free validation
 
 ```sh
