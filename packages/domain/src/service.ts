@@ -89,13 +89,13 @@ export class EventService {
   // Internal recovery source, after owner authorization and the execution gate.
   // Only canonical shared main is eligible; never seed from a restored private checkout.
   sharedWorkspaceRepository(id: string) {
-    const workspace = this.engine.snapshot().participants.find((w) => w.id === id);
+    const workspace = this.engine.peek().participants.find((w) => w.id === id);
     if (!workspace) throw new Error("Workspace not found");
     return this.engine.repoPath(workspace.teamId);
   }
   // Internal operator state; never returned by an API or used to authorize a user.
   provisioningRecords() {
-    return this.engine.snapshot().participants;
+    return [...this.engine.peek().participants];
   }
   execution(eventId: string) {
     const row = this.db.prepare("SELECT body FROM event_execution WHERE id=?").get(eventId);
@@ -145,7 +145,7 @@ export class EventService {
   }
   spriteInventory(actor: Identity, eventId: string) {
     if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
-    const data = this.engine.snapshot();
+    const data = this.engine.peek();
     return ok(
       data.participants
         .filter(
@@ -389,7 +389,7 @@ export class EventService {
   }
   // Full project including its Markdown brief, for on-demand display.
   project(actor: Identity, eventId: string, projectId: string): Result<Event["projects"][number]> {
-    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    const event = this.engine.peek().events.find((e) => e.id === eventId);
     if (!event || !this.canDiscover(actor, event)) return fail("Event not found", 404);
     const project = event.projects.find((p) => p.id === projectId);
     return project ? ok(project) : fail("Project not found", 404);
@@ -403,7 +403,7 @@ export class EventService {
     );
   }
   private canJoin(actor: Identity, eventId: string): Result<Event> {
-    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    const event = this.engine.peek().events.find((e) => e.id === eventId);
     if (!event || !this.canDiscover(actor, event)) return fail("Event not found", 404);
     if (this.execution(eventId).paused) return fail(PAUSED_MESSAGE, 423);
     if (event.status === "closed" || (event.status === "draft" && !this.isAdmin(actor, eventId)))
@@ -417,7 +417,7 @@ export class EventService {
   }
   // Public installation context exposes only a discoverable title, never event data.
   siteEvent(eventId: string, actor: Identity | null) {
-    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    const event = this.engine.peek().events.find((e) => e.id === eventId);
     if (!event || !this.state.eventMembers.some((m) => m.eventId === eventId))
       return fail("The configured site event was not found. Check CIVIC_SPARK_SITE_EVENT_ID.", 503);
     const publicEvent = event.status === "registration" || event.status === "live";
@@ -428,9 +428,9 @@ export class EventService {
   }
   portal(actor: Identity, sprites: boolean, siteEventId?: string): PortalState {
     this.remember(actor);
-    const data = this.engine.snapshot();
-    data.teams = data.teams.filter((t) => !t.deletedAt);
-    const visibleTeamIds = new Set(data.teams.map((t) => t.id));
+    const data = this.engine.peek();
+    const teams = data.teams.filter((t) => !t.deletedAt);
+    const visibleTeamIds = new Set(teams.map((t) => t.id));
     const events = data.events.filter(
       (e) => (!siteEventId || e.id === siteEventId) && this.canDiscover(actor, e),
     );
@@ -450,7 +450,7 @@ export class EventService {
           this.state.eventMembers.find((m) => m.eventId === e.id && m.userId === actor.id)?.role ??
           "visitor",
       })),
-      teams: data.teams
+      teams: teams
         .filter((t) => eventIds.has(t.eventId))
         .map((t) => ({
           ...t,
@@ -488,7 +488,7 @@ export class EventService {
                 runtime: this.runtime(p.id),
                 name: actor.name,
                 userId: actor.id,
-                teamName: data.teams.find((t) => t.id === m.teamId)?.name ?? "Team",
+                teamName: teams.find((t) => t.id === m.teamId)?.name ?? "Team",
               },
             ]
           : [];
@@ -518,7 +518,7 @@ export class EventService {
     if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
     const parsed = eventSettingsSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join(". "));
-    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    const event = this.engine.peek().events.find((e) => e.id === eventId);
     if (!event) return fail("Event not found", 404);
     // Legacy freeform labels are editable. Reject newly introduced malformed clock labels.
     for (const row of parsed.data.schedule) {
@@ -598,7 +598,7 @@ export class EventService {
     return ok({ team: team.value, workspace: joined.value });
   }
   createProject(actor: Identity, eventId: string, input: ProjectInput) {
-    const event = this.engine.snapshot().events.find((event) => event.id === eventId);
+    const event = this.engine.peek().events.find((event) => event.id === eventId);
     if (!event || !this.canDiscover(actor, event)) return fail("Event not found", 404);
     if (event.status === "draft" && !this.isAdmin(actor, eventId))
       return fail("Event admin access required", 403);
@@ -615,7 +615,7 @@ export class EventService {
     if (!this.isAdmin(actor, eventId)) return fail("Event admin access required", 403);
     const parsed = projectUpdateSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join(". "));
-    const event = this.engine.snapshot().events.find((e) => e.id === eventId);
+    const event = this.engine.peek().events.find((e) => e.id === eventId);
     if (!event) return fail("Event not found", 404);
     if (event.status === "closed")
       return fail("This event has ended. Projects are read-only.", 409);
@@ -628,7 +628,7 @@ export class EventService {
     );
   }
   joinTeam(actor: Identity, teamId: string): Result<Workspace> {
-    const team = this.engine.snapshot().teams.find((t) => t.id === teamId && !t.deletedAt);
+    const team = this.engine.peek().teams.find((t) => t.id === teamId && !t.deletedAt);
     if (!team) return fail("Team not found", 404);
     const allowed = this.canJoin(actor, team.eventId);
     if (!allowed.ok) return allowed;
@@ -671,7 +671,7 @@ export class EventService {
   workspace(actor: Identity, id: string, write = false, waking = false): Result<Workspace> {
     const m = this.state.memberships.find((m) => m.id === id && m.userId === actor.id && m.active);
     if (!m) return fail("Workspace not found", 404);
-    const data = this.engine.snapshot();
+    const data = this.engine.peek();
     if (!data.teams.some((t) => t.id === m.teamId && !t.deletedAt))
       return fail("Workspace not found", 404);
     const p = data.participants.find((p) => p.id === id);
@@ -832,13 +832,13 @@ export class EventService {
     return p.ok ? this.engine.sync(id) : p;
   }
   accept(actor: Identity, id: string) {
-    const c = this.engine.snapshot().contributions.find((c) => c.id === id);
+    const c = this.engine.peek().contributions.find((c) => c.id === id);
     if (!c || !this.canReadTeam(actor, c.teamId)) return fail("Contribution not found", 404);
     if (this.execution(c.eventId).paused) return fail(PAUSED_MESSAGE, 423);
     return this.engine.accept(id);
   }
   private canReadTeam(actor: Identity, id: string) {
-    const team = this.engine.snapshot().teams.find((t) => t.id === id && !t.deletedAt);
+    const team = this.engine.peek().teams.find((t) => t.id === id && !t.deletedAt);
     return Boolean(
       team &&
         (this.isAdmin(actor, team.eventId) ||
@@ -867,7 +867,7 @@ export class EventService {
     return ok({ removed: true, workPreserved: true });
   }
   private adminTeam(actor: Identity, id: string) {
-    const team = this.engine.snapshot().teams.find((t) => t.id === id && !t.deletedAt);
+    const team = this.engine.peek().teams.find((t) => t.id === id && !t.deletedAt);
     if (!team) return fail("Team not found", 404);
     if (!this.isAdmin(actor, team.eventId)) return fail("Event admin access required", 403);
     return ok(team);

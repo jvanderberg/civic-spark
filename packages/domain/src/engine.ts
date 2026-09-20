@@ -39,6 +39,10 @@ import {
   templateSchema,
 } from "./types.ts";
 
+export type StateView = {
+  readonly [K in keyof State]: State[K] extends (infer Item)[] ? ReadonlyArray<Item> : State[K];
+};
+
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 export const templates: Template[] = ["blank", "diod"].map((name) =>
   templateSchema.parse(
@@ -88,6 +92,11 @@ export class WorkspaceEngine {
   }
   snapshot(): State {
     return structuredClone(this.state);
+  }
+  // Zero-copy read view for lookups. A full clone of the state per request was
+  // the main event-loop cost at fifty participants; callers must not mutate.
+  peek(): StateView {
+    return this.state;
   }
   private save() {
     const body = JSON.stringify(this.state);
