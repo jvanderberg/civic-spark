@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import {
   commandFailure,
+  count,
   type DiagnosticRecord,
   diagnostic,
   diagnosticContext,
@@ -327,6 +328,7 @@ export class SpriteClient {
       return undefined;
     }
     const startedAt = performance.now();
+    count("processSpawns");
     const child = spawn(
       "sprite",
       this.args([

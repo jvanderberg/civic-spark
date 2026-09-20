@@ -1,7 +1,7 @@
 import * as pty from "node-pty";
 import type { WebSocket } from "ws";
 import { z } from "zod";
-import { diagnostic } from "../../../packages/diagnostics/src/index.ts";
+import { count, diagnostic } from "../../../packages/diagnostics/src/index.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 
 const inputSchema = z.discriminatedUnion("type", [
@@ -48,7 +48,7 @@ export class TerminalSessions {
         "--",
         "bash",
         "-lc",
-        "export PATH=/home/sprite/.civic-spark-agent/bin:/home/sprite/.civic-spark-agent/node_modules/.bin:$PATH; cd /home/sprite/project && printf 'Civic Spark terminal connected\\r\\n' && exec tmux new-session -A -s civic-spark-workspace",
+        "export PATH=/home/sprite/.civic-spark-agent/bin:/home/sprite/.civic-spark-agent/node_modules/.bin:$PATH; cd /home/sprite/project && printf 'Civic Spark terminal connected\\r\\n' && exec tmux new-session -A -s civic-spark-workspace \\; set-option -g status off",
       ];
       // Only this fixed Sprite CLI is launched on the host. User input goes to the remote PTY.
       const lease = this.client.lease(sprite, true);
@@ -87,10 +87,15 @@ export class TerminalSessions {
             client.close(1013, "Reconnect to catch up");
             continue;
           }
-          if (client.readyState === 1) client.send(frame);
+          if (client.readyState === 1) {
+            client.send(frame);
+            count("terminalFrames");
+          }
         }
       };
       proc.onData((data) => {
+        count("terminalChunks");
+        count("terminalBytes", data.length);
         // Output is not use: tmux status refreshes and TUIs emit forever, which
         // would block idle release and keep the Sprite in billed running state.
         // History is a bounded ring of chunks with terminal queries removed so a

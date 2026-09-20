@@ -60,6 +60,11 @@ const nextLabel = {
 export function App() {
   const [session, setSession] = useState<SessionView | null>(null);
   const [state, setState] = useState<PortalState | null>(null);
+  // The session view is fetched once per sign-in; the event name it carries can
+  // change later, so prefer the current name from state when it is visible.
+  const siteEventName = session?.siteEvent
+    ? (state?.events.find((e) => e.id === session.siteEvent?.id)?.name ?? session.siteEvent.name)
+    : null;
   const [eventId, setEventId] = useState("");
   const [adminSection, setAdminSection] = useState<AdminSection | null>(null);
   const adminNavigationId = useId();
@@ -141,10 +146,8 @@ export function App() {
   }, []);
   useEffect(() => {
     document.title =
-      session?.siteEvent?.name ??
-      state?.events.find((e) => e.id === eventId)?.name ??
-      "Civic Spark";
-  }, [session?.siteEvent?.name, state?.events, eventId]);
+      siteEventName ?? state?.events.find((e) => e.id === eventId)?.name ?? "Civic Spark";
+  }, [siteEventName, state?.events, eventId]);
   useEffect(() => {
     const url = new URL(window.location.href);
     url.hash = workspaceId ? new URLSearchParams({ workspace: workspaceId }).toString() : "";
@@ -176,7 +179,7 @@ export function App() {
     setError("");
     try {
       await action();
-      await refresh();
+      await refresh({ session: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Operation failed");
     } finally {
@@ -360,7 +363,7 @@ export function App() {
           <span className="eyebrow">MAKE SOMETHING TOGETHER</span>
           <h1>
             {session.siteEvent ? (
-              (session.siteEvent.name ?? "Your event")
+              (siteEventName ?? "Your event")
             ) : (
               <>
                 Your ideas.
@@ -469,7 +472,7 @@ export function App() {
           <span className="brand-mark">
             <Leaf size={21} />
           </span>
-          {session.siteEvent ? (session.siteEvent.name ?? "Your event") : "Civic Spark"}
+          {session.siteEvent ? (siteEventName ?? "Your event") : "Civic Spark"}
         </a>
         {session.siteEvent && <p className="site-platform">Powered by Civic Spark</p>}
         <MobileMenu label="Portal navigation" closeOnNavigate>

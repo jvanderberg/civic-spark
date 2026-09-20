@@ -45,6 +45,15 @@ const recordSchema = z.object({
   children: z.number().int().nonnegative().optional(),
   sockets: z.number().int().nonnegative().optional(),
   rssMb: z.number().nonnegative().optional(),
+  agentLines: z.number().int().nonnegative().optional(),
+  agentFrames: z.number().int().nonnegative().optional(),
+  terminalChunks: z.number().int().nonnegative().optional(),
+  terminalBytes: z.number().int().nonnegative().optional(),
+  terminalFrames: z.number().int().nonnegative().optional(),
+  sessionRequests: z.number().int().nonnegative().optional(),
+  processSpawns: z.number().int().nonnegative().optional(),
+  httpRequests: z.number().int().nonnegative().optional(),
+  httpBytes: z.number().int().nonnegative().optional(),
   channel: z.enum(["agent", "terminal"]).optional(),
   transport: z.enum(["process", "session"]).optional(), // How a Sprite command reached the Sprite.
   phase: z.enum(["start", "end"]).optional(), // Helper session lifecycle only.
@@ -128,6 +137,24 @@ export function diagnostic(record: DiagnosticRecord) {
   } catch {
     /* Logging must never change request or mutation results. */
   }
+}
+// Cheap process-wide counters, reported as deltas in each `loop` record so a
+// busy loop can be attributed to agent lines, terminal chunks, session
+// requests, socket frames and HTTP without a profiler.
+export const counters = {
+  agentLines: 0,
+  agentFrames: 0,
+  terminalChunks: 0,
+  terminalBytes: 0,
+  terminalFrames: 0,
+  sessionRequests: 0,
+  processSpawns: 0,
+  httpRequests: 0,
+  httpBytes: 0,
+};
+export type CounterName = keyof typeof counters;
+export function count(name: CounterName, amount = 1) {
+  counters[name] += amount;
 }
 export function spriteWorkspaceId(name: string | undefined) {
   const parsed = z.uuid().safeParse(name?.replace(/^civic-spark-/, ""));

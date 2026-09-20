@@ -109,3 +109,7 @@ After deleting all test teams and Sprites, fifty people arrived 3.5 s apart on a
 ## Live concurrent acceptance — September 20, 2026, fifty people on one core
 
 After the load fixes were deployed on a single performance vCPU, a fresh fifty-person cohort passed **47 of 50** (previously 17 of 50 on two cores). All fifty workspaces reached ready, 15,543 of 16,119 Sprite commands went through 49 long-lived helper sessions, first byte stayed under a second until the final concurrent agent phase and peaked at 7–11 s instead of 34 s, and the only HTTP error was one Share conflict. Loop telemetry showed CPU median 68 % and max 96 % with event-loop delay p99 under 250 ms, so the host is now throughput-bound rather than queueing connections. The three failures were one Share conflict, one 30 s editor wait at peak, and one agent turn still streaming after the runner's 20-minute limit. Evidence: ignored `artifacts/participant-load/cohort-2026-09-20T06-54-19-968Z/` and `artifacts/participant-load/backend-20260920d/REPORT.md`.
+
+## Idle terminals and attributable telemetry
+
+An idle terminal no longer streams through the host: tmux starts with its status line off, and the browser detaches the terminal socket five seconds after the Terminal tab is hidden, reattaching to the same tmux session when it is shown again. Each ten-second `loop` diagnostic now carries per-interval counters (agent lines and frames, terminal chunks, bytes and frames, helper-session requests, process spawns, HTTP requests and bytes) so a busy loop can be attributed without a profiler.

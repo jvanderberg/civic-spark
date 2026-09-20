@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { count } from "../../diagnostics/src/index.ts";
 import { CommandBusy } from "./command-queue.ts";
 
 /** The session died or was ended before answering; the caller may retry once without it. */
@@ -111,6 +112,7 @@ export class HelperSession {
   private write(message: object) {
     const stdin = this.child.stdin;
     if (!stdin || stdin.destroyed || !stdin.writable) throw lost();
+    if ((message as { type?: string }).type === "request") count("sessionRequests");
     stdin.write(`${JSON.stringify(message)}\n`);
   }
   private consume(chunk: Buffer) {

@@ -168,6 +168,15 @@ it("emits event-loop telemetry with delay percentiles, CPU share and handle coun
       "children",
       "sockets",
       "rssMb",
+      "agentLines",
+      "agentFrames",
+      "terminalChunks",
+      "terminalBytes",
+      "terminalFrames",
+      "sessionRequests",
+      "processSpawns",
+      "httpRequests",
+      "httpBytes",
     ])
       expect(typeof loop[key]).toBe("number");
   } finally {

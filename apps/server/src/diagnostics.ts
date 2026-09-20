@@ -3,6 +3,9 @@ import { monitorEventLoopDelay } from "node:perf_hooks";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
+  type CounterName,
+  count,
+  counters,
   type DiagnosticRecord,
   diagnostic,
   diagnosticContext,
@@ -29,6 +32,9 @@ export function installDiagnostics(app: FastifyInstance) {
     if (!context) return;
     const params = z.object({ id: z.uuid().optional() }).safeParse(request.params);
     const route = request.routeOptions.url ?? "unmatched";
+    const sent = Number(reply.getHeader("content-length"));
+    count("httpRequests");
+    if (Number.isFinite(sent)) count("httpBytes", sent);
     diagnostic({
       event: "http",
       requestId: context.requestId,
@@ -56,6 +62,7 @@ function installLoopTelemetry() {
   histogram.enable();
   let cpu = process.cpuUsage();
   let last = performance.now();
+  let previous = { ...counters };
   const timer = setInterval(() => {
     const now = performance.now();
     const usage = process.cpuUsage(cpu);
@@ -76,7 +83,14 @@ function installLoopTelemetry() {
       children: names.filter((name) => name === "ChildProcess").length,
       sockets: names.filter((name) => name === "Socket" || name === "TLSSocket").length,
       rssMb: Math.round(process.memoryUsage.rss() / 1048576),
+      ...Object.fromEntries(
+        (Object.keys(counters) as CounterName[]).map((name) => [
+          name,
+          counters[name] - previous[name],
+        ]),
+      ),
     });
+    previous = { ...counters };
     histogram.reset();
   }, 10000);
   timer.unref();

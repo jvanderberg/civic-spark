@@ -84,7 +84,8 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [x] Diagnostics add response bytes per request and a ten-second `loop` record with event-loop delay p50/p99/max, CPU share, handle, child and socket counts.
 - [x] Serve read-only helper polls through one long-lived, passive `sprite exec` helper session per Sprite (JSON lines, correlated ids, bounded replies, idle shutdown, lifecycle teardown, one-shot fallback) with `sprite.command`/`sprite.session` diagnostics; writes and uploads stay one-shot. Fake-spawn and dispatcher tests only; no live Sprite run yet.
 - [x] Fifty-person re-run on the deployed fixes with one vCPU passed 47/50 (baseline 17/50 on two vCPUs): all workspaces ready, helper sessions served 96 % of Sprite commands, first byte 0.75 s early and 7–11 s at peak instead of 34 s, one HTTP error. See [scripted rehearsal](docs/scripted-participant-load.md).
-- [ ] Next load work from the audit: relay agent and terminal streams through a bridge process, replace preview/agent-git polling with push or longer intervals, and cap the `changes` payload; re-run fifty afterwards.
+- [x] Idle terminals cost nothing: tmux runs with its status line off so an idle shell emits no output, and the browser detaches the terminal socket five seconds after the tab is hidden and reattaches to the same tmux session when shown. Loop telemetry now reports per-interval counts of agent lines and frames, terminal chunks, bytes and frames, helper-session requests, process spawns, HTTP requests and bytes.
+- [ ] Relay agent, terminal and helper-session streams through worker processes (feature-flagged), push workspace status changes over a per-workspace events socket instead of fixed polls, cap the `changes` payload; re-run fifty afterwards.
 - [ ] Exercise crash/restart and disk-full failure/recovery using isolated fixtures; report measured limits and remaining live acceptance.
 
 ## Editable event configuration — live

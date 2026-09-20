@@ -7,7 +7,7 @@ import { z } from "zod";
 import { AgentReplay } from "../../../packages/agents/src/history.ts";
 import { agentImagesSchema, agentWireByteLimit } from "../../../packages/agents/src/images.ts";
 import { agentInputSchema } from "../../../packages/agents/src/protocol.ts";
-import { diagnostic, spriteWorkspaceId } from "../../../packages/diagnostics/src/index.ts";
+import { count, diagnostic, spriteWorkspaceId } from "../../../packages/diagnostics/src/index.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 
 const eventSchema = z.object({
@@ -241,7 +241,10 @@ export class AgentSessions {
         for (const client of active.clients) {
           if (client.bufferedAmount > 2 * agentWireByteLimit)
             client.close(1013, "Reconnect to catch up");
-          else if (client.readyState === 1) client.send(frame);
+          else if (client.readyState === 1) {
+            client.send(frame);
+            count("agentFrames");
+          }
         }
       };
       const flushText = () => {
@@ -253,6 +256,7 @@ export class AgentSessions {
         deliver(event);
       };
       createInterface({ input: child.stdout }).on("line", (line) => {
+        count("agentLines");
         if (this.sessions.get(id) !== active || line.length > agentWireByteLimit) return;
         try {
           const event = eventSchema.parse(JSON.parse(line));
