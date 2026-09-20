@@ -317,42 +317,62 @@ export function Terminal({
       ) : (
         <p role="status">{status}</p>
       )}
-      <div
-        ref={host}
-        className="sprite-terminal"
-        onTouchStart={(event) => {
-          const first = event.touches[0];
-          touch.current =
-            event.touches.length === 1 && first
-              ? { x: first.clientX, y: first.clientY, started: Date.now() }
-              : null;
-        }}
-        onTouchMove={(event) => {
-          const first = event.touches[0];
-          if (
-            !first ||
-            (touch.current &&
-              Math.hypot(first.clientX - touch.current.x, first.clientY - touch.current.y) > 10)
-          )
+      <div className="sprite-terminal-frame">
+        {available && !connected && (
+          // Nothing typed can reach the shell until the connection is up, so
+          // block the surface and show the same status where the cursor would be.
+          <div className="terminal-cover" aria-live="polite">
+            <span className="terminal-cover-spinner" aria-hidden="true" />
+            <p>{busy ? status : "Terminal disconnected"}</p>
+            {!busy && (
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => controls.current.retry()}
+              >
+                Reconnect
+              </button>
+            )}
+          </div>
+        )}
+        <div
+          ref={host}
+          inert={available && !connected ? true : undefined}
+          className="sprite-terminal"
+          onTouchStart={(event) => {
+            const first = event.touches[0];
+            touch.current =
+              event.touches.length === 1 && first
+                ? { x: first.clientX, y: first.clientY, started: Date.now() }
+                : null;
+          }}
+          onTouchMove={(event) => {
+            const first = event.touches[0];
+            if (
+              !first ||
+              (touch.current &&
+                Math.hypot(first.clientX - touch.current.x, first.clientY - touch.current.y) > 10)
+            )
+              touch.current = null;
+          }}
+          onTouchCancel={() => {
             touch.current = null;
-        }}
-        onTouchCancel={() => {
-          touch.current = null;
-        }}
-        onTouchEnd={(event) => {
-          const tap = touch.current;
-          touch.current = null;
-          // Leave scrolling, long-press selection, links and pinch zoom to xterm/browser.
-          if (
-            tap &&
-            !event.touches.length &&
-            Date.now() - tap.started < 400 &&
-            !terminalRef.current?.hasSelection() &&
-            !(event.target instanceof Element && event.target.closest("a"))
-          )
-            focusInput();
-        }}
-      />
+          }}
+          onTouchEnd={(event) => {
+            const tap = touch.current;
+            touch.current = null;
+            // Leave scrolling, long-press selection, links and pinch zoom to xterm/browser.
+            if (
+              tap &&
+              !event.touches.length &&
+              Date.now() - tap.started < 400 &&
+              !terminalRef.current?.hasSelection() &&
+              !(event.target instanceof Element && event.target.closest("a"))
+            )
+              focusInput();
+          }}
+        />
+      </div>
     </section>
   );
 }

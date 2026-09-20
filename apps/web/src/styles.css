@@ -2652,3 +2652,49 @@ h2 {
   color: var(--app-error-text);
   background: var(--app-error);
 }
+
+/* Terminal connection cover: the shell surface is inert until the socket is up. */
+.sprite-terminal-frame {
+  position: relative;
+}
+.terminal-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  color: #e6efe9;
+  background: rgba(23, 37, 31, 0.92);
+  border-radius: 7px;
+}
+.terminal-cover p {
+  margin: 0;
+  color: inherit;
+  font-size: 15px;
+}
+.terminal-cover-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid rgba(230, 239, 233, 0.35);
+  border-top-color: #e6efe9;
+  animation: terminal-cover-spin 0.9s linear infinite;
+}
+@keyframes terminal-cover-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-cover-spinner {
+    animation: none;
+  }
+}
+.workspace-screen .terminal-cover {
+  border-radius: 0;
+}

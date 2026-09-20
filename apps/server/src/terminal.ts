@@ -61,7 +61,7 @@ type Session = {
   live: Set<WebSocket>;
   lastUsedAt: number;
 };
-const detachAfterMs = 30000;
+const detachAfterMs = 180000; // Brief tab switches reattach to the live shell.
 export class TerminalSessions {
   constructor(
     private allowed: (id: string) => boolean = () => true,

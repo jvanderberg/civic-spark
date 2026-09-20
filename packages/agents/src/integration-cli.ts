@@ -32,8 +32,11 @@ async function request(value: object) {
   }
 }
 try {
-  if (group === "git" && ["publish", "status"].includes(action ?? "")) {
-    await request({ operation: action === "publish" ? "git-publish" : "git-status" });
+  if (group === "git" && ["publish", "status", "fetch"].includes(action ?? "")) {
+    await request({
+      operation:
+        action === "publish" ? "git-publish" : action === "fetch" ? "git-fetch" : "git-status",
+    });
   } else if (group === "preview") {
     if (!["start", "restart", "stop", "status", "logs"].includes(action ?? ""))
       throw new Error("Use civic-spark preview start, restart, stop, status, or logs.");

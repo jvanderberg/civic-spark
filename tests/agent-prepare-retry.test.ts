@@ -35,6 +35,13 @@ it("retries agent preparation with backoff, keeps the preparing marker, and boun
   ]);
   expect(JSON.stringify(logged)).not.toContain("PRIVATE");
 
+  // A Sprite prepared once in this process reconnects without another upload
+  // until something forgets it (for example a runner that fails to start).
+  exec.mockClear();
+  await expect(sessions.prepare(sprite)).resolves.toBe(true);
+  expect(exec).not.toHaveBeenCalled();
+  sessions.forget(sprite);
+
   exec.mockReset();
   exec.mockResolvedValue(fail("still failing", 502));
   const failing = sessions.prepare(sprite);

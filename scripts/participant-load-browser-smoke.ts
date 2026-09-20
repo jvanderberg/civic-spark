@@ -108,6 +108,22 @@ try {
         state.capabilities.sprites = true;
         await route.fulfill({ response, json: state });
       });
+      // Dark desktop also gets one stale-preview Share rejection: the client must
+      // refresh the preview and retry on its own when the file list is unchanged.
+      let staleShareRequests = 0;
+      if (injectBusyPreparation)
+        await page.route("**/share", async (route) => {
+          staleShareRequests++;
+          if (staleShareRequests === 1)
+            return route.fulfill({
+              status: 409,
+              json: {
+                error:
+                  "Files changed since the preview. Refresh Changes and review them before sharing.",
+              },
+            });
+          return route.continue();
+        });
       if (injectBusyPreparation)
         await page.route("**/api/workspaces/*/sprite", async (route) => {
           if (route.request().method() === "POST") {
@@ -274,10 +290,13 @@ try {
         assert(result.browserErrors.every((message) => /502|503|ERR_FAILED/.test(message)));
       } else if (injectBusyPreparation) {
         assert.equal(preparationRequests, 2, "Busy preparation retried automatically");
-        assert.equal(result.browserErrors.length, 1);
-        assert(/429/.test(result.browserErrors[0] ?? ""));
+        // hello: stale 409 + transparent retry; MVP: one request.
+        assert.equal(staleShareRequests, 3, "Stale preview Share retried by the client");
+        assert.equal(result.browserErrors.length, 2);
+        assert(result.browserErrors.every((message) => /429|409/.test(message)));
         const steps = readFileSync(join(output, "steps.jsonl"), "utf8");
         assert(!steps.includes("Preparation retry"), "No manual preparation retry was needed");
+        assert(!steps.includes("Preview refreshed"), "The runner never had to refresh the preview");
       } else assert.deepEqual(result.browserErrors, []);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await context.close();

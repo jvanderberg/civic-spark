@@ -241,6 +241,8 @@ export class WorkspaceIntegrations {
       unwrap(this.service.workspace(owner, id, true));
       if (input.operation === "git-publish")
         response = { ok: true, value: await this.publish(id, owner, relay.authorized) };
+      else if (input.operation === "git-fetch")
+        response = { ok: true, value: await this.fetch(id, owner, relay.authorized) };
       else if (input.operation === "git-status")
         response = {
           ok: true,
@@ -419,6 +421,26 @@ export class WorkspaceIntegrations {
       return { sprite, remote: team.remote };
     } finally {
       rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  // Import the team's current branch into the Sprite without touching the
+  // checkout, so the agent can review teammates' published work on request.
+  async fetch(id: string, owner: Identity, authorized: () => Promise<boolean>) {
+    if (this.busy.has(id))
+      throw new Error("A Git operation is already running. Retry when it finishes.");
+    this.busy.add(id);
+    try {
+      if (!(await authorized())) throw new Error("Workspace access ended.");
+      const { remote } = await this.fetched(id, owner);
+      return {
+        status: "fetched",
+        remote,
+        ref: "refs/civic-spark/team-incoming",
+        instructions:
+          "The team branch is now at refs/civic-spark/team-incoming; your files are unchanged. Review it with git log HEAD..refs/civic-spark/team-incoming and git diff HEAD...refs/civic-spark/team-incoming. Merge it locally only when the participant asks. Publishing still needs explicit confirmation and civic-spark git publish.",
+      };
+    } finally {
+      this.busy.delete(id);
     }
   }
   async publish(id: string, owner: Identity, authorized: () => Promise<boolean>) {

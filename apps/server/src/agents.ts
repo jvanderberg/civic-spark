@@ -103,7 +103,15 @@ export class AgentSessions {
   // marker stays set throughout so idle release and provisioning wait for it.
   static readonly prepareAttempts = 3;
   static readonly prepareBackoffMs = 2000;
+  // Runtime files persist on the Sprite disk, so a Sprite prepared once in this
+  // process reconnects without the 10–25 s upload and verification. A runner
+  // that fails to start forgets the Sprite so the next attach prepares again.
+  private prepared = new Set<string>();
+  forget(sprite: string) {
+    this.prepared.delete(sprite);
+  }
   async prepare(sprite: string) {
+    if (this.prepared.has(sprite)) return true;
     const existing = this.preparing.get(sprite);
     if (existing) return existing;
     const work = (async () => {
@@ -118,6 +126,7 @@ export class AgentSessions {
             outcome: result.ok ? "ok" : "process_failed",
             durationMs: Date.now() - started,
           });
+          if (result.ok) this.prepared.add(sprite);
           return result.ok;
         }
         await new Promise((resolve) =>
@@ -191,7 +200,10 @@ export class AgentSessions {
         lease?.release();
         throw error;
       }
-      if (ended) throw new Error("Agent runner could not start");
+      if (ended) {
+        this.forget(sprite);
+        throw new Error("Agent runner could not start");
+      }
       started = { handle, clients, live };
       lease?.signal.addEventListener("abort", abort, { once: true });
       session = started;

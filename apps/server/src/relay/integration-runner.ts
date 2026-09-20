@@ -8,6 +8,7 @@ export const integrationRequestSchema = z.object({
   id: z.uuid(),
   operation: z.enum([
     "git-publish",
+    "git-fetch",
     "git-status",
     "preview-start",
     "preview-restart",

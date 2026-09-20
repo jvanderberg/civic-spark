@@ -283,7 +283,15 @@ export async function runParticipant(scenario: Scenario, key: string, output: st
             const alert = page.locator(".workspace-toast [role=alert]");
             if (await alert.isVisible()) {
               const message = await alert.innerText();
-              if (/conflict|diverg|changed since|review.*again|stale/i.test(message))
+              if (/changed since the preview|Refresh Changes/i.test(message)) {
+                // A background refresh replaced the preview fingerprint; refresh
+                // Changes as a person would and Share again.
+                await page.getByRole("button", { name: "Dismiss notification" }).click();
+                await page.getByRole("button", { name: "Refresh changes", exact: true }).click();
+                await sleep(s.timing.thinkMs);
+                throw new Error("Preview refreshed after a stale Share; retrying");
+              }
+              if (/conflict|diverg|review.*again|stale/i.test(message))
                 throw new FatalScenarioError("Share needs a new review or conflict resolution");
               await page.getByRole("button", { name: "Dismiss notification" }).click();
               throw new Error("Share reported an error; checking shared history before retry");
