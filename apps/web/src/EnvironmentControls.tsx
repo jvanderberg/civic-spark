@@ -52,12 +52,18 @@ export function EnvironmentControls({
   useEffect(() => {
     if (disabled) return;
     void refresh().catch(() => undefined);
+    // Fast only while a launch is in flight; moderate while the agent works
+    // (it may start a preview); slow when nothing is changing.
     const timer = setInterval(
       () => void refresh().catch(() => undefined),
-      launching || preview?.phase === "installing" || preview?.phase === "starting" ? 1000 : 10000,
+      launching || preview?.phase === "installing" || preview?.phase === "starting"
+        ? 1000
+        : working
+          ? 10000
+          : 30000,
     );
     return () => clearInterval(timer);
-  }, [disabled, refresh, launching, preview?.phase]);
+  }, [disabled, refresh, launching, preview?.phase, working]);
   async function action(name: "start" | "restart" | "stop" | "logs" | "open") {
     const launch = name === "start" || name === "restart";
     if (launch) {

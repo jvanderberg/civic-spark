@@ -84,7 +84,9 @@ try {
             });
           } else if (shareRequests === 3) {
             // The MVP reached shared main, but its HTTP response was lost.
-            const response = await route.fetch();
+            const response = await route.fetch({
+              headers: { ...route.request().headers(), "if-none-match": "" },
+            });
             assert(response.ok());
             await route.abort("failed");
           } else await route.continue();
@@ -97,7 +99,9 @@ try {
       let preparationRequests = 0;
       let prepared = !injectBusyPreparation;
       await page.route("**/api/state", async (route) => {
-        const response = await route.fetch();
+        const response = await route.fetch({
+          headers: { ...route.request().headers(), "if-none-match": "" },
+        });
         const state = (await response.json()) as PortalState;
         for (const workspace of state.myWorkspaces)
           workspace.spriteStatus = prepared ? "ready" : "local";
@@ -116,7 +120,9 @@ try {
             prepared = true;
             return route.fulfill({ json: { preparing: true } });
           }
-          const response = await route.fetch();
+          const response = await route.fetch({
+            headers: { ...route.request().headers(), "if-none-match": "" },
+          });
           const workspace = (await response.json()) as PortalState["myWorkspaces"][number];
           await route.fulfill({
             response,

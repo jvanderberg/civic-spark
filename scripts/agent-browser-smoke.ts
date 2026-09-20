@@ -104,7 +104,9 @@ const snapshot: AgentEvent = {
   currentError: null,
 };
 await page.route("**/api/state", async (route) => {
-  const response = await route.fetch();
+  const response = await route.fetch({
+    headers: { ...route.request().headers(), "if-none-match": "" },
+  });
   const state = (await response.json()) as PortalState;
   for (const workspace of state.myWorkspaces) workspace.spriteStatus = "ready";
   await route.fulfill({ response, json: state });

@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { EventView } from "../../../packages/domain/src/access-types.ts";
 import type { Event } from "../../../packages/domain/src/types.ts";
-import { api } from "./api.ts";
+import { api, apiStatus } from "./api.ts";
 import { Field, Modal } from "./components.tsx";
 import { ProjectBriefLoader } from "./ProjectBriefLoader.tsx";
 
@@ -93,6 +93,9 @@ export function AdminProjects({
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save project.");
+      // A rejected stale write means someone else saved; show the newer
+      // revision now instead of waiting for the next background refresh.
+      if (apiStatus(e) === 409) await refresh().catch(() => undefined);
     } finally {
       setBusy(false);
     }

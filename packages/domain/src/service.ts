@@ -14,7 +14,7 @@ import {
   restoreRepositoryFile,
 } from "../../git/src/history.ts";
 import { gitJob } from "../../git/src/jobs.ts";
-import { git } from "../../git/src/repository.ts";
+import { git, readBranchHead } from "../../git/src/repository.ts";
 import { WorkspaceFiles } from "../../workspace/src/files.ts";
 import {
   applyTeamUpdate,
@@ -723,7 +723,8 @@ export class EventService {
     if (!p.ok) return p;
     try {
       const repo = this.engine.repoPath(p.value.teamId);
-      const remote = (await gitAsync(repo, ["rev-parse", "main"])).toString().trim();
+      const remote =
+        readBranchHead(repo) ?? (await gitAsync(repo, ["rev-parse", "main"])).toString().trim();
       const fresh = this.workspace(actor, id, write);
       return fresh.ok ? ok({ workspace: fresh.value, repo, remote }) : fresh;
     } catch {

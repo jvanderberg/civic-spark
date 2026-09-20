@@ -49,7 +49,9 @@ page.on("console", (message) => {
   if (message.type() === "error" && !expectedDenial) errors.push(message.text());
 });
 await page.route("**/api/state", async (route) => {
-  const response = await route.fetch();
+  const response = await route.fetch({
+    headers: { ...route.request().headers(), "if-none-match": "" },
+  });
   const state = (await response.json()) as PortalState;
   for (const workspace of state.myWorkspaces)
     workspace.spriteStatus = available ? "ready" : "local";

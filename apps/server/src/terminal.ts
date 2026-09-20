@@ -12,7 +12,19 @@ const inputSchema = z.discriminatedUnion("type", [
     rows: z.number().int().min(3).max(150),
   }),
 ]);
-type Session = { process: pty.IPty; history: string; clients: Set<WebSocket>; lastUsedAt: number };
+type Session = {
+  process: pty.IPty;
+  chunks: string[];
+  bytes: number;
+  pendingOutput: string;
+  flushTimer?: NodeJS.Timeout;
+  detachTimer?: NodeJS.Timeout;
+  clients: Set<WebSocket>;
+  lastUsedAt: number;
+};
+const historyLimit = 200000;
+const outputCoalesceMs = 16;
+const detachAfterMs = 30000;
 export class TerminalSessions {
   constructor(
     private allowed: (id: string) => boolean = () => true,
@@ -54,34 +66,64 @@ export class TerminalSessions {
       }
       const abort = () => proc.kill();
       lease?.signal.addEventListener("abort", abort, { once: true });
-      session = { process: proc, history: "", clients: new Set(), lastUsedAt: Date.now() };
+      session = {
+        process: proc,
+        chunks: [],
+        bytes: 0,
+        pendingOutput: "",
+        clients: new Set(),
+        lastUsedAt: Date.now(),
+      };
       const active = session;
       this.sessions.set(id, active);
-      proc.onData((data) => {
-        // Output is not use: tmux status refreshes and TUIs emit forever, which
-        // would block idle release and keep the Sprite in billed running state.
-        active.history = (active.history + data)
-          .slice(-200000)
-          .replaceAll("\x1b[6n", "")
-          .replaceAll("\x1b]11;?\x1b\\", "")
-          .replaceAll("\x1b]11;?\x07", "");
+      const flush = () => {
+        active.flushTimer = undefined;
+        const data = active.pendingOutput;
+        active.pendingOutput = "";
+        if (!data) return;
+        const frame = JSON.stringify({ type: "output", data });
         for (const client of active.clients) {
           if (client.bufferedAmount > 1024 * 1024) {
             client.close(1013, "Reconnect to catch up");
             continue;
           }
-          if (client.readyState === 1) client.send(JSON.stringify({ type: "output", data }));
+          if (client.readyState === 1) client.send(frame);
         }
+      };
+      proc.onData((data) => {
+        // Output is not use: tmux status refreshes and TUIs emit forever, which
+        // would block idle release and keep the Sprite in billed running state.
+        // History is a bounded ring of chunks with terminal queries removed so a
+        // replay never triggers responses; live frames are coalesced per tick.
+        const cleaned = data
+          .replaceAll("\x1b[6n", "")
+          .replaceAll("\x1b]11;?\x1b\\", "")
+          .replaceAll("\x1b]11;?\x07", "");
+        active.chunks.push(cleaned);
+        active.bytes += cleaned.length;
+        while (active.bytes > historyLimit && active.chunks.length > 1) {
+          const first = active.chunks.shift() ?? "";
+          active.bytes -= first.length;
+        }
+        if (!active.clients.size) return;
+        active.pendingOutput += data;
+        if (!active.flushTimer) active.flushTimer = setTimeout(flush, outputCoalesceMs);
       });
       proc.onExit(() => {
         lease?.signal.removeEventListener("abort", abort);
         lease?.release();
+        if (active.flushTimer) clearTimeout(active.flushTimer);
+        if (active.detachTimer) clearTimeout(active.detachTimer);
         if (this.sessions.get(id) === active) this.sessions.delete(id);
         for (const client of active.clients)
           client.close(1000, "Terminal detached; reconnect to resume");
       });
     }
     const active = session;
+    if (active.detachTimer) {
+      clearTimeout(active.detachTimer);
+      active.detachTimer = undefined;
+    }
     active.clients.add(socket);
     const attachedAt = Date.now();
     socket.once("close", (code: number) =>
@@ -93,7 +135,7 @@ export class TerminalSessions {
         durationMs: Date.now() - attachedAt,
       }),
     );
-    socket.send(JSON.stringify({ type: "output", data: active.history }));
+    socket.send(JSON.stringify({ type: "output", data: active.chunks.join("") }));
     const check = async () => {
       try {
         if (
@@ -113,7 +155,21 @@ export class TerminalSessions {
         return false;
       }
     };
-    const timer = setInterval(() => void check(), 5000);
+    // Local checks every 5 s; the session lookup only every 30 s.
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+      if (ticks % 6 === 0) void check();
+      else if (
+        !(
+          socket.readyState === 1 &&
+          active.clients.has(socket) &&
+          this.sessions.get(id) === active &&
+          this.allowed(id)
+        )
+      )
+        socket.close(1008, "Workspace access ended");
+    }, 5000);
     let queue = Promise.resolve();
     socket.on("message", (raw) => {
       if (Buffer.byteLength(raw.toString()) > 65536) {
@@ -132,14 +188,21 @@ export class TerminalSessions {
         })
         .catch(() => socket.close(1008, "Invalid terminal message"));
     });
-    socket.on("close", () => {
+    // With nobody attached, the host-side PTY only pumps tmux redraws through
+    // the loop. Detach after a grace period; tmux keeps the shell for reattach.
+    const detached = () => {
       clearInterval(timer);
       active.clients.delete(socket);
-    });
-    socket.on("error", () => {
-      clearInterval(timer);
-      active.clients.delete(socket);
-    });
+      if (active.clients.size || active.detachTimer) return;
+      active.detachTimer = setTimeout(() => {
+        active.detachTimer = undefined;
+        if (active.clients.size || this.sessions.get(id) !== active) return;
+        this.sessions.delete(id);
+        active.process.kill();
+      }, detachAfterMs);
+    };
+    socket.on("close", detached);
+    socket.on("error", detached);
   }
   recentlyUsed(id: string, within: number, now = Date.now()) {
     const session = this.sessions.get(id);

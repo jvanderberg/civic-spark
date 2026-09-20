@@ -127,6 +127,8 @@ export async function createApp(
       agents.stop(id);
       terminals.stop(id);
       integrations.stop(id);
+      const name = service.provisioningRecords().find((w) => w.id === id)?.spriteName;
+      if (name) client.closeSession(name);
     },
     (id) => agents.isWorking(id),
     (id) =>
@@ -247,6 +249,7 @@ export async function createApp(
     terminals.close();
     agents.close();
     integrations.close();
+    await client.close();
     await provisioning.close();
     service.close();
     authentication.close();

@@ -241,9 +241,11 @@ export async function verifyAdminProjects() {
         const dialog = page.getByRole("dialog", { name: "Edit project", exact: true });
         const project = (await state()).events[0]?.projects.find((p) => p.id === id);
         assert(project);
+        // Portal state carries summaries; the brief comes from the project endpoint.
+        const currentBrief = unwrap(service.project(admin, event.id, id)).description;
         assert.equal(
           await dialog.getByLabel("Project brief (Markdown)").inputValue(),
-          project.description,
+          currentBrief,
         );
         await visibleBounds(
           page,
@@ -256,7 +258,7 @@ export async function verifyAdminProjects() {
           "16px",
         );
         name = `Edited ${theme} ${width} ${height}`;
-        const brief = `${project.description}\n[More data](https://example.test/next?a=1&b=%20)  \n`;
+        const brief = `${currentBrief}\n[More data](https://example.test/next?a=1&b=%20)  \n`;
         await dialog.getByLabel("Project name", { exact: true }).fill(name);
         await dialog.getByLabel("Project brief (Markdown)").fill(brief);
         await visibleBounds(page, dialog.getByLabel("Project brief (Markdown)"));
@@ -281,10 +283,7 @@ export async function verifyAdminProjects() {
         await dialog.waitFor({ state: "detached" });
         await page.reload();
         await openAdminSection(page, "Projects");
-        assert.equal(
-          (await state()).events[0]?.projects.find((p) => p.id === id)?.description,
-          brief,
-        );
+        assert.equal(unwrap(service.project(admin, event.id, id)).description, brief);
         await page.getByRole("heading", { name, exact: true }).waitFor();
         await page.screenshot({ path: join(artifacts, `${theme}-${width}-${height}-saved.png`) });
         await openPortalMenu(page);
@@ -305,7 +304,7 @@ export async function verifyAdminProjects() {
     unwrap(
       service.updateProject(admin, event.id, id, {
         name: "Second editor saved",
-        brief: current.description,
+        brief: unwrap(service.project(admin, event.id, id)).description,
         expectedRevision: current.revision ?? 0,
       }),
     );
@@ -320,6 +319,13 @@ export async function verifyAdminProjects() {
     await page.getByRole("button", { name: "Load latest version", exact: true }).waitFor();
     page.once("dialog", (dialog) => void dialog.accept());
     await page.getByRole("button", { name: "Load latest version", exact: true }).click();
+    // The latest brief is fetched on demand before the draft is replaced.
+    await page.waitForFunction(
+      () =>
+        (document.querySelector<HTMLInputElement>('input[aria-label="Project name"], #project-name')
+          ?.value ?? "") === "Second editor saved" ||
+        [...document.querySelectorAll("input")].some((el) => el.value === "Second editor saved"),
+    );
     assert.equal(
       await page.getByLabel("Project name", { exact: true }).inputValue(),
       "Second editor saved",

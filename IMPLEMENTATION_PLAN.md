@@ -79,7 +79,11 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 - [ ] Remove arbitrary Sprite allocation blockers while retaining safe bounded concurrency and owner/pause isolation; address preview-origin capacity without origin reuse.
 - [ ] Expose initial disk sizing and optional bounded auto-expansion in repeatable setup.
 - [x] Measured fifty-person load on the deployed demo (September 20, 2026 UTC): 17/50 passed; the management host's single event loop saturated on native I/O at ~25 concurrent people (235 KB uncompressed `/api/state` per 5 s poll per person, 12 Sprite CLI spawns/s of helper polling, 300–400 agent text deltas/s). See [scripted rehearsal](docs/scripted-participant-load.md).
-- [ ] Implement the evidenced fixes: slim, compressed and ETag-cached portal state with slower or pushed refresh; batched agent text deltas; idle backoff for per-person helper polling; event-loop delay and CPU telemetry in diagnostics. Re-run fifty people afterwards.
+- [x] Portal state carries project summaries only (briefs served per project on demand), API GET bodies get weak ETags with 304 and Brotli/gzip over 1 KB, built assets are precompressed with immutable hashed bundles, the client sends conditional GETs and polls the portal every 15 s only while visible.
+- [x] Agent text deltas are merged per message for 50 ms before replay and fan-out and activity touches are throttled; file polling slows to 20 s when the agent is idle and stops while hidden; preview status polls every 30 s when nothing is changing.
+- [x] Diagnostics add response bytes per request and a ten-second `loop` record with event-loop delay p50/p99/max, CPU share, handle, child and socket counts.
+- [x] Serve read-only helper polls through one long-lived, passive `sprite exec` helper session per Sprite (JSON lines, correlated ids, bounded replies, idle shutdown, lifecycle teardown, one-shot fallback) with `sprite.command`/`sprite.session` diagnostics; writes and uploads stay one-shot. Fake-spawn and dispatcher tests only; no live Sprite run yet.
+- [ ] Re-run fifty people on the deployed fixes and compare against the September 20 baseline; then act on the code audit for further Sprite offload and traffic reduction.
 - [ ] Exercise crash/restart and disk-full failure/recovery using isolated fixtures; report measured limits and remaining live acceptance.
 
 ## Editable event configuration — live

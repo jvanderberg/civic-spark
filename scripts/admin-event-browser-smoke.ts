@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { chromium, type Locator, type Page } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import { eventSettings } from "../apps/web/src/AdminEventDetails.tsx";
-import type { Event, Result } from "../packages/domain/src/types.ts";
+import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
 

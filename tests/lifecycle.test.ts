@@ -374,7 +374,11 @@ it("releases idle polling without stopping active turns or protected terminal/pr
   );
   try {
     coordinator.touch(own.id);
+    // Touches are batched in memory; nothing is persisted until the flush.
+    expect(service.runtime(own.id).lastUsedAt ?? undefined).toBeUndefined();
+    coordinator.flushUse();
     const before = service.runtime(own.id).lastUsedAt;
+    expect(before).toBeDefined();
     expect(coordinator.idleMinutes).toBe(5);
     const future = Date.parse(before as string) + 5 * 60000;
     const agentLease = coordinator.acquire(`civic-spark-${own.id}`, true);

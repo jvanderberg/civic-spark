@@ -216,9 +216,23 @@ export function Workspace({
   useEffect(() => {
     if (blocked || (spritesEnabled && !remote)) return;
     void refreshFiles();
-    const timer = setInterval(() => void refreshFiles(), 5000);
-    return () => clearInterval(timer);
-  }, [refreshFiles, spritesEnabled, remote, blocked]);
+    // Files change quickly only while the agent works; otherwise poll slowly
+    // and never while the tab is hidden. Each poll is a Sprite command.
+    const timer = setInterval(
+      () => {
+        if (!document.hidden) void refreshFiles();
+      },
+      agentWorking ? 5000 : 20000,
+    );
+    const visible = () => {
+      if (!document.hidden) void refreshFiles();
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [refreshFiles, spritesEnabled, remote, blocked, agentWorking]);
   async function open(path: string) {
     if (dirty && !window.confirm("Discard unsaved edits and open another file?")) return false;
     setLoading(true);

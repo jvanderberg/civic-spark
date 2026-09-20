@@ -9,6 +9,12 @@ import type { PortalState } from "../packages/domain/src/access-types.ts";
 import { defaultProjectBriefGuidance, type Result } from "../packages/domain/src/types.ts";
 import { openPortalMenu } from "./browser-portal-menu.ts";
 
+// Server-side changes made outside this tab arrive on the 15 s portal poll;
+// a visibility event asks the app to refresh immediately, as returning to the
+// tab would.
+const refreshPortal = (page: Page) =>
+  page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+
 function value<T>(result: Result<T>): T {
   if (!result.ok) throw new Error(result.error);
   return result.value;
@@ -171,7 +177,9 @@ export async function verifyParticipantProjects() {
           await page.route(
             `**/events/${event.id}/projects`,
             async (route) => {
-              const response = await route.fetch();
+              const response = await route.fetch({
+                headers: { ...route.request().headers(), "if-none-match": "" },
+              });
               received();
               await pending;
               await route.fulfill({ response });
@@ -191,6 +199,7 @@ export async function verifyParticipantProjects() {
                 (heading) => heading.textContent === name,
               ),
             `Catalog ${label}`,
+            { timeout: 25000 }, // Background portal polling runs every 15 s.
           );
           release();
         } else {
@@ -205,9 +214,12 @@ export async function verifyParticipantProjects() {
           1,
         );
         let snapshot = await state();
+        const catalogProject = snapshot.events[0]?.projects.find(
+          (project) => project.name === `Catalog ${label}`,
+        );
+        assert(catalogProject && snapshot.events[0]);
         assert.equal(
-          snapshot.events[0]?.projects.find((project) => project.name === `Catalog ${label}`)
-            ?.description,
+          value(service.project(admin, snapshot.events[0].id, catalogProject.id)).description,
           brief,
         );
         assert.equal(snapshot.teams.length, 0);
@@ -296,10 +308,11 @@ export async function verifyParticipantProjects() {
         },
       });
       assert.equal(response.status(), 200);
+      // Admin guidance saved elsewhere reaches this tab on its 15 s portal poll.
       await projectDialog
         .locator(".project-creation-guidance")
         .filter({ hasText: "New organizer guidance" })
-        .waitFor();
+        .waitFor({ timeout: 25000 });
       assert.equal(await projectDialog.locator(".project-creation-guidance").innerText(), guidance);
       assert.equal(
         await projectDialog
@@ -333,10 +346,14 @@ export async function verifyParticipantProjects() {
     await projectDialog.getByRole("alert").filter({ hasText: "read-only" }).waitFor();
     await page.screenshot({ path: join(artifacts, "event-closed-draft.png") });
     assert.equal(await projectDialog.getByLabel("Project brief (Markdown)").inputValue(), brief);
-    await page.waitForFunction(() =>
-      [...document.querySelectorAll<HTMLButtonElement>("dialog button")].some(
-        (button) => button.textContent?.trim() === "Create project" && button.disabled,
-      ),
+    await refreshPortal(page);
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll<HTMLButtonElement>("dialog button")].some(
+          (button) => button.textContent?.trim() === "Create project" && button.disabled,
+        ),
+      undefined,
+      { timeout: 25000 },
     );
     await projectDialog.getByRole("button", { name: "Cancel", exact: true }).click();
     const other = value(
@@ -351,9 +368,11 @@ export async function verifyParticipantProjects() {
       }),
     );
     value(service.transition(admin, other.id, "registration"));
+    await refreshPortal(page);
     await page.waitForFunction(
       (id) => [...document.querySelectorAll("option")].some((option) => option.value === id),
       other.id,
+      { timeout: 25000 },
     );
     await openPortalMenu(page);
     page.once("dialog", (dialog) => dialog.dismiss());
@@ -371,16 +390,19 @@ export async function verifyParticipantProjects() {
     await projectDialog.getByLabel("Project brief (Markdown)").fill(brief);
     value(service.transition(admin, other.id, "live"));
     value(service.transition(admin, other.id, "closed"));
-    await projectDialog.waitFor({ state: "detached" });
+    await refreshPortal(page);
+    await projectDialog.waitFor({ state: "detached", timeout: 25000 });
     assert.equal(
       (await state()).events.some((item) => item.id === other.id),
       false,
     );
     // Restore visibility explicitly as an admin. An old creation request must not reopen.
     value(service.addAdmin(admin, other.id, "project-participant@example.test"));
+    await refreshPortal(page);
     await page.waitForFunction(
       (id) => [...document.querySelectorAll("option")].some((option) => option.value === id),
       other.id,
+      { timeout: 25000 },
     );
     await openPortalMenu(page);
     await page.getByLabel("Select event").selectOption(other.id);
@@ -406,9 +428,11 @@ export async function verifyParticipantProjects() {
       };
       const oldEvent = makeEvent(`Delayed ${kind} event`);
       const newEvent = makeEvent(`Current ${kind} event`);
+      await refreshPortal(page);
       await page.waitForFunction(
         (id) => [...document.querySelectorAll("option")].some((option) => option.value === id),
         newEvent.id,
+        { timeout: 25000 },
       );
       await openPortalMenu(page);
       await page.getByLabel("Select event").selectOption(oldEvent.id);
@@ -425,7 +449,9 @@ export async function verifyParticipantProjects() {
       await page.route(
         `**/api${path}`,
         async (route) => {
-          const response = await route.fetch();
+          const response = await route.fetch({
+            headers: { ...route.request().headers(), "if-none-match": "" },
+          });
           assert.equal(response.status(), 200);
           received();
           await pending;
@@ -448,7 +474,8 @@ export async function verifyParticipantProjects() {
         value(service.removeEventMember(admin, oldEvent.id, "project-participant@example.test"));
       value(service.transition(admin, oldEvent.id, "live"));
       value(service.transition(admin, oldEvent.id, "closed"));
-      await page.locator("dialog[open]").waitFor({ state: "detached" });
+      await refreshPortal(page);
+      await page.locator("dialog[open]").waitFor({ state: "detached", timeout: 25000 });
       await openPortalMenu(page);
       await page.getByLabel("Select event").selectOption(newEvent.id);
       await page.getByRole("button", { name: "Explore projects", exact: true }).click();

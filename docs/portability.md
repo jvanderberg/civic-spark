@@ -10,7 +10,7 @@ The portable Git contract is standard Smart HTTP over HTTPS, with mutually authe
 | --- | --- | --- |
 | Browser UI | React/Vite static assets | Any static host, including Cloudflare |
 | Control plane | Node/Fastify and local SQLite | HTTP API and domain operations; persistence/runtime adaptation required for Workers |
-| Workspace runtime | Authenticated Sprite CLI adapter | Provision, execute, read/write files, checkpoint, destroy |
+| Workspace runtime | Authenticated Sprite CLI adapter; one persistent stdin/stdout helper session per Sprite for read-only polls | Provision, execute, read/write files, checkpoint, destroy |
 | Repository service | Local bare Git; planned HTTPS Git gateway on persistent volume | Git remote URL, authenticated Git protocol, authorization policy, backup/restore |
 | Access policy | Planned event CA and participant/team/ref registry | Independent of network location and provider-specific identity |
 | Async orchestration | Local in-process prototype | Durable job state with provider-specific queue/worker adapter |

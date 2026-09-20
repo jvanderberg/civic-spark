@@ -29,12 +29,25 @@ const recordSchema = z.object({
     "sprite.command",
     "sprite.operation",
     "sprite.coalesced",
+    "sprite.session",
     "ws",
     "agent.runner",
     "agent.prepare",
     "lifecycle.idle",
+    "loop",
   ]),
+  bytes: z.number().int().nonnegative().optional(), // Response body bytes as sent.
+  loopP50Ms: z.number().nonnegative().optional(),
+  loopP99Ms: z.number().nonnegative().optional(),
+  loopMaxMs: z.number().nonnegative().optional(),
+  cpuPercent: z.number().nonnegative().optional(),
+  handles: z.number().int().nonnegative().optional(),
+  children: z.number().int().nonnegative().optional(),
+  sockets: z.number().int().nonnegative().optional(),
+  rssMb: z.number().nonnegative().optional(),
   channel: z.enum(["agent", "terminal"]).optional(),
+  transport: z.enum(["process", "session"]).optional(), // How a Sprite command reached the Sprite.
+  phase: z.enum(["start", "end"]).optional(), // Helper session lifecycle only.
   code: z.number().int().optional(), // WebSocket close code only; reasons are never logged.
   attempt: z.number().int().positive().optional(),
   idleMs: z.number().nonnegative().optional(),
@@ -60,6 +73,7 @@ const recordSchema = z.object({
       "process_failed",
       "helper_failed",
       "invalid_response",
+      "session_lost",
     ])
     .optional(),
   stderrKind: z

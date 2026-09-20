@@ -63,7 +63,9 @@ let incompletePreview = false;
 let connection: WebSocketRoute | undefined;
 const requests: AgentInput[] = [];
 await page.route("**/api/state", async (route) => {
-  const response = await route.fetch();
+  const response = await route.fetch({
+    headers: { ...route.request().headers(), "if-none-match": "" },
+  });
   if (!response.ok()) return route.fulfill({ response });
   const state = (await response.json()) as PortalState;
   if (remote) for (const workspace of state.myWorkspaces) workspace.spriteStatus = "ready";
@@ -218,10 +220,16 @@ try {
   const projectState = (await (
     await context.request.get(`${address}/api/state`)
   ).json()) as PortalState;
-  assert.equal(
-    projectState.events[0]?.projects.find((p) => p.name === "Neighborhood data")?.description,
-    projectBrief,
+  const createdProject = projectState.events[0]?.projects.find(
+    (p) => p.name === "Neighborhood data",
   );
+  assert(createdProject && projectState.events[0]);
+  const createdDetail = (await (
+    await context.request.get(
+      `${address}/api/events/${projectState.events[0].id}/projects/${createdProject.id}`,
+    )
+  ).json()) as { description: string };
+  assert.equal(createdDetail.description, projectBrief);
   await openPortalMenu(page);
   await page.getByRole("button", { name: "Explore projects", exact: true }).tap();
   await capture("360-discovery");

@@ -27,7 +27,7 @@ import { AdminEventDetails } from "./AdminEventDetails.tsx";
 import { AdminProjects } from "./AdminProjects.tsx";
 import { AdminSprites } from "./AdminSprites.tsx";
 import { AdminTeams } from "./AdminTeams.tsx";
-import { api } from "./api.ts";
+import { api, apiStatus } from "./api.ts";
 import { Badge, Empty, Field, initials, Modal } from "./components.tsx";
 import { MobileMenu } from "./MobileMenu.tsx";
 import { type CreationRequest, ParticipantCreation } from "./ParticipantCreation.tsx";
@@ -92,17 +92,35 @@ export function App() {
   );
   const [sentTo, setSentTo] = useState("");
   const refreshVersion = useRef(0);
-  const refresh = useCallback(async () => {
+  const knownSession = useRef<SessionView | null>(null);
+  // The session is fetched once per sign-in; background refreshes only poll
+  // state, and a 401 there re-checks the session.
+  const refresh = useCallback(async function refresh(options?: {
+    session?: boolean;
+  }): Promise<void> {
     const version = ++refreshVersion.current;
-    const current = await api<SessionView>("/session");
-    if (version !== refreshVersion.current) return;
-    setSession(current);
+    let current = knownSession.current;
+    if (!current?.user || options?.session) {
+      current = await api<SessionView>("/session");
+      if (version !== refreshVersion.current) return;
+      knownSession.current = current;
+      setSession(current);
+    }
     if (!current.user) {
       setState(null);
       setWorkspaceId(null);
       return;
     }
-    const data = await api<PortalState>("/state");
+    let data: PortalState;
+    try {
+      data = await api<PortalState>("/state");
+    } catch (error) {
+      if (apiStatus(error) === 401 && !options?.session) {
+        knownSession.current = null;
+        return refresh({ session: true });
+      }
+      throw error;
+    }
     if (version !== refreshVersion.current) return;
     setState(data);
     const requestedWorkspace = new URLSearchParams(window.location.hash.slice(1)).get("workspace");

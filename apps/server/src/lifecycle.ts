@@ -27,6 +27,10 @@ export class WorkspaceLifecycle {
   >();
   private changing = new Set<string>();
   private timer: NodeJS.Timeout;
+  // Recent use is kept in memory and persisted every 30 s. Persisting on every
+  // touch cost a state clone and an fsync per streamed token under load.
+  private recentUse = new Map<string, number>();
+  private flushTimer: NodeJS.Timeout;
   constructor(
     private service: EventService,
     private provider: SpriteLifecycleProvider,
@@ -37,6 +41,8 @@ export class WorkspaceLifecycle {
   ) {
     this.timer = setInterval(() => this.releaseIdle(), 15000);
     this.timer.unref();
+    this.flushTimer = setInterval(() => this.flushUse(), 30000);
+    this.flushTimer.unref();
     // Durable gate already prevents wake after restart. Never silently clear a
     // pending stop or contact a live provider during constructor reconciliation.
     for (const w of service.provisioningRecords()) {
@@ -70,8 +76,18 @@ export class WorkspaceLifecycle {
     this.service.finishSpriteDeletion(id);
   }
   touch(id: string) {
-    if (this.service.executionAllowed(id).ok)
-      this.service.setRuntime(id, { lastUsedAt: new Date().toISOString() });
+    if (this.service.executionAllowed(id).ok) this.recentUse.set(id, Date.now());
+  }
+  lastUsedAt(id: string, runtime = this.service.runtime(id)) {
+    const stored = runtime.lastUsedAt ? Date.parse(runtime.lastUsedAt) : 0;
+    return Math.max(stored, this.recentUse.get(id) ?? 0);
+  }
+  flushUse() {
+    for (const [id, at] of this.recentUse) {
+      this.recentUse.delete(id);
+      if (this.service.executionAllowed(id).ok)
+        this.service.setRuntime(id, { lastUsedAt: new Date(at).toISOString() });
+    }
   }
   hasActiveWork(id: string) {
     const name = this.service.provisioningRecords().find((w) => w.id === id)?.spriteName;
@@ -84,12 +100,13 @@ export class WorkspaceLifecycle {
   releaseIdle(now = Date.now()) {
     for (const w of this.service.provisioningRecords()) {
       const runtime = this.service.runtime(w.id);
+      const used = this.lastUsedAt(w.id, runtime);
       if (
         !w.spriteName ||
         w.spriteStatus !== "ready" ||
         runtime.held ||
-        !runtime.lastUsedAt ||
-        now - Date.parse(runtime.lastUsedAt) < this.idleMinutes * 60000 ||
+        !used ||
+        now - used < this.idleMinutes * 60000 ||
         this.working(w.id) ||
         this.protectedUse(w.id) ||
         [...(this.operations.get(w.spriteName) ?? [])].some((operation) => !operation.passive)
@@ -97,12 +114,13 @@ export class WorkspaceLifecycle {
         continue;
       // Release our polling/connections, not arbitrary user processes. Provider
       // activity detection decides when the VM can safely suspend.
-      this.service.setRuntime(w.id, { held: true, reason: "idle" });
-      diagnostic({
-        event: "lifecycle.idle",
-        workspaceId: w.id,
-        idleMs: now - Date.parse(runtime.lastUsedAt),
+      this.recentUse.delete(w.id);
+      this.service.setRuntime(w.id, {
+        held: true,
+        reason: "idle",
+        lastUsedAt: new Date(used).toISOString(),
       });
+      diagnostic({ event: "lifecycle.idle", workspaceId: w.id, idleMs: now - used });
       this.disconnect(w.id);
     }
   }
@@ -318,6 +336,8 @@ export class WorkspaceLifecycle {
   }
   close() {
     clearInterval(this.timer);
+    clearInterval(this.flushTimer);
+    this.flushUse();
     for (const entries of this.operations.values())
       for (const operation of entries) operation.controller.abort();
   }

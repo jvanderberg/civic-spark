@@ -14,6 +14,24 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { FILE_LIMIT, projectPath } from "../../workspace/src/types.ts";
 
+// Current commit of a branch straight from the ref files, avoiding a Git
+// process for the frequent team-status poll. Loose refs shadow packed-refs.
+export function readBranchHead(repo: string, branch = "main"): string | undefined {
+  try {
+    const loose = readFileSync(join(repo, "refs", "heads", branch), "utf8").trim();
+    if (/^[0-9a-f]{40}$/.test(loose)) return loose;
+  } catch {
+    /* No loose ref; fall through to packed-refs. */
+  }
+  try {
+    const packed = readFileSync(join(repo, "packed-refs"), "utf8");
+    const match = packed.match(new RegExp(`^([0-9a-f]{40}) refs/heads/${branch}$`, "m"));
+    if (match) return match[1];
+  } catch {
+    /* No packed refs either. */
+  }
+  return undefined;
+}
 export function git(cwd: string, args: string[], environment: NodeJS.ProcessEnv = {}): Buffer {
   const result = spawnSync(
     "git",

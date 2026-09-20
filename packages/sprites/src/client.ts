@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
@@ -39,6 +39,7 @@ import {
   type SpriteCreateLogger,
 } from "./create-diagnostics.ts";
 import { validateSpriteToken } from "./credentials.ts";
+import { HelperSession, HelperSessionLost, type HelperSessionOptions } from "./helper-session.ts";
 import {
   certifiesSpriteResource,
   listWitnessesTarget,
@@ -52,7 +53,33 @@ import { boundedProviderJson, classifyCreationFailure } from "./provisioning.ts"
 
 const execute = promisify(execFile);
 const spriteNamePattern = /^civic-spark-[a-z0-9-]{1,45}$/;
+const commandFailed =
+  "Sprite command failed. Check your CLI login and connectivity; no account credentials were logged.";
+/** Read-only helper operations a long-lived session may serve; everything else stays one-shot. */
+const sessionReads = new Set([
+  "files.py:list",
+  "files.py:read",
+  "workspace.py:manifest",
+  "workspace.py:changes",
+  "workspace.py:read",
+  "preview.py:status",
+  "preview.py:logs",
+  "team_git.py:status",
+]);
+const helperSources = new Map<string, string>();
+function helperSource(name: string) {
+  let source = helperSources.get(name);
+  if (source === undefined) {
+    source = readFileSync(new URL(`./${name}`, import.meta.url), "utf8");
+    helperSources.set(name, source);
+  }
+  return source;
+}
 export type SpriteLease = { signal: AbortSignal; release(): void };
+export type HelperSessionSettings = Omit<HelperSessionOptions, "scripts"> & {
+  retryMs: number;
+  pingAfterMs: number;
+};
 export type SpriteCreateResult = Result<string> & { creationFailure?: SpriteCreationFailure };
 export class SpriteClient {
   private commands = new CommandQueue(
@@ -67,14 +94,31 @@ export class SpriteClient {
   private transfers = new CommandQueue(2);
   private org: string | undefined;
   private readonly usesConfiguredOrg: boolean;
+  private sessions = new Map<string, HelperSession>();
+  private sessionStarts = new Map<string, Promise<HelperSession | undefined>>();
+  // A session starts only for a Sprite that has answered a real one-shot command
+  // in this process, so unreachable Sprites never get a long-lived process.
+  private sessionReachable = new Set<string>();
+  private sessionRetryAt = new Map<string, number>();
+  private readonly sessionOptions: HelperSessionSettings;
   constructor(
     org?: string,
     private acquire?: (name: string, passive?: boolean) => SpriteLease,
     private request: typeof fetch = fetch,
     private createLogger: SpriteCreateLogger = logSpriteCreate,
+    sessionOptions: Partial<HelperSessionSettings> = {},
   ) {
     this.usesConfiguredOrg = org === undefined;
     this.org = org ?? process.env.CIVIC_SPARK_SPRITE_ORG;
+    this.sessionOptions = {
+      readyTimeoutMs: 30000,
+      idleMs: 120000,
+      maxLine: TEXT_BODY_LIMIT + 1024 * 1024,
+      maxInFlight: 32,
+      retryMs: 60000,
+      pingAfterMs: 30000,
+      ...sessionOptions,
+    };
   }
   /** Provider metadata only: no guessed hostname or browser-visible organization token. */
   async previewUrl(
@@ -197,6 +241,7 @@ export class SpriteClient {
       closed = new Promise((resolve) => pending.child.once("close", () => resolve()));
       pending.child.stdin?.end(input);
       const { stdout } = await pending;
+      if (name && args[2] === "exec") this.sessionReachable.add(name);
       return ok(stdout);
     } catch (error) {
       failure =
@@ -209,14 +254,12 @@ export class SpriteClient {
               lease?.signal.aborted ?? false,
             );
       if (error instanceof CommandBusy) return fail(error.message, 429);
-      return fail(
-        "Sprite command failed. Check your CLI login and connectivity; no account credentials were logged.",
-        502,
-      );
+      return fail(commandFailed, 502);
     } finally {
       await closed;
       diagnostic({
         event: "sprite.command",
+        transport: "process",
         workspaceId: spriteWorkspaceId(name),
         durationMs: Math.round(performance.now() - started),
         queueMs: Math.round((dispatched ?? performance.now()) - started),
@@ -229,6 +272,193 @@ export class SpriteClient {
       releaseCommand?.();
       releaseTransfer?.();
     }
+  }
+  private sessionsEnabled() {
+    return process.env.CIVIC_SPARK_HELPER_SESSIONS !== "0";
+  }
+  /** Ends the Sprite's helper session, if any; in-flight reads fall back to one-shot commands. */
+  closeSession(name: string) {
+    this.sessions.get(name)?.end("ok");
+    this.sessionReachable.delete(name);
+    this.sessionRetryAt.delete(name);
+  }
+  /** Ends every helper session and waits briefly for their processes to close. */
+  async close() {
+    const open = [...this.sessions.values()];
+    for (const name of [...this.sessions.keys()]) this.closeSession(name);
+    await Promise.race([
+      Promise.all(open.map((session) => session.closed)),
+      new Promise((resolve) => setTimeout(resolve, 5000).unref()),
+    ]);
+  }
+  private session(name: string, signal?: AbortSignal): Promise<HelperSession | undefined> {
+    const existing = this.sessions.get(name);
+    if (existing && !existing.ended)
+      return existing.ready.then(
+        async () => {
+          if (Date.now() - existing.lastUsedAt < this.sessionOptions.pingAfterMs) return existing;
+          try {
+            await existing.ping(5000, signal);
+            return existing;
+          } catch (error) {
+            if (!(error instanceof HelperSessionLost)) throw error;
+            existing.end("timeout");
+            return undefined;
+          }
+        },
+        () => undefined,
+      );
+    const starting = this.sessionStarts.get(name);
+    if (starting) return starting;
+    if ((this.sessionRetryAt.get(name) ?? 0) > Date.now()) return Promise.resolve(undefined);
+    const start = this.startSession(name).finally(() => this.sessionStarts.delete(name));
+    this.sessionStarts.set(name, start);
+    return start;
+  }
+  private async startSession(name: string): Promise<HelperSession | undefined> {
+    let lease: SpriteLease | undefined;
+    let releaseCommand: (() => void) | undefined;
+    try {
+      // Passive: an open session is not use, so idle release still disconnects it.
+      lease = this.acquire?.(name, true);
+      releaseCommand = await this.commands.acquire(lease?.signal);
+    } catch {
+      lease?.release();
+      return undefined;
+    }
+    const startedAt = performance.now();
+    const child = spawn(
+      "sprite",
+      this.args([
+        "-s",
+        name,
+        "exec",
+        "--no-port-forward",
+        "--",
+        "python3",
+        "-c",
+        helperSource("helper_session.py"),
+      ]),
+      { stdio: "pipe" },
+    );
+    const session = new HelperSession(child, {
+      ...this.sessionOptions,
+      scripts: Object.fromEntries(
+        ["files.py", "workspace.py", "preview.py", "team_git.py"].map((script) => [
+          script,
+          helperSource(script),
+        ]),
+      ),
+    });
+    this.sessions.set(name, session);
+    const abort = () => session.end("lease_aborted");
+    lease?.signal.addEventListener("abort", abort, { once: true });
+    void session.closed.then((end) => {
+      lease?.signal.removeEventListener("abort", abort);
+      if (this.sessions.get(name) === session) this.sessions.delete(name);
+      if (end.outcome !== "ok")
+        this.sessionRetryAt.set(name, Date.now() + this.sessionOptions.retryMs);
+      const detail = commandFailure(
+        { stderr: end.stderr, code: end.exitCode ?? undefined, signal: end.signal ?? undefined },
+        0,
+        0,
+        false,
+      );
+      diagnostic({
+        event: "sprite.session",
+        phase: "end",
+        workspaceId: spriteWorkspaceId(name),
+        durationMs: Math.round(performance.now() - session.startedAt),
+        stderrKind: detail.stderrKind,
+        ...(detail.stderrHash ? { stderrHash: detail.stderrHash } : {}),
+        ...(detail.exitCode === undefined ? {} : { exitCode: detail.exitCode }),
+        ...(detail.signal ? { signal: detail.signal } : {}),
+        outcome: end.outcome,
+      });
+      lease?.release();
+    });
+    try {
+      await session.ready;
+    } catch {
+      return undefined;
+    } finally {
+      releaseCommand();
+    }
+    diagnostic({
+      event: "sprite.session",
+      phase: "start",
+      workspaceId: spriteWorkspaceId(name),
+      durationMs: Math.round(performance.now() - startedAt),
+      outcome: "ok",
+    });
+    return session;
+  }
+  /** Serves a read through the Sprite's helper session; undefined means use the one-shot path. */
+  private sessionCommand(
+    name: string,
+    scriptName: string,
+    payload: object,
+    timeout: number,
+    limit: number,
+  ): Promise<Result<Buffer> | undefined> | undefined {
+    if (!this.sessionsEnabled() || !this.sessionReachable.has(name)) return undefined;
+    return this.sessionRequest(name, scriptName, payload, timeout, limit);
+  }
+  private async sessionRequest(
+    name: string,
+    scriptName: string,
+    payload: object,
+    timeout: number,
+    limit: number,
+  ): Promise<Result<Buffer> | undefined> {
+    const started = performance.now();
+    let dispatched: number | undefined;
+    let failure: Partial<DiagnosticRecord> = {};
+    let lease: SpriteLease | undefined;
+    let result: Result<Buffer> | undefined;
+    let attempted = false;
+    try {
+      lease = this.acquire?.(name);
+      const session = await this.session(name, lease?.signal);
+      if (!session) return undefined;
+      attempted = true;
+      lease?.signal.throwIfAborted();
+      dispatched = performance.now();
+      const reply = await session.request(scriptName, payload, timeout, limit, lease?.signal);
+      if ("stdout" in reply) result = ok(Buffer.from(reply.stdout, "utf8"));
+      else {
+        failure = {
+          outcome: reply.error === "unknown_script" ? "process_failed" : reply.error,
+          ...(reply.exitCode === undefined ? {} : { exitCode: reply.exitCode }),
+        };
+        result = fail(commandFailed, 502);
+      }
+    } catch (error) {
+      attempted = true;
+      if (error instanceof HelperSessionLost) failure = { outcome: "session_lost" };
+      else if (error instanceof CommandBusy) {
+        failure = { outcome: "queue_busy" };
+        result = fail(error.message, 429);
+      } else {
+        failure = { outcome: lease?.signal.aborted ? "lease_aborted" : "process_failed" };
+        result = fail(commandFailed, 502);
+      }
+    } finally {
+      if (attempted)
+        diagnostic({
+          event: "sprite.command",
+          transport: "session",
+          workspaceId: spriteWorkspaceId(name),
+          durationMs: Math.round(performance.now() - started),
+          queueMs: Math.round((dispatched ?? performance.now()) - started),
+          executionMs: dispatched === undefined ? 0 : Math.round(performance.now() - dispatched),
+          timeoutMs: timeout,
+          outcome: "ok",
+          ...failure,
+        });
+      lease?.release();
+    }
+    return result;
   }
   private provisioningEndpoint(name?: string) {
     if (this.usesConfiguredOrg && this.org !== process.env.CIVIC_SPARK_SPRITE_ORG)
@@ -605,32 +835,42 @@ export class SpriteClient {
     upload?: { local: string; remote: string },
   ): Promise<Result<T>> {
     if (!spriteNamePattern.test(name)) return fail("Invalid workspace name");
-    const script = readFileSync(new URL(`./${scriptName}`, import.meta.url), "utf8");
     const transferringFile = ["read", "save", "mutate"].includes(payload.operation);
-    const response = await this.command(
-      [
-        "-s",
-        name,
-        "exec",
-        "--no-port-forward",
-        ...(upload ? ["--file", `${upload.local}:${upload.remote}`] : []),
-        "--",
-        "python3",
-        "-c",
-        script,
-      ],
+    const timeout =
       scriptName === "preview.py" && ["start", "restart"].includes(payload.operation)
         ? 360000
         : transferringFile
           ? 120000
-          : 30000,
-      JSON.stringify(payload),
-      transferringFile
-        ? scriptName === "files.py"
-          ? TEXT_BODY_LIMIT
-          : BLOB_BODY_LIMIT
-        : 16 * 1024 * 1024,
-    );
+          : 30000;
+    const limit = transferringFile
+      ? scriptName === "files.py"
+        ? TEXT_BODY_LIMIT
+        : BLOB_BODY_LIMIT
+      : 16 * 1024 * 1024;
+    // Reads use the Sprite's helper session when one is healthy; writes, uploads
+    // and any read the session could not answer take the one-shot command path.
+    const served =
+      !upload && sessionReads.has(`${scriptName}:${payload.operation}`)
+        ? this.sessionCommand(name, scriptName, payload, timeout, limit)
+        : undefined;
+    const response =
+      (served && (await served)) ||
+      (await this.command(
+        [
+          "-s",
+          name,
+          "exec",
+          "--no-port-forward",
+          ...(upload ? ["--file", `${upload.local}:${upload.remote}`] : []),
+          "--",
+          "python3",
+          "-c",
+          readFileSync(new URL(`./${scriptName}`, import.meta.url), "utf8"),
+        ],
+        timeout,
+        JSON.stringify(payload),
+        limit,
+      ));
     const details = {
       event: "sprite.operation" as const,
       workspaceId: spriteWorkspaceId(name),

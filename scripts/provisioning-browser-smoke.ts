@@ -50,7 +50,9 @@ export async function verifyProvisioning() {
       errors.push(message.text());
   });
   await page.route("**/api/state", async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch({
+      headers: { ...route.request().headers(), "if-none-match": "" },
+    });
     const state = (await response.json()) as PortalState;
     state.capabilities.sprites = true;
     for (const item of state.myWorkspaces) {

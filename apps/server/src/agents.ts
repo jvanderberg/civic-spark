@@ -213,28 +213,66 @@ export class AgentSessions {
       };
       session = active;
       this.sessions.set(id, active);
+      // Streamed text arrives one delta per token chunk. Deltas of the same
+      // message are merged for up to 50 ms before replay bookkeeping and
+      // fan-out, which cuts loop work and socket frames by an order of
+      // magnitude on long turns without changing what clients accumulate.
+      type Event = z.infer<typeof eventSchema>;
+      let pendingText: Event | undefined;
+      let pendingTimer: NodeJS.Timeout | undefined;
+      let lastActivity = 0;
+      const deliver = (event: Event) => {
+        active.replay.accept(event);
+        if (
+          !event.replayed &&
+          ["user", "text", "tool", "done"].includes(event.type) &&
+          Date.now() - lastActivity >= 1000
+        ) {
+          lastActivity = Date.now();
+          this.activity(id);
+        }
+        if (
+          event.type === "done" ||
+          event.type === "error" ||
+          (event.type === "status" && event.text === "Working")
+        )
+          active.pendingPrompt = false;
+        const frame = JSON.stringify(event);
+        for (const client of active.clients) {
+          if (client.bufferedAmount > 2 * agentWireByteLimit)
+            client.close(1013, "Reconnect to catch up");
+          else if (client.readyState === 1) client.send(frame);
+        }
+      };
+      const flushText = () => {
+        if (pendingTimer) clearTimeout(pendingTimer);
+        pendingTimer = undefined;
+        if (!pendingText) return;
+        const event = pendingText;
+        pendingText = undefined;
+        deliver(event);
+      };
       createInterface({ input: child.stdout }).on("line", (line) => {
         if (this.sessions.get(id) !== active || line.length > agentWireByteLimit) return;
         try {
           const event = eventSchema.parse(JSON.parse(line));
-          active.replay.accept(event);
-          if (!event.replayed && ["user", "text", "tool", "done"].includes(event.type))
-            this.activity(id);
-          if (
-            event.type === "done" ||
-            event.type === "error" ||
-            (event.type === "status" && event.text === "Working")
-          )
-            active.pendingPrompt = false;
-          for (const client of active.clients) {
-            if (client.bufferedAmount > 2 * agentWireByteLimit)
-              client.close(1013, "Reconnect to catch up");
-            else if (client.readyState === 1) client.send(JSON.stringify(event));
+          if (event.type === "text" && !event.replayed) {
+            if (pendingText && pendingText.id === event.id) {
+              pendingText = { ...pendingText, text: pendingText.text + event.text };
+            } else {
+              flushText();
+              pendingText = event;
+            }
+            if (!pendingTimer) pendingTimer = setTimeout(flushText, 50);
+            return;
           }
+          flushText();
+          deliver(event);
         } catch {
           /* Only structured events go to the browser. */
         }
       });
+      child.stdout.once("close", flushText);
       child.stderr.resume(); // Provider diagnostics may contain secrets; never forward or log them.
       const end = () => {
         if (this.sessions.get(id) === active) this.sessions.delete(id);
@@ -276,7 +314,21 @@ export class AgentSessions {
       socket.close(1008, "Workspace access ended");
       return false;
     };
-    const timer = setInterval(() => void check(), 5000);
+    // Local checks every 5 s; the session lookup only every 30 s.
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+      if (ticks % 6 === 0) void check();
+      else if (
+        !(
+          socket.readyState === 1 &&
+          active.clients.has(socket) &&
+          this.sessions.get(id) === active &&
+          this.allowed(id)
+        )
+      )
+        socket.close(1008, "Workspace access ended");
+    }, 5000);
     let queue = Promise.resolve();
     let queuedBytes = 0;
     socket.on("message", (raw) => {

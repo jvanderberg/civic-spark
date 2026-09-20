@@ -48,7 +48,10 @@ it("serves portal state without briefs, then 304 for unchanged polls and brotli/
   expect(state.headers["content-encoding"]).toBeUndefined();
   const etag = String(state.headers.etag);
   expect(etag).toMatch(/^W\/"/);
-  const summary = state.json().events.find((e: { id: string }) => e.id === event.id).projects[0];
+  const summary = state
+    .json()
+    .events.find((e: { id: string }) => e.id === event.id)
+    .projects.find((p: { id: string }) => p.id === project.json().id);
   expect(summary).toMatchObject({ id: project.json().id, name: "Encoded project" });
   expect(summary).not.toHaveProperty("description");
   expect(JSON.stringify(state.json())).not.toContain("Long project brief text");

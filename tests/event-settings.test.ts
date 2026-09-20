@@ -14,6 +14,10 @@ import {
 } from "../packages/domain/src/types.ts";
 import { testIdentity } from "./auth-fixture.ts";
 
+// Portal project lists are summaries; briefs are served per project on demand.
+const withoutBrief = (projects: { description?: string }[]) =>
+  projects.map(({ description: _brief, ...project }) => project);
+
 const input = {
   name: "Community workshop",
   date: "2026-10-03",
@@ -27,7 +31,7 @@ function value<T>(result: Result<T>): T {
   if (!result.ok) throw new Error(result.error);
   return result.value;
 }
-function settings(event: Event): EventSettings {
+function settings(event: Omit<Event, "projects"> & { projects?: unknown }): EventSettings {
   const {
     id: _id,
     status: _status,
@@ -37,7 +41,7 @@ function settings(event: Event): EventSettings {
     revision,
     schedule,
     ...details
-  } = eventSchema.parse(event);
+  } = eventSchema.parse({ ...event, projects: [] }); // Portal events carry project summaries only.
   return {
     ...details,
     expectedRevision: revision,
@@ -180,7 +184,7 @@ it("authorizes event settings, rejects stale/invalid writes, preserves unrelated
       otherBefore,
     );
     expect(after.events.find((e) => e.id === event.id)?.projects).toEqual(
-      projectsBefore.map(({ description: _brief, ...p }) => p),
+      withoutBrief(projectsBefore),
     );
     expect(value(service.repositoryHistory(admin.actor, team.team.id, {}))).toEqual(history);
     expect(value(service.readFile(member.actor, team.workspace.id, "PROJECT.md")).content).toBe(
@@ -196,7 +200,8 @@ it("authorizes event settings, rejects stale/invalid writes, preserves unrelated
     const persisted = fixture.service
       .portal(admin.actor, false)
       .events.find((e) => e.id === event.id);
-    expect(persisted).toMatchObject(saved.json());
+    const { projects: savedProjects, ...savedEvent } = saved.json();
+    expect(persisted).toMatchObject({ ...savedEvent, projects: withoutBrief(savedProjects) });
     expect((await patch(payload, admin.cookie)).statusCode).toBe(409);
     const publicSession = await fixture.app.inject({ url: "/api/session" });
     expect(publicSession.json().siteEvent).toEqual({ id: event.id, name: payload.name });
@@ -267,7 +272,7 @@ it("adds stable legacy row IDs and neutral defaults without replacing stored eve
     const migrated = service.portal(actor, false).events[0];
     expect(migrated).toMatchObject({
       ...legacy,
-      projects: legacy.projects.map(({ description: _brief, ...p }) => p),
+      projects: withoutBrief(legacy.projects),
       revision: 0,
       projectBriefGuidance: defaultProjectBriefGuidance,
       startTime: "",

@@ -90,7 +90,9 @@ export async function verifyRuntimeIdentity() {
         const closes = { agent: 0, terminal: 0 };
         const sent: { type: string }[] = [];
         await page.route("**/api/state", async (route) => {
-          const response = await route.fetch();
+          const response = await route.fetch({
+            headers: { ...route.request().headers(), "if-none-match": "" },
+          });
           const state = (await response.json()) as PortalState;
           for (const item of state.myWorkspaces) {
             item.spriteName = name;
@@ -257,10 +259,13 @@ export async function verifyRuntimeIdentity() {
           } else {
             name = null;
             held = true;
-            await page.getByRole("dialog", { name: "Connect a new Sprite" }).waitFor();
+            // Another session deleted the Sprite; this tab learns it on its 15 s poll.
+            await page
+              .getByRole("dialog", { name: "Connect a new Sprite" })
+              .waitFor({ timeout: 25000 });
             await page.getByRole("button", { name: "Connect new Sprite", exact: true }).tap();
           }
-          await page.getByLabel("Agent API key").waitFor();
+          await page.getByLabel("Agent API key").waitFor({ timeout: 25000 });
           await page.getByRole("dialog").waitFor({ state: "hidden" });
           assert.equal(connects, skipped ? 0 : 1);
           assert.equal(sockets.agent.length, 2, "No new agent connection without a new key");

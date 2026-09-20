@@ -147,3 +147,31 @@ it("logs connection lifecycle records with codes and durations only", () => {
   expect(logs[0]).toMatchObject({ channel: "agent", code: 1008, workspaceId });
   expect(JSON.stringify(logs)).not.toContain("PRIVATE");
 });
+it("emits event-loop telemetry with delay percentiles, CPU share and handle counts", async () => {
+  vi.stubEnv("CIVIC_SPARK_DIAGNOSTICS", "1");
+  vi.useFakeTimers();
+  const sink = vi.spyOn(console, "info").mockImplementation(() => {});
+  const app = Fastify();
+  installDiagnostics(app);
+  try {
+    await vi.advanceTimersByTimeAsync(10000);
+    const loop = sink.mock.calls
+      .map((call) => JSON.parse(String(call[0])))
+      .find((log) => log.event === "loop");
+    expect(loop).toMatchObject({ event: "loop" });
+    for (const key of [
+      "loopP50Ms",
+      "loopP99Ms",
+      "loopMaxMs",
+      "cpuPercent",
+      "handles",
+      "children",
+      "sockets",
+      "rssMb",
+    ])
+      expect(typeof loop[key]).toBe("number");
+  } finally {
+    vi.useRealTimers();
+    await app.close();
+  }
+});

@@ -149,10 +149,22 @@ it("round-trips 25 MiB through SpriteClient and the real Python adapters, includ
   const dir = directory();
   // Replace only the CLI transport and fixed project/lock paths. Run the actual trusted
   // adapter source in an isolated fixture; never execute project code or use a live Sprite.
+  // The same replacement applies to helpers the real session dispatcher launches.
   const executable = join(dir, "sprite");
+  const fix = `lambda s: s.replace('/home/sprite/project', ${JSON.stringify(dir)}).replace('/home/sprite/.civic-spark-file-lock', ${JSON.stringify(join(dir, ".file-lock"))})`;
   writeFileSync(
     executable,
-    `#!/usr/bin/env python3\nimport sys\nscript = sys.argv[-1].replace('/home/sprite/project', ${JSON.stringify(dir)}).replace('/home/sprite/.civic-spark-file-lock', ${JSON.stringify(join(dir, ".file-lock"))})\nexec(compile(script, '<trusted-sprite-adapter>', 'exec'))\n`,
+    [
+      "#!/usr/bin/env python3",
+      "import subprocess, sys",
+      `fix = ${fix}`,
+      "class Popen(subprocess.Popen):",
+      "    def __init__(self, args, *rest, **options):",
+      "        super().__init__([fix(a) if isinstance(a, str) else a for a in args], *rest, **options)",
+      "subprocess.Popen = Popen",
+      "exec(compile(fix(sys.argv[-1]), '<trusted-sprite-adapter>', 'exec'))",
+      "",
+    ].join("\n"),
   );
   chmodSync(executable, 0o755);
   vi.stubEnv("PATH", `${dir}:${process.env.PATH}`);
@@ -160,6 +172,8 @@ it("round-trips 25 MiB through SpriteClient and the real Python adapters, includ
   git(dir, ["add", "sprite"]);
   git(dir, ["commit", "-m", "Test fixture"]);
   const client = new SpriteClient();
+  cleanups.push(() => void client.close());
+  const oneShots = vi.spyOn(client, "command");
   const name = "civic-spark-file-limit-test";
   const data = Buffer.alloc(FILE_LIMIT, "a");
   const created = unwrap(
@@ -206,4 +220,8 @@ it("round-trips 25 MiB through SpriteClient and the real Python adapters, includ
     }),
   ).toMatchObject({ ok: false, status: 413 });
   expect(unwrap(await client.readFile(name, "large.csv")).revision).toBe(saved.revision);
+  // Writes stayed one-shot; every read after the first answered command used the
+  // real dispatcher over the persistent session, including the 25 MiB transfers.
+  expect(oneShots).toHaveBeenCalledTimes(4);
+  await client.close();
 }, 60000);
