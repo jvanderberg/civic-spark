@@ -113,3 +113,7 @@ After the load fixes were deployed on a single performance vCPU, a fresh fifty-p
 ## Idle terminals and attributable telemetry
 
 An idle terminal no longer streams through the host: tmux starts with its status line off, and the browser detaches the terminal socket five seconds after the Terminal tab is hidden, reattaching to the same tmux session when it is shown again. Each ten-second `loop` diagnostic now carries per-interval counters (agent lines and frames, terminal chunks, bytes and frames, helper-session requests, process spawns, HTTP requests and bytes) so a busy loop can be attributed without a profiler.
+
+## Live concurrent acceptance — September 20, 2026, fifty people with relay workers and pushed status
+
+With relay worker processes owning every Sprite child, the per-workspace events socket replacing status polls, hidden terminals detaching and one vCPU, a fresh fifty-person cohort passed **48 of 50** with zero HTTP errors, median 9m39s per person (11m34s before), 14,085 requests instead of 26,949, and 2,370 pushed change notifications. Relay workers peaked at 3.6 % CPU. The main loop still peaked near 90 % during the concurrent agent phase; a live profile attributed 79.5 % of that to cloning the domain state on every lookup, now replaced by a zero-copy read view, and 49 host-side agent Git relay children, which are moving into the relay workers next. Evidence: ignored `artifacts/participant-load/cohort-2026-09-20T13-58-33-335Z/` and `artifacts/participant-load/backend-20260920e/REPORT.md`.
