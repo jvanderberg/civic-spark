@@ -20,6 +20,10 @@ if [ "${CIVIC_SPARK_MAINTENANCE-off}" = backup ]; then
   exec setpriv --reuid=node --regid=node --init-groups /usr/bin/sleep infinity
 fi
 install -d -m 0700 -o node -g node /data/civic-spark
+# Backups, staged restores and replaced data roots are siblings of the data directory,
+# so the application user owns the volume root itself. Non-recursive: imported data keeps
+# its ownership.
+chown node:node /data
 # Sprite initializes local CLI state even with environment authentication.
 # Precreate only its directory; never rewrite existing children or participant data.
 install -d -m 0700 -o node -g node /home/node/.sprites

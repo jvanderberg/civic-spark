@@ -51,7 +51,15 @@ const writerLock = "control-plane-writer.sqlite";
 const authSecretFile = "auth-secret";
 
 function ensurePrivateDirectory(path: string) {
-  if (!existsSync(path)) mkdirSync(path, { recursive: true, mode: 0o700 });
+  try {
+    if (!existsSync(path)) mkdirSync(path, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EACCES")
+      throw new Error(
+        `The server user cannot create ${path}; grant it write access to the parent directory`,
+      );
+    throw error;
+  }
   privateDirectory(path);
 }
 function replacePrivate(path: string, value: unknown) {
