@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Workspace } from "../../../packages/domain/src/access-types.ts";
-import { api } from "./api.ts";
+import { api, apiStatus } from "./api.ts";
 
 const phases = [
   ["bundling", "Preparing the team repository"],
@@ -22,8 +22,17 @@ export function WorkspacePreparation({
   const [workspace, setWorkspace] = useState(participant);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
+  const [waitingSlot, setWaitingSlot] = useState(false);
   const [now, setNow] = useState(Date.now());
   const attempted = useRef(false);
+  const busyRetries = useRef(0);
+  const busyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (busyTimer.current) clearTimeout(busyTimer.current);
+    },
+    [],
+  );
   const changed = useRef(onChanged);
   changed.current = onChanged;
   const readStatus = useCallback(async () => {
@@ -34,10 +43,11 @@ export function WorkspacePreparation({
     return next;
   }, [participant.id]);
   const start = useCallback(
-    async (explicitRetry = false) => {
+    async (explicitRetry = false, automatic = false) => {
       const recover = explicitRetry && workspace.preparationAction === "recover-missing";
       if (
         recover &&
+        !automatic &&
         !window.confirm(
           "Rebuild from shared work? Only work shared to your team’s Git repository will be restored. Unshared files, commits and workspace history are unavailable if the workspace is missing. Any existing workspace will be preserved.",
         )
@@ -64,7 +74,23 @@ export function WorkspacePreparation({
               : undefined,
         );
         await readStatus();
+        busyRetries.current = 0;
+        setWaitingSlot(false);
       } catch (cause) {
+        // The preparation limit answers 429 while other workspaces are being set
+        // up. Keep waiting and retry automatically instead of asking the person to.
+        if (apiStatus(cause) === 429 && busyRetries.current < 60) {
+          busyRetries.current += 1;
+          setWaitingSlot(true);
+          if (busyTimer.current) clearTimeout(busyTimer.current);
+          busyTimer.current = setTimeout(
+            () => void start(explicitRetry, true),
+            Math.min(20000, 3000 * 2 ** Math.min(busyRetries.current - 1, 3)),
+          );
+          return;
+        }
+        busyRetries.current = 0;
+        setWaitingSlot(false);
         setError(
           cause instanceof Error
             ? cause.message
@@ -121,7 +147,7 @@ export function WorkspacePreparation({
     };
   }, [readStatus]);
   const failed = workspace.spriteStatus === "error";
-  const running = workspace.spriteStatus === "provisioning" || starting;
+  const running = workspace.spriteStatus === "provisioning" || starting || waitingSlot;
   const index = phases.findIndex(([phase]) => phase === workspace.spritePhase);
   const seconds = workspace.spriteUpdatedAt
     ? Math.max(0, Math.floor((now - Date.parse(workspace.spriteUpdatedAt)) / 1000))
@@ -161,11 +187,15 @@ export function WorkspacePreparation({
             </li>
           ))}
         </ol>
-        {running && (
-          <p role="status">
-            {index >= 0 ? phases[index]?.[1] : "Starting preparation"}
-            {seconds > 0 ? ` · ${seconds}s in this step` : ""}
-          </p>
+        {waitingSlot && workspace.spriteStatus !== "provisioning" ? (
+          <p role="status">Waiting for a free preparation slot. Retrying automatically.</p>
+        ) : (
+          running && (
+            <p role="status">
+              {index >= 0 ? phases[index]?.[1] : "Starting preparation"}
+              {seconds > 0 ? ` · ${seconds}s in this step` : ""}
+            </p>
+          )
         )}
         {running && seconds >= 45 && (
           <p>

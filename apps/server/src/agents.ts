@@ -7,6 +7,7 @@ import { z } from "zod";
 import { AgentReplay } from "../../../packages/agents/src/history.ts";
 import { agentImagesSchema, agentWireByteLimit } from "../../../packages/agents/src/images.ts";
 import { agentInputSchema } from "../../../packages/agents/src/protocol.ts";
+import { diagnostic, spriteWorkspaceId } from "../../../packages/diagnostics/src/index.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 
 const eventSchema = z.object({
@@ -81,37 +82,60 @@ export class AgentSessions {
       .strict()
       .parse(JSON.parse(result.value.toString()));
   }
+  // A just-woken Sprite can time out the first upload/setup command at the CLI.
+  // Retry bounded times with backoff before reporting failure; the preparing
+  // marker stays set throughout so idle release and provisioning wait for it.
+  static readonly prepareAttempts = 3;
+  static readonly prepareBackoffMs = 2000;
   async prepare(sprite: string) {
     const existing = this.preparing.get(sprite);
     if (existing) return existing;
-    const work = this.client
-      .exec(
-        sprite,
-        ["bash", "/home/sprite/.civic-spark-agent/setup.sh"],
-        [
-          `${fileURLToPath(new URL("../../../packages/agents/runtime/environment.json", import.meta.url))}:/home/sprite/.civic-spark-agent/environment.defaults.json`,
-          ...["package.json", "package-lock.json", "setup.sh", "relay.py"].map(
-            (name) =>
-              `${fileURLToPath(new URL(`../../../packages/agents/runtime/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
-          ),
-          ...[
-            "cli.ts",
-            "cli-config.ts",
-            "credentials.ts",
-            "protocol.ts",
-            "images.ts",
-            "context.ts",
-            "integration-cli.ts",
-          ].map(
-            (name) =>
-              `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
-          ),
-        ],
-      )
-      .then((r) => r.ok)
-      .finally(() => this.preparing.delete(sprite));
+    const work = (async () => {
+      const started = Date.now();
+      for (let attempt = 1; ; attempt++) {
+        const result = await this.setup(sprite);
+        if (result.ok || attempt >= AgentSessions.prepareAttempts) {
+          diagnostic({
+            event: "agent.prepare",
+            workspaceId: spriteWorkspaceId(sprite),
+            attempt,
+            outcome: result.ok ? "ok" : "process_failed",
+            durationMs: Date.now() - started,
+          });
+          return result.ok;
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, AgentSessions.prepareBackoffMs * 2 ** (attempt - 1)),
+        );
+      }
+    })().finally(() => this.preparing.delete(sprite));
     this.preparing.set(sprite, work);
     return work;
+  }
+  private setup(sprite: string) {
+    return this.client.exec(
+      sprite,
+      ["bash", "/home/sprite/.civic-spark-agent/setup.sh"],
+      [
+        `${fileURLToPath(new URL("../../../packages/agents/runtime/environment.json", import.meta.url))}:/home/sprite/.civic-spark-agent/environment.defaults.json`,
+        ...["package.json", "package-lock.json", "setup.sh", "relay.py"].map(
+          (name) =>
+            `${fileURLToPath(new URL(`../../../packages/agents/runtime/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
+        ),
+        ...[
+          "cli.ts",
+          "cli-config.ts",
+          "credentials.ts",
+          "protocol.ts",
+          "images.ts",
+          "context.ts",
+          "integration-cli.ts",
+        ].map(
+          (name) =>
+            `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
+        ),
+      ],
+    );
   }
   attach(id: string, sprite: string, socket: WebSocket, authorized: () => Promise<boolean>) {
     if (!this.allowed(id)) throw new Error("Workspace execution is paused");
@@ -160,12 +184,26 @@ export class AgentSessions {
         ],
         { stdio: "pipe" },
       );
+      const spawnedAt = Date.now();
       const abort = () => child.kill();
       lease?.signal.addEventListener("abort", abort, { once: true });
       child.once("error", () => lease?.release());
-      child.once("close", () => {
+      child.once("close", (code, signal) => {
         lease?.signal.removeEventListener("abort", abort);
         lease?.release();
+        diagnostic({
+          event: "agent.runner",
+          workspaceId: id,
+          durationMs: Date.now() - spawnedAt,
+          ...(typeof code === "number" ? { exitCode: code } : {}),
+          ...(signal
+            ? {
+                signal: ["SIGTERM", "SIGKILL", "SIGINT", "SIGABRT"].includes(signal)
+                  ? (signal as "SIGTERM" | "SIGKILL" | "SIGINT" | "SIGABRT")
+                  : "other",
+              }
+            : {}),
+        });
       });
       const active: Session = {
         process: child,
@@ -207,6 +245,16 @@ export class AgentSessions {
     }
     const active = session;
     active.clients.add(socket);
+    const attachedAt = Date.now();
+    socket.once("close", (code: number) =>
+      diagnostic({
+        event: "ws",
+        channel: "agent",
+        workspaceId: id,
+        code,
+        durationMs: Date.now() - attachedAt,
+      }),
+    );
     for (const event of active.replay.events)
       socket.send(JSON.stringify({ ...event, replayed: true }));
     socket.send(JSON.stringify(active.replay.snapshot()));

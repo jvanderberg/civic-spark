@@ -49,6 +49,7 @@ export const setupSchema = z
     managementCpuKind: z.enum(["shared", "performance"]).default("shared"),
     managementCpus: z.number().int().min(1).max(8).default(1),
     managementMemoryMb: z.number().int().min(1024).max(32768).default(1024),
+    diagnostics: z.boolean().default(false),
     maxProvisioning: z.number().int().min(1).max(20).default(2),
     smtpHost: z
       .string()
@@ -94,6 +95,7 @@ export function flyConfig(input: Setup) {
     CIVIC_SPARK_TRUSTED_PROXY_CIDRS: input.proxyCidrs.join(","),
     CIVIC_SPARK_MAX_PROVISIONING: String(input.maxProvisioning),
   };
+  if (input.diagnostics) env.CIVIC_SPARK_DIAGNOSTICS = "1";
   if (input.siteEventId) env.CIVIC_SPARK_SITE_EVENT_ID = input.siteEventId;
   if (input.authMode === "email")
     Object.assign(env, {

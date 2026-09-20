@@ -25,6 +25,7 @@ async function fixture() {
   let busy = false;
   let deletes = 0;
   let puts = 0;
+  let aborts = 0;
   let messagesFail = false;
   let statusFail = false;
   let prompt: (response: ServerResponse, body: Record<string, unknown>) => void = (res) =>
@@ -59,7 +60,10 @@ async function fixture() {
     }
     res.setHeader("content-type", "application/json");
     if (path.endsWith("/prompt_async")) return prompt(res, parsed);
-    if (path.endsWith("/abort")) return abort(res);
+    if (path.endsWith("/abort")) {
+      aborts++;
+      return abort(res);
+    }
     if (path === "/session/status") {
       if (readStatus) return readStatus(res);
       return res
@@ -180,6 +184,19 @@ async function fixture() {
     get puts() {
       return puts;
     },
+    get aborts() {
+      return aborts;
+    },
+    tool(status: string) {
+      const message = records.at(-1);
+      message?.parts.push({
+        id: "part-question",
+        sessionID,
+        messageID: message.info.id,
+        type: "tool",
+        state: { status, input: {} },
+      });
+    },
     set busy(value: boolean) {
       busy = value;
     },
@@ -248,11 +265,14 @@ it.each(["stalled", "EOF", "lost ACK"])(
       if (mode === "EOF") for (const stream of f.streams) stream.end();
       f.assistant("old-request");
       f.assistant("11111111-1111-4111-8111-111111111111", "tool-calls");
-      // Even an idle read cannot make an intermediate tool step terminal.
+      f.tool("running");
+      // Even an idle read cannot make a tool step with running tools terminal.
       f.busy = false;
       await new Promise((done) => setTimeout(done, 1300));
       expect(f.deletes).toBe(0);
       expect(f.events.some((event) => event.type === "done")).toBe(false);
+      const tool = f.records.at(-1)?.parts[0] as { state: { status: string } } | undefined;
+      if (tool) tool.state = { status: "completed" };
       f.assistant("11111111-1111-4111-8111-111111111111");
       await f.wait(() => f.events.some((event) => event.type === "done"));
       expect(f.events.find((event) => event.type === "done")?.outcome).toBe("success");
@@ -308,6 +328,112 @@ it("Stop waits for delayed POST acceptance and post-acceptance abort/idle before
     await f.close();
   }
 }, 14000);
+
+it("a dismissed question ends the turn once the native run stops at its tool step", async () => {
+  const f = await fixture();
+  const requestID = "11111111-1111-4111-8111-111111111111";
+  try {
+    f.prompt = (res, body) => {
+      f.user(String(body.messageID));
+      res.writeHead(204).end();
+    };
+    f.begin(requestID);
+    await f.wait(() => f.records.length === 1 && f.streams.size > 0);
+    f.assistant(requestID, "tool-calls");
+    f.tool("running");
+    f.emit("question.asked", {
+      id: "question-one",
+      sessionID: f.sessionID,
+      questions: [{ question: "Which port?", header: "Port", options: [{ label: "5173" }] }],
+    });
+    await f.wait(() => f.events.some((event) => event.type === "approval"));
+    await new Promise((done) => setTimeout(done, 1200));
+    expect(f.deletes).toBe(0);
+    expect(f.events.some((event) => event.type === "done")).toBe(false);
+    f.send({ type: "approval", id: "question-one", allow: false });
+    await f.wait(() => f.requests.some((request) => request.path.includes("question-one/reject")));
+    // Recorded native outcome: tool state error, assistant finish "tool-calls",
+    // no error, session omitted from the status map.
+    const part = f.records[1]?.parts[0] as { state: { status: string } } | undefined;
+    if (part) part.state = { status: "error" };
+    f.busy = false;
+    await f.wait(() => f.deletes === 1 && f.events.some((event) => event.type === "done"));
+    expect(f.events.find((event) => event.type === "done")?.outcome).toBe("success");
+    expect(f.events.filter((event) => event.type === "error")).toEqual([]);
+    expect(f.events.at(-1)).toMatchObject({ type: "state", working: false });
+    expect(f.aborts).toBe(0);
+  } finally {
+    await f.close();
+  }
+}, 12000);
+
+it("Stop converges when each native abort republishes idle events during the status read", async () => {
+  const f = await fixture();
+  let abortedSinceRead = false;
+  try {
+    f.prompt = (res, body) => {
+      f.user(String(body.messageID));
+      res.writeHead(204).end();
+    };
+    f.abort = (res) => {
+      f.busy = false;
+      abortedSinceRead = true;
+      res.end("true");
+    };
+    f.readStatus = (res) => {
+      if (!abortedSinceRead) return res.end(JSON.stringify({ [f.sessionID]: { type: "busy" } }));
+      abortedSinceRead = false;
+      f.emit("session.status", { sessionID: f.sessionID, status: { type: "idle" } });
+      f.emit("session.idle", { sessionID: f.sessionID });
+      setTimeout(() => res.end("{}"), 40);
+    };
+    f.begin();
+    await f.wait(() => f.records.length === 1 && f.streams.size > 0);
+    f.assistant("11111111-1111-4111-8111-111111111111", "tool-calls");
+    f.send({ type: "stop" });
+    await f.wait(() => f.deletes === 1 && f.events.some((event) => event.type === "done"), 5000);
+    expect(f.events.find((event) => event.type === "done")?.outcome).toBe("stopped");
+    expect(f.aborts).toBeLessThanOrEqual(3);
+    expect(f.events.at(-1)).toMatchObject({ type: "state", working: false });
+  } finally {
+    await f.close();
+  }
+}, 12000);
+
+it("a runner restart during a turn reports the interruption and ends the turn", async () => {
+  const f = await fixture();
+  try {
+    f.prompt = (res, body) => {
+      f.user(String(body.messageID));
+      res.writeHead(204).end();
+    };
+    f.begin();
+    await f.wait(() => f.records.length === 1 && f.streams.size > 0);
+    f.emit("question.asked", {
+      id: "question-one",
+      sessionID: f.sessionID,
+      questions: [{ question: "Which port?", header: "Port", options: [{ label: "5173" }] }],
+    });
+    await f.wait(() => f.events.some((event) => event.type === "approval"));
+    await f.restart();
+    expect(f.events.filter((event) => event.replayed).map((event) => event.type)).toContain("user");
+    expect(
+      f.events.some(
+        (event) => event.type === "resolved" && event.id === "question-one" && !event.replayed,
+      ),
+    ).toBe(true);
+    expect(f.events.find((event) => event.type === "status" && !event.replayed)?.text).toContain(
+      "interrupted",
+    );
+    expect(f.events.find((event) => event.type === "done" && !event.replayed)).toMatchObject({
+      outcome: "stopped",
+    });
+    expect(f.events.at(-1)).toMatchObject({ type: "state", working: false, runtimeReady: true });
+    expect(f.requests.filter((request) => request.path.endsWith("prompt_async"))).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+}, 12000);
 
 it("a rejected POST still requires successful messages and status reads", async () => {
   const f = await fixture();

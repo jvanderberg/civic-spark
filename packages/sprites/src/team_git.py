@@ -9,6 +9,16 @@ import subprocess
 import sys
 import uuid
 
+
+def diagnostic_error(error):
+    trace = error.__traceback__
+    while trace and trace.tb_next:
+        trace = trace.tb_next
+    kinds = {'ValueError', 'KeyError', 'FileNotFoundError', 'PermissionError', 'OSError', 'CalledProcessError', 'TimeoutExpired', 'UnicodeDecodeError'}
+    kind = type(error).__name__
+    return {'exception': kind if kind in kinds else 'other', 'line': trace.tb_lineno if trace else 0,
+            'errno': getattr(error, 'errno', None), 'exitCode': getattr(error, 'returncode', None)}
+
 ROOT = pathlib.Path('/home/sprite/project')
 ENV = dict(os.environ, GIT_AUTHOR_NAME='Civic Spark participant', GIT_AUTHOR_EMAIL='participant@civic-spark.local',
            GIT_COMMITTER_NAME='Civic Spark', GIT_COMMITTER_EMAIL='workspace@civic-spark.local')
@@ -208,6 +218,6 @@ try:
         raise ValueError('Invalid team operation')
     print(json.dumps({'ok': True, 'value': value}))
 except ValueError as error:
-    print(json.dumps({'ok': False, 'error': str(error), 'status': 409}))
-except (OSError, KeyError, subprocess.SubprocessError):
-    print(json.dumps({'ok': False, 'error': 'The Git update could not complete. Your local work and recovery references are preserved.', 'status': 409}))
+    print(json.dumps({'ok': False, 'error': str(error), 'status': 409, 'diagnostic': diagnostic_error(error)}))
+except (OSError, KeyError, subprocess.SubprocessError) as error:
+    print(json.dumps({'ok': False, 'error': 'The Git update could not complete. Your local work and recovery references are preserved.', 'status': 409, 'diagnostic': diagnostic_error(error)}))

@@ -5,6 +5,12 @@
 - [x] Restore of any same-mode backup with cross-installation warnings: staged recovered root, session revocation, preserved newer preview origins, Sprite reservation report, restart-and-swap with startup completion, retained replaced root, discard while pending.
 - [x] Integration tests with a real demo-mode application and the browser Backups check at phone/desktop/short widths in both themes.
 - [ ] Root integration, hosted restart-path acceptance on Fly and first live backup/restore rehearsal.
+## Deterministic participant rehearsal — local
+
+- [x] Add a per-person JSON Playwright runner for sign-in, exact project selection, dedicated team/workspace, hello file/Share, terminal ls, GLM MVP request, five-minute bounded completion loop, MVP Share and React ZIP inspection.
+- [x] Keep keys in environment variables, reconcile shared history before retries, reject reused workspaces, and retain sanitized milestone/result evidence without executing participant code locally.
+- [x] Full check passed with two workers: 662 tests, two opt-in skips, lint, both typechecks and build. Browser matrix passed at desktop/360/390/short sizes in both themes, including streamed completion text, a transient Share failure and a lost successful Share response; screenshots inspected.
+- [x] Corrected single-person live acceptance passed in 7m18s: exact hello/MVP shared commits, first five-minute completion question, successful assistant sentinel and verified 20-entry React ZIP. Five HTTP502 and one HTTP409 console errors were retained; this is functional acceptance, not a clean-console or concurrency claim. Initial trial was interrupted and its dedicated OpenCode process stopped, retaining files/Git. See [scripted rehearsal](docs/scripted-participant-load.md).
 
 ## Administrative Sprite deletion reset — deployed `6c48d0f`
 
@@ -72,7 +78,8 @@ Current checkpoint, validation and next-session priorities: [handoff](docs/hando
 
 - [ ] Remove arbitrary Sprite allocation blockers while retaining safe bounded concurrency and owner/pause isolation; address preview-origin capacity without origin reuse.
 - [ ] Expose initial disk sizing and optional bounded auto-expansion in repeatable setup.
-- [ ] Measure realistic 60-participant load, audit polling/Git/database/memory/transport/storage bottlenecks, and implement evidenced fixes.
+- [x] Measured fifty-person load on the deployed demo (September 20, 2026 UTC): 17/50 passed; the management host's single event loop saturated on native I/O at ~25 concurrent people (235 KB uncompressed `/api/state` per 5 s poll per person, 12 Sprite CLI spawns/s of helper polling, 300–400 agent text deltas/s). See [scripted rehearsal](docs/scripted-participant-load.md).
+- [ ] Implement the evidenced fixes: slim, compressed and ETag-cached portal state with slower or pushed refresh; batched agent text deltas; idle backoff for per-person helper polling; event-loop delay and CPU telemetry in diagnostics. Re-run fifty people afterwards.
 - [ ] Exercise crash/restart and disk-full failure/recovery using isolated fixtures; report measured limits and remaining live acceptance.
 
 ## Editable event configuration — live
@@ -272,6 +279,7 @@ Deployment setup, exact commands, constraints and validation gaps: [Fly deployme
 - [x] Reconcile missing/stalled SSE and uncertain ACKs without resubmitting inference; Stop drains delayed acceptance through a subsequent native abort and idle check. Distinguish provider failures from local runtime transport loss.
 - [x] Complete final local runner/browser/context checks and the opt-in Node 24.18.0 / OpenCode 1.18.31 loopback turn beyond 300 seconds, including Tasks renewal; see [evidence and limits](docs/opencode-turns.md).
 - [x] Correct independent-review findings: recover durable current-answer text without duplicate streaming/replay, and validate message/status evidence before terminal hold release; actual-runner regressions added.
+- [x] End a turn whose native run stops at a tool step (dismissed question) once idle with no pending tool part, and keep Stop converging when each abort republishes idle events; deployed stuck-turn diagnosis in artifacts/participant-load/backend-20260920b, tracker and actual-runner regressions plus interrupted-journal restart coverage added.
 - [ ] Reviewer reread, root integration and separately authorized deployment/live acceptance. No participant resources or paid inference used by this workstream.
 
 ## Corrective owner recovery for missing legacy reservations
@@ -281,3 +289,13 @@ Deployment setup, exact commands, constraints and validation gaps: [Fly deployme
 - [x] Expose Rebuild from shared work with private-state-loss confirmation; cancel, reload, status and ordinary wake never recreate.
 - [x] Validate local HTTP/provider races and phone/desktop/short viewport confirmation/cancel/reload: full check, 71 focused tests (38 recovery cases), provisioning browser and complete mobile matrix passed.
 - [ ] Root review/integration/deployment and physical-device acceptance. No live recovery mutations authorized in this worktree.
+
+## Concurrent scripted participant diagnostics
+
+- [x] Add a bounded five-person JSON cohort runner with independent browsers, per-person evidence and browser/backend request correlation.
+- [x] Add opt-in structured request/Sprite diagnostics, safe command failure classification and private helper exception metadata; preserve operation results and omit keys/content/raw command output.
+- [x] Deployed diagnostics to the existing demo Machine/volume and ran five dedicated people on different projects (September 20, 2026 UTC). Four passed end to end with zero browser HTTP errors; one failed its completion loop through a scripted-observer defect while the platform completed the turn and then paused the idle workspace as designed. Correlated one 429 (own provisioning cap), four 423 (idle hold) and one transient 502 (`sprite exec` 30 s CLI timeout during agent prepare on a just-resumed Sprite; retry succeeded). No 409 reproduced. See [scripted rehearsal](docs/scripted-participant-load.md).
+- [x] Participant runner locates turns by their fresh user echo, coalesces streamed text, persists observed agent events and fails fast when the workspace is held or the agent connection ends; cohort launcher accepts up to fifteen people.
+- [x] Provisioning concurrency raised to 5 in the operator setup; the app retries busy preparation and busy resume automatically with a waiting status instead of an error and Retry button.
+- [x] Diagnostics now record agent/terminal WebSocket close codes and durations, agent runner exits, idle releases and preparation attempts; agent preparation retries up to three times server-side with backoff and once more quietly in the app.
+- [x] Fifteen-person concurrent deployed acceptance passed 15/15 (September 20, 2026 UTC) with provisioning limit 5: fourteen busy responses retried transparently, no 502/409/423, Sprite command queue p95 8 ms. See [scripted rehearsal](docs/scripted-participant-load.md).

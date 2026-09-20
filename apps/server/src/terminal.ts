@@ -1,6 +1,7 @@
 import * as pty from "node-pty";
 import type { WebSocket } from "ws";
 import { z } from "zod";
+import { diagnostic } from "../../../packages/diagnostics/src/index.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 
 const inputSchema = z.discriminatedUnion("type", [
@@ -82,6 +83,16 @@ export class TerminalSessions {
     }
     const active = session;
     active.clients.add(socket);
+    const attachedAt = Date.now();
+    socket.once("close", (code: number) =>
+      diagnostic({
+        event: "ws",
+        channel: "terminal",
+        workspaceId: id,
+        code,
+        durationMs: Date.now() - attachedAt,
+      }),
+    );
     socket.send(JSON.stringify({ type: "output", data: active.history }));
     const check = async () => {
       try {

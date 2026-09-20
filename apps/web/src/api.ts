@@ -1,3 +1,13 @@
+// HTTP status lets callers retry transient busy/upstream responses automatically.
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+export const apiStatus = (error: unknown) => (error instanceof ApiError ? error.status : undefined);
 export async function api<T>(path: string, method = "GET", body?: object): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method,
@@ -26,7 +36,10 @@ export async function api<T>(path: string, method = "GET", body?: object): Promi
   if (!response.ok) {
     const error =
       result && typeof result === "object" && "error" in result ? result.error : undefined;
-    throw new Error(typeof error === "string" && error.trim() ? error : unavailable);
+    throw new ApiError(
+      typeof error === "string" && error.trim() ? error : unavailable,
+      response.status,
+    );
   }
   return result as T;
 }

@@ -52,6 +52,111 @@ describe("OpenCode turn reconciliation", () => {
     expect(tracker.result).toEqual({ outcome: "success", cost: 1.5 });
   });
 
+  it("finishes a run whose last step stopped at a dismissed question once idle", () => {
+    // Recorded shape: the question tool ended with status "error" ("The user
+    // dismissed this question"), the assistant kept finish "tool-calls" without
+    // an error, and GET /session/status omitted the session (idle).
+    const question = (status: string) => ({
+      id: "part-question",
+      sessionID,
+      messageID: "assistant-current",
+      type: "tool",
+      state: { status },
+    });
+    const records = (status: string) => [
+      { info: user },
+      { info: assistant({ finish: "tool-calls", cost: 0.02 }), parts: [question(status)] },
+    ];
+    const tracker = new OpenCodeTurnTracker(sessionID, userMessageID);
+    tracker.markSubmissionStarted();
+    tracker.markAccepted();
+    // While the question is still open the session is busy; an odd idle read
+    // must not end the turn either while a tool part is pending or running.
+    tracker.reconcile(undefined, records("running"));
+    tracker.reconcile({ type: "busy" }, undefined, true);
+    expect(tracker.result).toBeUndefined();
+    tracker.reconcile(undefined, records("running"));
+    tracker.reconcile(undefined, undefined, true);
+    expect(tracker.result).toBeUndefined();
+
+    tracker.reconcile(undefined, records("error"));
+    tracker.reconcile(undefined, undefined, true);
+    expect(tracker.result).toEqual({ outcome: "success", cost: 0.02 });
+  });
+
+  it("keeps a tool step open while streamed tool activity is pending", () => {
+    const tracker = new OpenCodeTurnTracker(sessionID, userMessageID);
+    tracker.markAccepted();
+    tracker.reconcile(undefined, [{ info: user }, { info: assistant({ finish: "tool-calls" }) }]);
+    tracker.observe({
+      type: "message.part.updated",
+      properties: {
+        sessionID,
+        part: { type: "tool", messageID: "assistant-current", state: { status: "running" } },
+      },
+    });
+    tracker.reconcile(undefined, undefined, true);
+    expect(tracker.result).toBeUndefined();
+
+    // The next durable read shows every tool of this turn finished.
+    tracker.reconcile(undefined, [
+      { info: user },
+      {
+        info: assistant({ finish: "tool-calls" }),
+        parts: [{ type: "tool", messageID: "assistant-current", state: { status: "completed" } }],
+      },
+    ]);
+    tracker.reconcile(undefined, undefined, true);
+    expect(tracker.result).toEqual({ outcome: "success", cost: undefined });
+  });
+
+  it("does not let a stale idle read finish a tool step that a later message continued", () => {
+    const tracker = new OpenCodeTurnTracker(sessionID, userMessageID);
+    tracker.markAccepted();
+    tracker.reconcile(undefined, [
+      { info: user },
+      { info: assistant({ id: "assistant-tool", finish: "tool-calls" }), parts: [] },
+    ]);
+    const revision = tracker.eventRevision;
+    // A new assistant step arrives while the status response is in flight.
+    tracker.observe({
+      type: "message.updated",
+      properties: { info: assistant({ id: "assistant-next" }) },
+    });
+    expect(tracker.eventRevision).not.toBe(revision);
+    tracker.reconcile(undefined, undefined, true);
+    expect(tracker.result).toBeUndefined();
+  });
+
+  it("ignores the idle notifications a native abort publishes when checking read staleness", () => {
+    const tracker = new OpenCodeTurnTracker(sessionID, userMessageID);
+    tracker.markAccepted();
+    tracker.reconcile(undefined, [{ info: user }, { info: assistant({ finish: "tool-calls" }) }]);
+    tracker.requestStop();
+    tracker.confirmStop();
+    const revision = tracker.eventRevision;
+    tracker.observe({
+      type: "session.status",
+      properties: { sessionID, status: { type: "idle" } },
+    });
+    tracker.observe({ type: "session.idle", properties: { sessionID } });
+    expect(tracker.eventRevision).toBe(revision);
+    tracker.observe({
+      type: "session.status",
+      properties: { sessionID: "other-session", status: { type: "busy" } },
+    });
+    expect(tracker.eventRevision).toBe(revision);
+    tracker.observe({
+      type: "session.status",
+      properties: { sessionID, status: { type: "busy" } },
+    });
+    expect(tracker.eventRevision).toBe(revision + 1);
+
+    tracker.observe({ type: "session.idle", properties: { sessionID } });
+    tracker.reconcile(undefined, undefined, true);
+    expect(tracker.result).toEqual({ outcome: "stopped" });
+  });
+
   it("returns a real provider error only at the current turn's idle boundary", () => {
     const tracker = new OpenCodeTurnTracker(sessionID, userMessageID);
     tracker.markAccepted();

@@ -11,6 +11,16 @@ import subprocess
 import sys
 import tempfile
 
+
+def diagnostic_error(error):
+    trace = error.__traceback__
+    while trace and trace.tb_next:
+        trace = trace.tb_next
+    kinds = {'ValueError', 'KeyError', 'FileNotFoundError', 'PermissionError', 'OSError', 'CalledProcessError', 'TimeoutExpired', 'UnicodeDecodeError'}
+    kind = type(error).__name__
+    return {'exception': kind if kind in kinds else 'other', 'line': trace.tb_lineno if trace else 0,
+            'errno': getattr(error, 'errno', None), 'exitCode': getattr(error, 'returncode', None)}
+
 ROOT = pathlib.Path('/home/sprite/project')
 LIMIT = 25 * 1024 * 1024
 TREE_LIMIT = 50 * 1024 * 1024
@@ -313,6 +323,6 @@ try:
                 raise ValueError('File unavailable')
     print(json.dumps({'ok': True, 'value': value}))
 except ValueError as error:
-    print(json.dumps({'ok': False, 'error': str(error), 'status': 409}))
-except (OSError, KeyError, subprocess.SubprocessError):
-    print(json.dumps({'ok': False, 'error': 'Workspace scan or transfer could not complete. Files may have changed, a path may be excluded, or a size limit was reached. Refresh to reconcile.', 'status': 409}))
+    print(json.dumps({'ok': False, 'error': str(error), 'status': 409, 'diagnostic': diagnostic_error(error)}))
+except (OSError, KeyError, subprocess.SubprocessError) as error:
+    print(json.dumps({'ok': False, 'error': 'Workspace scan or transfer could not complete. Files may have changed, a path may be excluded, or a size limit was reached. Refresh to reconcile.', 'status': 409, 'diagnostic': diagnostic_error(error)}))
