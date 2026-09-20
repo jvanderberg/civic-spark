@@ -10,6 +10,7 @@ import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 import { type TeamStatus, teamUpdateSchema } from "../../../packages/workspace/src/team-git.ts";
 import type { AgentSessions } from "./agents.ts";
+import { type ChangeNotifier, silentNotifier } from "./events.ts";
 
 function send(reply: FastifyReply, result: Result<unknown>) {
   return result.ok
@@ -26,6 +27,7 @@ export function registerTeamUpdateRoutes(
   agents: AgentSessions,
   busy: Set<string>,
   client = new SpriteClient(),
+  notify: ChangeNotifier = silentNotifier,
 ) {
   const cache = new Map<
     string,
@@ -138,6 +140,8 @@ export function registerTeamUpdateRoutes(
       busy.delete(r.params.id);
       agents.setGitUpdating(r.params.id, false);
       invalidate(r.params.id);
+      notify.changed(r.params.id, "files");
+      notify.changed(r.params.id, "team");
       if (temp) rmSync(temp, { recursive: true, force: true });
     }
   });
@@ -157,14 +161,15 @@ export function registerTeamUpdateRoutes(
           .code(409)
           .send({ error: "Wait for the agent turn to finish before checking its merge." });
       invalidate(r.params.id);
-      return send(
-        reply,
+      const verified =
         p.value.spriteStatus === "local"
           ? service.verifyLocalTeamUpdate(actor(r.actor), r.params.id, input.head, input.remote)
           : p.value.spriteStatus === "ready" && p.value.spriteName
             ? await client.verifyTeamUpdate(p.value.spriteName, input.head, input.remote)
-            : { ok: false, error: "Wait for the workspace to be ready.", status: 409 },
-      );
+            : { ok: false as const, error: "Wait for the workspace to be ready.", status: 409 };
+      notify.changed(r.params.id, "files");
+      notify.changed(r.params.id, "team");
+      return send(reply, verified);
     },
   );
   return { invalidate };

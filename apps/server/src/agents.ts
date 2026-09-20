@@ -52,6 +52,7 @@ export class AgentSessions {
     private client = new SpriteClient(),
     private allowed: (id: string) => boolean = () => true,
     private activity: (id: string) => void = () => {},
+    private changed: (id: string, scope: "files" | "team", coalesceMs?: number) => void = () => {},
   ) {}
   private sessions = new Map<string, Session>();
   private preparing = new Map<string, Promise<boolean>>();
@@ -237,6 +238,13 @@ export class AgentSessions {
           (event.type === "status" && event.text === "Working")
         )
           active.pendingPrompt = false;
+        // Tool steps usually write files; announce them at most every 5 s. A
+        // finished turn may also have committed, so the team status is stale.
+        if (!event.replayed && event.type === "tool") this.changed(id, "files", 5000);
+        if (!event.replayed && event.type === "done") {
+          this.changed(id, "files");
+          this.changed(id, "team");
+        }
         const frame = JSON.stringify(event);
         for (const client of active.clients) {
           if (client.bufferedAmount > 2 * agentWireByteLimit)
