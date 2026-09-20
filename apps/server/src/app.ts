@@ -52,6 +52,7 @@ import { WorkspaceLifecycle } from "./lifecycle.ts";
 import { inspectIdleWorkspaceForWake } from "./missing-workspace.ts";
 import { prototypeSignIn } from "./prototype-auth.ts";
 import { WorkspaceProvisioning } from "./provisioning.ts";
+import { createRelay } from "./relay/index.ts";
 import { installResponseEncoding } from "./response-encoding.ts";
 import { registerTeamUpdateRoutes } from "./team-updates.ts";
 import { TerminalSessions } from "./terminal.ts";
@@ -113,11 +114,24 @@ export async function createApp(
   app.addHook("onError", async (request) => releaseBody(request));
   await app.register(websocket, { options: { maxPayload: 6 * 1024 * 1024 } });
   const allowed = (id: string) => service.executionAllowed(id).ok;
-  const client: SpriteClient = new SpriteClient(undefined, (name, passive) =>
-    lifecycle.acquire(name, passive),
+  // Relay workers own the Sprite CLI children so their pipes stay off this loop;
+  // CIVIC_SPARK_RELAY_WORKERS=0 keeps every child in-process.
+  const relay = spritesEnabled ? createRelay() : undefined;
+  const client: SpriteClient = new SpriteClient(
+    undefined,
+    (name, passive) => lifecycle.acquire(name, passive),
+    undefined,
+    undefined,
+    undefined,
+    relay?.transport,
   );
-  const terminals = new TerminalSessions(allowed, client, (id) => lifecycle.touch(id));
-  const agents = new AgentSessions(client, allowed, (id) => lifecycle.touch(id));
+  const terminals = new TerminalSessions(
+    allowed,
+    client,
+    (id) => lifecycle.touch(id),
+    relay?.terminals,
+  );
+  const agents = new AgentSessions(client, allowed, (id) => lifecycle.touch(id), relay?.agents);
   const sharing = new Set<string>();
   const integrations = new WorkspaceIntegrations(service, root, sharing, client);
   const lifecycle: WorkspaceLifecycle = new WorkspaceLifecycle(
@@ -250,6 +264,7 @@ export async function createApp(
     agents.close();
     integrations.close();
     await client.close();
+    await relay?.close();
     await provisioning.close();
     service.close();
     authentication.close();
@@ -1015,5 +1030,5 @@ export async function createApp(
         : reply.sendFile("index.html"),
     );
   }
-  return { app, service, authentication, backups };
+  return { app, service, authentication, backups, relay };
 }

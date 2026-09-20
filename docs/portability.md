@@ -10,7 +10,7 @@ The portable Git contract is standard Smart HTTP over HTTPS, with mutually authe
 | --- | --- | --- |
 | Browser UI | React/Vite static assets | Any static host, including Cloudflare |
 | Control plane | Node/Fastify and local SQLite | HTTP API and domain operations; persistence/runtime adaptation required for Workers |
-| Workspace runtime | Authenticated Sprite CLI adapter; one persistent stdin/stdout helper session per Sprite for read-only polls | Provision, execute, read/write files, checkpoint, destroy |
+| Workspace runtime | Authenticated Sprite CLI adapter; one persistent stdin/stdout helper session per Sprite for read-only polls; CLI children hosted in relay worker processes | Provision, execute, read/write files, checkpoint, destroy |
 | Repository service | Local bare Git; planned HTTPS Git gateway on persistent volume | Git remote URL, authenticated Git protocol, authorization policy, backup/restore |
 | Access policy | Planned event CA and participant/team/ref registry | Independent of network location and provider-specific identity |
 | Async orchestration | Local in-process prototype | Durable job state with provider-specific queue/worker adapter |
@@ -24,6 +24,10 @@ The UI can move independently. A Cloudflare-hosted control plane could use Worke
 An all-Cloudflare backend needs a repository durability design. Cloudflare Containers run Linux workloads but their disks are ephemeral; Durable Object storage persists separately. A running bare Git repository therefore cannot rely on container disk alone. Do not assume an object-store FUSE mount provides Git's required locking/atomic update semantics without testing. An external durable Git service is the simpler initial port. [Cloudflare container architecture](https://developers.cloudflare.com/containers/concepts/architecture/), [container and Durable Object storage](https://developers.cloudflare.com/containers/reference/container-class/)
 
 Cloudflare also offers client certificate validation, but accepting our own event CA and enforcing revocation requires checking the relevant product/plan capabilities at implementation time. The portable baseline remains our own mTLS-capable Git service. [Cloudflare client certificates](https://developers.cloudflare.com/ssl/client-certificates/)
+
+## Process model
+
+The management server is one Node process for HTTP, WebSocket clients, authorization, leases and idle release, plus a small fixed pool of relay worker processes (`CIVIC_SPARK_RELAY_WORKERS`, default 2, `0` for a single process) that own the runtime CLI children: agent runners, terminal PTYs, helper sessions and one-shot commands. Workers are ordinary `child_process.fork` children speaking Node's built-in IPC channel with structured serialization; there is no socket path, shared memory, container sidecar or provider service involved, so any host that can run Node and fork processes supports the same layout. Each workspace maps to one worker by a stable hash of its id, all state in a worker is disposable, and a lost worker is restarted while affected browser sessions reconnect through the existing paths. A second runtime adapter keeps the same seam: `SpriteTransport` in `packages/sprites` and the agent/terminal backends in `apps/server` are the only places that know where a child runs.
 
 ## Runtime lifecycle policy
 

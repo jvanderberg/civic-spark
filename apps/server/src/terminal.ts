@@ -1,8 +1,8 @@
-import * as pty from "node-pty";
 import type { WebSocket } from "ws";
 import { z } from "zod";
 import { count, diagnostic } from "../../../packages/diagnostics/src/index.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
+import { TerminalRunner } from "./relay/terminal-runner.ts";
 
 const inputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("input"), data: z.string().max(32000) }),
@@ -12,24 +12,62 @@ const inputSchema = z.discriminatedUnion("type", [
     rows: z.number().int().min(3).max(150),
   }),
 ]);
+export type TerminalSessionEvents = {
+  /** One coalesced output frame to fan out to attached clients. */
+  output(frame: string): void;
+  /** The PTY is gone; `startFailed` when it never started (relay only). Called once. */
+  ended(startFailed: boolean): void;
+};
+/** One terminal PTY as seen by the session manager, wherever its process lives. */
+export interface TerminalHandle {
+  /** Count one more attached client and deliver the retained history to it. */
+  attach(deliver: (history: string) => void): void;
+  detach(): void;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+}
+export interface TerminalBackend {
+  /** May throw synchronously when the PTY cannot be spawned in-process. */
+  start(id: string, sprite: string, events: TerminalSessionEvents): TerminalHandle;
+}
+/** Spawns and reads the PTY in this process. */
+export const localTerminalBackend: TerminalBackend = {
+  start(_id, sprite, events) {
+    const runner = new TerminalRunner(sprite, {
+      output: events.output,
+      ended: () => events.ended(false),
+    });
+    return {
+      attach(deliver) {
+        runner.clients += 1;
+        deliver(runner.history());
+      },
+      detach() {
+        runner.clients -= 1;
+      },
+      write: (data) => runner.write(data),
+      resize: (cols, rows) => runner.resize(cols, rows),
+      kill: () => runner.kill(),
+    };
+  },
+};
 type Session = {
-  process: pty.IPty;
-  chunks: string[];
-  bytes: number;
-  pendingOutput: string;
-  flushTimer?: NodeJS.Timeout;
+  handle: TerminalHandle;
   detachTimer?: NodeJS.Timeout;
+  /** Every attached socket, including those still waiting for history. */
   clients: Set<WebSocket>;
+  /** Sockets that received history and now get live output. */
+  live: Set<WebSocket>;
   lastUsedAt: number;
 };
-const historyLimit = 200000;
-const outputCoalesceMs = 16;
 const detachAfterMs = 30000;
 export class TerminalSessions {
   constructor(
     private allowed: (id: string) => boolean = () => true,
     private client = new SpriteClient(),
     private touch: (id: string) => void = () => {},
+    private backend: TerminalBackend = localTerminalBackend,
   ) {}
   private sessions = new Map<string, Session>();
   attach(id: string, sprite: string, socket: WebSocket, authorized: () => Promise<boolean>) {
@@ -37,92 +75,47 @@ export class TerminalSessions {
     if (!/^civic-spark-[a-z0-9-]{1,45}$/.test(sprite)) throw new Error("Invalid Sprite");
     let session = this.sessions.get(id);
     if (!session) {
-      const org = process.env.CIVIC_SPARK_SPRITE_ORG;
-      const args = [
-        ...(org ? ["-o", org] : []),
-        "-s",
-        sprite,
-        "exec",
-        "--no-port-forward",
-        "--tty",
-        "--",
-        "bash",
-        "-lc",
-        "export PATH=/home/sprite/.civic-spark-agent/bin:/home/sprite/.civic-spark-agent/node_modules/.bin:$PATH; cd /home/sprite/project && printf 'Civic Spark terminal connected\\r\\n' && exec tmux new-session -A -s civic-spark-workspace \\; set-option -g status off",
-      ];
-      // Only this fixed Sprite CLI is launched on the host. User input goes to the remote PTY.
       const lease = this.client.lease(sprite, true);
-      let proc: pty.IPty;
+      const clients = new Set<WebSocket>();
+      const live = new Set<WebSocket>();
+      let started: Session | undefined;
+      let ended = false;
+      const abort = () => started?.handle.kill();
+      let handle: TerminalHandle;
       try {
-        proc = pty.spawn("sprite", args, {
-          name: "xterm-256color",
-          cols: 100,
-          rows: 28,
-          env: { ...process.env, TERM: "xterm-256color" },
+        handle = this.backend.start(id, sprite, {
+          output: (frame) => {
+            for (const client of live) {
+              if (client.bufferedAmount > 1024 * 1024) {
+                client.close(1013, "Reconnect to catch up");
+                continue;
+              }
+              if (client.readyState === 1) {
+                client.send(frame);
+                count("terminalFrames");
+              }
+            }
+          },
+          ended: (startFailed) => {
+            ended = true;
+            lease?.signal.removeEventListener("abort", abort);
+            lease?.release();
+            if (started?.detachTimer) clearTimeout(started.detachTimer);
+            if (started && this.sessions.get(id) === started) this.sessions.delete(id);
+            for (const client of clients)
+              if (startFailed) client.close(1011, "Sprite terminal could not start");
+              else client.close(1000, "Terminal detached; reconnect to resume");
+          },
         });
       } catch (error) {
         lease?.release();
         throw error;
       }
-      const abort = () => proc.kill();
+      if (ended) throw new Error("Sprite terminal could not start");
+      started = { handle, clients, live, lastUsedAt: Date.now() };
       lease?.signal.addEventListener("abort", abort, { once: true });
-      session = {
-        process: proc,
-        chunks: [],
-        bytes: 0,
-        pendingOutput: "",
-        clients: new Set(),
-        lastUsedAt: Date.now(),
-      };
-      const active = session;
-      this.sessions.set(id, active);
-      const flush = () => {
-        active.flushTimer = undefined;
-        const data = active.pendingOutput;
-        active.pendingOutput = "";
-        if (!data) return;
-        const frame = JSON.stringify({ type: "output", data });
-        for (const client of active.clients) {
-          if (client.bufferedAmount > 1024 * 1024) {
-            client.close(1013, "Reconnect to catch up");
-            continue;
-          }
-          if (client.readyState === 1) {
-            client.send(frame);
-            count("terminalFrames");
-          }
-        }
-      };
-      proc.onData((data) => {
-        count("terminalChunks");
-        count("terminalBytes", data.length);
-        // Output is not use: tmux status refreshes and TUIs emit forever, which
-        // would block idle release and keep the Sprite in billed running state.
-        // History is a bounded ring of chunks with terminal queries removed so a
-        // replay never triggers responses; live frames are coalesced per tick.
-        const cleaned = data
-          .replaceAll("\x1b[6n", "")
-          .replaceAll("\x1b]11;?\x1b\\", "")
-          .replaceAll("\x1b]11;?\x07", "");
-        active.chunks.push(cleaned);
-        active.bytes += cleaned.length;
-        while (active.bytes > historyLimit && active.chunks.length > 1) {
-          const first = active.chunks.shift() ?? "";
-          active.bytes -= first.length;
-        }
-        if (!active.clients.size) return;
-        active.pendingOutput += data;
-        if (!active.flushTimer) active.flushTimer = setTimeout(flush, outputCoalesceMs);
-      });
-      proc.onExit(() => {
-        lease?.signal.removeEventListener("abort", abort);
-        lease?.release();
-        if (active.flushTimer) clearTimeout(active.flushTimer);
-        if (active.detachTimer) clearTimeout(active.detachTimer);
-        if (this.sessions.get(id) === active) this.sessions.delete(id);
-        for (const client of active.clients)
-          client.close(1000, "Terminal detached; reconnect to resume");
-      });
+      session = started;
+      this.sessions.set(id, started);
     }
     const active = session;
     if (active.detachTimer) {
@@ -140,7 +133,11 @@ export class TerminalSessions {
         durationMs: Date.now() - attachedAt,
       }),
     );
-    socket.send(JSON.stringify({ type: "output", data: active.chunks.join("") }));
+    active.handle.attach((history) => {
+      if (!active.clients.has(socket)) return;
+      socket.send(JSON.stringify({ type: "output", data: history }));
+      active.live.add(socket);
+    });
     const check = async () => {
       try {
         if (
@@ -188,8 +185,8 @@ export class TerminalSessions {
           if (input.type === "input") {
             active.lastUsedAt = Date.now();
             this.touch(id);
-            active.process.write(input.data);
-          } else active.process.resize(input.cols, input.rows);
+            active.handle.write(input.data);
+          } else active.handle.resize(input.cols, input.rows);
         })
         .catch(() => socket.close(1008, "Invalid terminal message"));
     });
@@ -197,13 +194,14 @@ export class TerminalSessions {
     // the loop. Detach after a grace period; tmux keeps the shell for reattach.
     const detached = () => {
       clearInterval(timer);
-      active.clients.delete(socket);
+      if (active.clients.delete(socket)) active.handle.detach();
+      active.live.delete(socket);
       if (active.clients.size || active.detachTimer) return;
       active.detachTimer = setTimeout(() => {
         active.detachTimer = undefined;
         if (active.clients.size || this.sessions.get(id) !== active) return;
         this.sessions.delete(id);
-        active.process.kill();
+        active.handle.kill();
       }, detachAfterMs);
     };
     socket.on("close", detached);
@@ -217,13 +215,13 @@ export class TerminalSessions {
     const session = this.sessions.get(id);
     if (!session) return;
     for (const socket of session.clients) socket.close(1008, "Sprite paused; reload to resume");
-    session.process.kill();
+    session.handle.kill();
     this.sessions.delete(id);
   }
   close() {
     for (const session of this.sessions.values()) {
       for (const socket of session.clients) socket.close();
-      session.process.kill();
+      session.handle.kill();
     }
     this.sessions.clear();
   }

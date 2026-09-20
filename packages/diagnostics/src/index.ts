@@ -35,7 +35,15 @@ const recordSchema = z.object({
     "agent.prepare",
     "lifecycle.idle",
     "loop",
+    "relay", // Relay worker loop telemetry, emitted by that worker every ten seconds.
+    "relay.worker", // Relay worker start/exit as seen by the main process.
   ]),
+  worker: z.number().int().nonnegative().optional(), // Relay worker index.
+  restarts: z.number().int().nonnegative().optional(),
+  agents: z.number().int().nonnegative().optional(), // Sessions owned by a relay worker.
+  terminals: z.number().int().nonnegative().optional(),
+  helpers: z.number().int().nonnegative().optional(),
+  commands: z.number().int().nonnegative().optional(),
   bytes: z.number().int().nonnegative().optional(), // Response body bytes as sent.
   loopP50Ms: z.number().nonnegative().optional(),
   loopP99Ms: z.number().nonnegative().optional(),
@@ -56,7 +64,7 @@ const recordSchema = z.object({
   httpBytes: z.number().int().nonnegative().optional(),
   channel: z.enum(["agent", "terminal"]).optional(),
   transport: z.enum(["process", "session"]).optional(), // How a Sprite command reached the Sprite.
-  phase: z.enum(["start", "end"]).optional(), // Helper session lifecycle only.
+  phase: z.enum(["start", "end"]).optional(), // Helper session and relay worker lifecycle.
   code: z.number().int().optional(), // WebSocket close code only; reasons are never logged.
   attempt: z.number().int().positive().optional(),
   idleMs: z.number().nonnegative().optional(),

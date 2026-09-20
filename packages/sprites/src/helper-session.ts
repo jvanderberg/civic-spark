@@ -47,6 +47,23 @@ type Pending = {
   abort?: () => void;
 };
 const lost = () => new HelperSessionLost("Helper session ended");
+/** What `SpriteClient` needs from a helper session, whether it runs here or in a relay worker. */
+export interface HelperSessionLike {
+  readonly ready: Promise<void>;
+  readonly closed: Promise<HelperSessionEnd>;
+  readonly startedAt: number;
+  lastUsedAt: number;
+  readonly ended: boolean;
+  request(
+    script: string,
+    payload: unknown,
+    timeoutMs: number,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<HelperReply>;
+  ping(timeoutMs: number, signal?: AbortSignal): Promise<void>;
+  end(outcome: HelperSessionOutcome): void;
+}
 
 /**
  * One long-lived `sprite exec` running helper_session.py inside a Sprite.
@@ -54,7 +71,7 @@ const lost = () => new HelperSessionLost("Helper session ended");
  * time and byte limits and this side enforces a line limit and a deadline, so a
  * hung or oversized reply ends the session instead of blocking or growing memory.
  */
-export class HelperSession {
+export class HelperSession implements HelperSessionLike {
   readonly ready: Promise<void>;
   readonly closed: Promise<HelperSessionEnd>;
   readonly startedAt = performance.now();
