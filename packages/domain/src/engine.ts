@@ -423,6 +423,7 @@ export class WorkspaceEngine {
     source: string,
     commit: string,
     authorize: () => Promise<Result<unknown>>,
+    options: { replace?: boolean } = {},
   ): Promise<Result<Contribution>> {
     const participant = this.state.participants.find((p) => p.id === id);
     if (!participant) return fail("Workspace not found", 404);
@@ -435,8 +436,13 @@ export class WorkspaceEngine {
           const prior = this.state.contributions.find(
             (c) => c.participantId === id && c.commit === commit && c.status === "accepted",
           );
-          if (prior) return ok(structuredClone(prior));
           const repo = this.repoPath(p.teamId);
+          if (prior) {
+            // Replacement re-publishes a known commit only when main has moved away from it.
+            if (!options.replace) return ok(structuredClone(prior));
+            const head = (await gitAsync(repo, ["rev-parse", "main"])).toString().trim();
+            if (head === commit) return ok(structuredClone(prior));
+          }
           const row = this.db
             .prepare("SELECT body FROM publication_intents WHERE workspace=? AND commit_id=?")
             .get(id, commit);
@@ -450,6 +456,7 @@ export class WorkspaceEngine {
               repo,
               commit,
               ref: `refs/civic-spark/prepared/${contributionId}`,
+              replace: options.replace === true,
             });
             const access = await authorize();
             if (!access.ok) return access;
@@ -476,7 +483,8 @@ export class WorkspaceEngine {
           }
           const current = (await gitAsync(repo, ["rev-parse", "main"])).toString().trim();
           let alreadyPublished = current === commit;
-          if (!alreadyPublished && current !== intent.main) {
+          // Replacement makes main equal this commit even when main already contains it.
+          if (!alreadyPublished && current !== intent.main && !options.replace) {
             try {
               await gitAsync(repo, ["merge-base", "--is-ancestor", commit, current]);
               alreadyPublished = true;
@@ -486,14 +494,31 @@ export class WorkspaceEngine {
           }
           const access = await authorize(); // Immediately before the asynchronous compare-and-swap.
           if (!access.ok) return access;
+          let replaced: string | undefined;
           if (!alreadyPublished) {
-            if (current !== intent.main)
+            if (current !== intent.main && !options.replace)
               return fail(
                 "Your local commit is saved, but the team repository changed. Get team updates before sharing again.",
                 409,
               );
+            if (options.replace) {
+              const fastForward = await gitAsync(repo, [
+                "merge-base",
+                "--is-ancestor",
+                current,
+                commit,
+              ]).then(
+                () => true,
+                () => false,
+              );
+              if (!fastForward) {
+                // The displaced team head stays reachable under a dated backup ref.
+                replaced = `refs/civic-spark/replaced/${stamp().replace(/[-:.]/g, "").slice(0, 15)}-${current.slice(0, 12)}`;
+                await gitAsync(repo, ["update-ref", replaced, current]);
+              }
+            }
             try {
-              await gitAsync(repo, ["update-ref", "refs/heads/main", commit, intent.main]);
+              await gitAsync(repo, ["update-ref", "refs/heads/main", commit, current]);
             } catch {
               // A transport/process failure is uncertain, not permission to repeat a write.
               const observed = (await gitAsync(repo, ["rev-parse", "main"])).toString().trim();
@@ -508,7 +533,12 @@ export class WorkspaceEngine {
           // so an explicit retry can reconcile it without re-publishing or rewriting.
           const contribution = intent.contribution;
           this.state.contributions.push(contribution);
-          this.record(p.eventId, `${p.name} shared “${contribution.title}”.`);
+          this.record(
+            p.eventId,
+            replaced
+              ? `${p.name} replaced the team repository with “${contribution.title}”. The previous team version is kept at ${replaced}.`
+              : `${p.name} shared “${contribution.title}”.`,
+          );
           this.db
             .prepare("DELETE FROM publication_intents WHERE workspace=? AND commit_id=?")
             .run(id, commit);

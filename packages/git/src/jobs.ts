@@ -15,6 +15,8 @@ export const gitJobSchema = z.discriminatedUnion("operation", [
     repo: z.string(),
     commit: z.string().regex(/^[a-f0-9]{40}$/),
     ref: z.string().regex(/^refs\/civic-spark\/prepared\/[a-f0-9-]{36}$/),
+    // Explicit, confirmed replacement: the commit may diverge from team main.
+    replace: z.boolean().optional(),
   }),
 ]);
 export type GitJob = z.infer<typeof gitJobSchema>;

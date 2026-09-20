@@ -7,6 +7,7 @@ import { chromium } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { git } from "../packages/git/src/repository.ts";
+import { WorkspaceFiles } from "../packages/workspace/src/files.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 import { waitEditorText, writeEditor } from "./browser-editor.ts";
 
@@ -249,9 +250,91 @@ try {
   await page.mouse.move(0, 0);
   await page.locator(".workspace-toast").waitFor({ state: "hidden", timeout: 10000 });
   assert.equal(shares, 2);
+  // Ignored build output is not a change and does not enable Share.
+  mkdirSync(join(dir, "scratch"), { recursive: true });
+  writeFileSync(join(dir, "scratch", "output.txt"), "BUILD OUTPUT\n");
+  await page.getByRole("button", { name: "Refresh changes", exact: true }).click();
+  await page.getByText("No changes to share.", { exact: true }).waitFor();
+  assert.equal(await page.locator(".file-diff").count(), 0);
+  // A teammate publishes first: Share refuses, and the typed-confirmation replacement
+  // makes the team repository match this workspace while keeping the displaced head.
+  const teammate = await testIdentity(authentication, "Changes Teammate");
+  assert(teammate.actor);
+  unwrap(service.transition(identity.actor, event.id, "registration"));
+  const theirs = unwrap(service.joinTeam(teammate.actor, team.team.id));
+  const theirDir = service.workspacePath(theirs.id);
+  writeFileSync(join(theirDir, "teammate.txt"), "Teammate work\n");
+  const theirCommit = unwrap(
+    service.shareLocal(
+      teammate.actor,
+      theirs.id,
+      "Teammate work",
+      new WorkspaceFiles(theirDir).changes().revision ?? "",
+    ),
+  ).commit;
+  writeFileSync(join(dir, "mine.txt"), "My work\n");
+  await page.getByRole("button", { name: "Refresh changes", exact: true }).click();
+  await page.locator(".file-diff summary").filter({ hasText: "mine.txt" }).waitFor();
+  await page.getByLabel("Commit message", { exact: true }).fill("Escape hatch");
+  await page.getByLabel("Commit message", { exact: true }).press("Enter");
+  await page
+    .locator(".workspace-toast")
+    .getByRole("alert")
+    .filter({ hasText: /team repository/ })
+    .waitFor();
+  await page.getByRole("button", { name: "Dismiss notification" }).click();
+  const replaceButton = page.getByRole("button", {
+    name: "Replace team repository",
+    exact: true,
+  });
+  const confirmation = page.getByLabel("Type YES to confirm", { exact: true });
+  await page.getByText("Replace the team repository with this workspace").click();
+  await confirmation.fill("yes");
+  assert.equal(await replaceButton.isDisabled(), true, "Only the exact word enables it");
+  await confirmation.fill("YES");
+  assert.equal(await replaceButton.isEnabled(), true);
+  await replaceButton.scrollIntoViewIfNeeded();
+  const replaceBounds = await replaceButton.boundingBox();
+  assert(
+    replaceBounds &&
+      replaceBounds.y >= 0 &&
+      replaceBounds.y + replaceBounds.height <= 844 &&
+      replaceBounds.x + replaceBounds.width <= 390 &&
+      replaceBounds.height >= 34,
+    "Replace control reachable on a phone",
+  );
+  await page.screenshot({
+    path: join(artifacts, "changes-replace-mobile.png"),
+    animations: "disabled",
+  });
+  await replaceButton.click();
+  await page
+    .locator(".workspace-toast")
+    .getByRole("status")
+    .filter({ hasText: "team repository now matches" })
+    .waitFor();
+  const myHead = git(dir, ["rev-parse", "HEAD"]).toString().trim();
+  const repo = join(root, "repos", `${team.team.id}.git`);
+  assert.equal(git(repo, ["rev-parse", "main"]).toString().trim(), myHead);
+  assert.deepEqual(
+    git(repo, ["for-each-ref", "--format=%(objectname)", "refs/civic-spark/replaced/"])
+      .toString()
+      .trim()
+      .split("\n"),
+    [theirCommit],
+  );
+  assert.equal(git(dir, ["log", "-1", "--format=%s"]).toString().trim(), "Escape hatch");
+  assert.equal(
+    await page.locator(".changes-replace").evaluate((node) => (node as HTMLDetailsElement).open),
+    false,
+    "The escape hatch closes after use",
+  );
+  assert.equal(shares, 4);
+  await page.mouse.move(0, 0);
+  await page.locator(".workspace-toast").waitFor({ state: "hidden", timeout: 10000 });
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: .gitignore native-history Changes, phone editor/save, exact descendant Share; long diff wheel/keyboard scrolling, light/dark 360/390/short layouts, compact commit controls, dismissible/expiring toasts, clean console and real Git commit message.",
+    "PASS: .gitignore native-history Changes, ignored build output hidden, phone editor/save, exact descendant Share, refused diverged Share and typed-YES team replacement with backup ref; long diff wheel/keyboard scrolling, light/dark 360/390/short layouts, compact commit controls, dismissible/expiring toasts, clean console and real Git commit message.",
   );
 } finally {
   await browser.close();

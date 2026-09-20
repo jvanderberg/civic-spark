@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { createTwoFilesPatch } from "diff";
-import { git } from "../../git/src/repository.ts";
+import { git, ignoredUntracked } from "../../git/src/repository.ts";
 import {
   type Changes,
   DIFF_FILE_LIMIT,
@@ -156,6 +156,9 @@ export class WorkspaceFiles {
       }
     };
     walk(this.root);
+    // Build output and caches that .gitignore excludes are not changes, do not
+    // move the preview fingerprint, and are never staged by Share.
+    for (const path of ignoredUntracked(this.root, Object.keys(current))) delete current[path];
     const revision = hash(Buffer.from(JSON.stringify([base, head, current, skipped])));
     return { base, head, before, current, skipped, revision };
   }

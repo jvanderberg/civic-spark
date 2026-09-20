@@ -923,8 +923,11 @@ export async function createApp(
       .object({
         title: z.string().trim().min(1).max(160),
         revision: z.string().regex(/^[a-f0-9]{64}$/),
+        // Typed-confirmation escape hatch: make team main equal this workspace's commit.
+        replaceShared: z.literal(true).optional(),
       })
       .parse(r.body);
+    const publication = { replace: input.replaceShared === true };
     const sessionActive = async () => {
       const session = await auth.api.getSession({
         headers: fromNodeHeaders(r.headers),
@@ -951,6 +954,7 @@ export async function createApp(
             input.title,
             input.revision,
             sessionActive,
+            publication,
           ),
         );
       if (p.value.spriteStatus !== "ready" || !p.value.spriteName)
@@ -983,6 +987,7 @@ export async function createApp(
         repo,
         commit,
         sessionActive,
+        publication,
       );
       if (!published.ok) return send(reply, published);
       const acknowledged = await client.acknowledgeShare(

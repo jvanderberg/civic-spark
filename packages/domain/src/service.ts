@@ -777,6 +777,7 @@ export class EventService {
     title: string,
     revision: string,
     authorized: () => Promise<boolean> = async () => true,
+    options: { replace?: boolean } = {},
   ) {
     const access = this.workspace(actor, id, true);
     if (!access.ok) return access;
@@ -793,6 +794,7 @@ export class EventService {
         source,
         prepared.commit,
         authorized,
+        options,
       );
       if (result.ok)
         await gitAsync(source, ["update-ref", "refs/civic-spark/base", prepared.commit]);
@@ -809,12 +811,21 @@ export class EventService {
     source: string,
     commit: string,
     authorized: () => Promise<boolean> = async () => true,
+    options: { replace?: boolean } = {},
   ) {
-    return this.engine.publishPrepared(id, title, revision, source, commit, async () => {
-      if (!(await authorized()))
-        return fail("Sign in again before sharing. Your local commit is preserved.", 401);
-      return this.workspace(actor, id, true);
-    });
+    return this.engine.publishPrepared(
+      id,
+      title,
+      revision,
+      source,
+      commit,
+      async () => {
+        if (!(await authorized()))
+          return fail("Sign in again before sharing. Your local commit is preserved.", 401);
+        return this.workspace(actor, id, true);
+      },
+      options,
+    );
   }
   publishSnapshot(
     actor: Identity,

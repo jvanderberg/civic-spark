@@ -92,6 +92,17 @@ def git(*args):
     return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', *args], cwd=ROOT, stderr=subprocess.DEVNULL, timeout=15)
 
 
+def ignored_untracked(names):
+    if not names:
+        return set()
+    result = subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', 'check-ignore', '-z', '--stdin'], cwd=ROOT,
+                            input='\0'.join(names).encode() + b'\0', stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+    # Exit status 1 means no path is ignored; anything else is a real failure.
+    if result.returncode not in (0, 1):
+        raise ValueError('Git ignore rules could not be read')
+    return set(p.decode() for p in result.stdout.split(b'\0') if p)
+
+
 def snapshot():
     base = None
     for ref in ['refs/civic-spark/base', 'origin/main', 'HEAD']:
@@ -134,6 +145,11 @@ def snapshot():
                                  'mode': '100755' if path.stat().st_mode & 0o111 else '100644'}
             if len(current) > 5000:
                 raise ValueError('Changes supports up to 5,000 project files')
+    # Build output and caches that .gitignore excludes are not changes, do not
+    # move the preview fingerprint, and are never staged by Share. Git omits
+    # tracked files from check-ignore, so committed files stay visible.
+    for name in ignored_untracked(list(current)):
+        current.pop(name, None)
     revision = sha(json.dumps([base, head, current, sorted(skipped)], sort_keys=True).encode())
     return base, head, before, current, skipped, revision
 

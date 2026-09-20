@@ -1,10 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import { git, listFiles, safePath } from "../packages/git/src/repository.ts";
 import { WorkspaceFiles } from "../packages/workspace/src/files.ts";
+import { commitChanges } from "../packages/workspace/src/share.ts";
 import { projectPath } from "../packages/workspace/src/types.ts";
 
 const cases = [
@@ -173,6 +183,83 @@ it("roundtrips ignore files through local and Python editor/sync/Changes and pre
     );
     expect(run("files.py", { operation: "read", path: "src/.gitignore" }).ok).toBe(false);
     expect(run("files.py", { operation: "list" }).value).not.toContain("src/.gitignore");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("keeps ignored build output out of Changes, the preview fingerprint and Share on both adapters", () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-ignored-output-"));
+  const directory = join(root, "project");
+  mkdirSync(join(directory, "src"), { recursive: true });
+  const python = (payload: object) => {
+    const source = readFileSync(
+      new URL("../packages/sprites/src/workspace.py", import.meta.url),
+      "utf8",
+    )
+      .replace(
+        /ROOT = pathlib.Path\(['"]\/home\/sprite\/project['"]\)/,
+        `ROOT = pathlib.Path(${JSON.stringify(directory)})`,
+      )
+      .replaceAll("/home/sprite/.civic-spark-file-lock", join(root, "lock"));
+    const result = spawnSync("python3", ["-c", source], {
+      input: JSON.stringify(payload),
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return JSON.parse(result.stdout);
+  };
+  const tree = (commit: string) =>
+    git(directory, ["ls-tree", "-r", "--name-only", commit]).toString().trim().split("\n").sort();
+  try {
+    git(directory, ["init", "--initial-branch=main"]);
+    writeFileSync(join(directory, ".gitignore"), "*.tsbuildinfo\ncache/\n");
+    writeFileSync(join(directory, "README.md"), "Project\n");
+    writeFileSync(join(directory, "generated.txt"), "tracked before the rule\n");
+    git(directory, ["add", "."]);
+    git(directory, ["commit", "-m", "Seed"]);
+    git(directory, ["update-ref", "refs/civic-spark/base", "HEAD"]);
+    const files = new WorkspaceFiles(directory);
+    expect(files.changes().files).toEqual([]);
+    const clean = files.changes().revision;
+    // A build writes ignored output: no change, and the fingerprint stays put.
+    writeFileSync(join(directory, "tsconfig.tsbuildinfo"), "{}");
+    mkdirSync(join(directory, "cache"));
+    writeFileSync(join(directory, "cache", "data.json"), "[]");
+    expect(files.changes().files).toEqual([]);
+    expect(files.changes().revision).toBe(clean);
+    expect(python({ operation: "changes" }).value.files).toEqual([]);
+    // Real edits still show, including a tracked file that a new rule now matches.
+    writeFileSync(join(directory, "src", "app.ts"), "export const app = 1;\n");
+    appendFileSync(join(directory, ".gitignore"), "generated.txt\n");
+    writeFileSync(join(directory, "generated.txt"), "edited while ignored\n");
+    const shown = [".gitignore", "generated.txt", "src/app.ts"];
+    expect(files.changes().files.map((f) => `${f.path}:${f.status}`)).toEqual([
+      ".gitignore:modified",
+      "generated.txt:modified",
+      "src/app.ts:added",
+    ]);
+    const remote = python({ operation: "changes" }).value;
+    expect(remote.files.map((f: { path: string }) => f.path)).toEqual(shown);
+    // Share on the Sprite adapter commits only the shown files.
+    const shared = python({ operation: "share", title: "Real edits", revision: remote.revision });
+    expect(shared.ok, shared.error).toBe(true);
+    expect(tree(shared.value.commit)).toEqual(
+      [".gitignore", "README.md", "generated.txt", "src/app.ts"].sort(),
+    );
+    expect(git(directory, ["status", "--porcelain"]).toString()).toBe("");
+    // The host adapter does the same for the next edit.
+    git(directory, ["update-ref", "refs/civic-spark/base", "HEAD"]);
+    writeFileSync(join(directory, "src", "more.ts"), "export const more = 2;\n");
+    writeFileSync(join(directory, "cache", "again.json"), "{}");
+    const local = files.changes();
+    expect(local.files.map((f) => f.path)).toEqual(["src/more.ts"]);
+    const commit = commitChanges(directory, "More edits", local.revision ?? "").commit ?? "";
+    expect(tree(commit)).toEqual(
+      [".gitignore", "README.md", "generated.txt", "src/app.ts", "src/more.ts"].sort(),
+    );
+    expect(existsSync(join(directory, "tsconfig.tsbuildinfo"))).toBe(true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

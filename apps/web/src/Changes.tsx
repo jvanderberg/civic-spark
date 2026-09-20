@@ -2,7 +2,7 @@ import "./changes.css";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { useId, useState } from "react";
 import type { Changes as WorkspaceChanges } from "../../../packages/workspace/src/types.ts";
-import { api } from "./api.ts";
+import { api, apiStatus } from "./api.ts";
 import { useToast } from "./Toast.tsx";
 
 function diffLines(diff: string) {
@@ -33,9 +33,13 @@ export function Changes({
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [shared, setShared] = useState("");
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
   const { notify, toast } = useToast();
   const messageId = useId();
   const helpId = useId();
+  const replaceHelpId = useId();
+  const confirmId = useId();
   const count = value?.files.length ?? 0;
   const canShare = Boolean(
     !busy &&
@@ -47,17 +51,60 @@ export function Changes({
       !error &&
       title.trim(),
   );
-  async function share() {
+  // Background refreshes can replace the preview fingerprint between review and
+  // click. If the file list is unchanged, retry once with the fresh fingerprint
+  // instead of asking the person to review the same changes again.
+  async function shareWithFreshPreview(
+    preview: WorkspaceChanges,
+    replace: boolean,
+  ): Promise<{
+    notice?: string;
+    revision: string;
+  }> {
+    const send = (revision: string) =>
+      api<{ notice?: string }>(`/workspaces/${workspace}/share`, "POST", {
+        title: title.trim(),
+        revision,
+        ...(replace ? { replaceShared: true } : {}),
+      });
+    try {
+      return { ...(await send(preview.revision ?? "")), revision: preview.revision ?? "" };
+    } catch (cause) {
+      const stale =
+        apiStatus(cause) === 409 &&
+        cause instanceof Error &&
+        /changed since the preview|Refresh Changes/i.test(cause.message);
+      if (!stale) throw cause;
+      const fresh = await api<WorkspaceChanges>(`/workspaces/${workspace}/changes`);
+      const same =
+        fresh.revision &&
+        fresh.files.length === preview.files.length &&
+        fresh.files.every((file, index) => {
+          const previous = preview.files[index];
+          return previous?.path === file.path && previous.status === file.status;
+        });
+      if (!same) throw cause;
+      return { ...(await send(fresh.revision ?? "")), revision: fresh.revision ?? "" };
+    }
+  }
+  async function share(replace = false) {
     if (!canShare || !value?.revision) return;
+    if (replace && confirmation !== "YES") return;
     setBusy(true);
     try {
-      const result = await api<{ notice?: string }>(`/workspaces/${workspace}/share`, "POST", {
-        title: title.trim(),
-        revision: value.revision,
-      });
-      setShared(value.revision);
+      const result = await shareWithFreshPreview(value, replace);
+      setShared(result.revision);
       setTitle("");
-      notify(result.notice ?? "Shared with your team.");
+      if (replace) {
+        setConfirmation("");
+        setReplaceOpen(false);
+      }
+      notify(
+        result.notice ??
+          (replace
+            ? "The team repository now matches this workspace. The previous team version is kept as a backup."
+            : "Shared with your team."),
+      );
       try {
         await onShared();
         refresh();
@@ -134,6 +181,48 @@ export function Changes({
           <p className="changes-blocker changes-error" role="alert">
             {error}
           </p>
+        )}
+        {!readOnly && (
+          <details
+            className="changes-replace"
+            open={replaceOpen}
+            onToggle={(event) => setReplaceOpen(event.currentTarget.open)}
+          >
+            <summary>
+              <ChevronRight className="diff-chevron" size={14} aria-hidden="true" />
+              Replace the team repository with this workspace
+            </summary>
+            <p id={replaceHelpId}>
+              Use this only when Share keeps failing because the team repository moved on. It
+              commits the shown changes with your message, then makes the team repository match this
+              workspace exactly. Newer shared work from teammates is kept at a backup ref in the
+              team repository, and their workspaces will ask them to update or replace their copies.
+            </p>
+            <label htmlFor={confirmId}>Type YES to confirm</label>
+            <div className="changes-commit-row">
+              <input
+                id={confirmId}
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                disabled={busy}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                aria-describedby={replaceHelpId}
+              />
+              <button
+                type="button"
+                className="button changes-replace-button"
+                disabled={!canShare || confirmation !== "YES"}
+                onClick={() => void share(true)}
+              >
+                {busy ? "Replacing…" : "Replace team repository"}
+              </button>
+            </div>
+            {!title.trim() && !busy && (
+              <p className="changes-blocker">Enter a commit message above first.</p>
+            )}
+          </details>
         )}
       </div>
       <div className="changes-files">

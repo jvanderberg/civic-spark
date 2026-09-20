@@ -57,6 +57,36 @@ export function git(cwd: string, args: string[], environment: NodeJS.ProcessEnv 
     throw new Error("Git operation failed. Your existing project has been preserved.");
   return result.stdout;
 }
+/**
+ * Untracked paths that the repository's ignore rules exclude, in Git's own
+ * terms: tracked files are never reported, so a committed file that later
+ * matches an ignore rule still counts as a change.
+ */
+export function ignoredUntracked(cwd: string, paths: string[]): Set<string> {
+  const ignored = new Set<string>();
+  if (!paths.length) return ignored;
+  const result = spawnSync(
+    "git",
+    ["-c", "core.hooksPath=/dev/null", "check-ignore", "-z", "--stdin"],
+    {
+      cwd,
+      input: `${paths.join("\0")}\0`,
+      timeout: 15000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+      },
+    },
+  );
+  // Exit status 1 means no path is ignored; anything else is a real failure.
+  if (result.error || (result.status !== 0 && result.status !== 1))
+    throw new Error("Git operation failed. Your existing project has been preserved.");
+  for (const path of result.stdout.toString().split("\0")) if (path) ignored.add(path);
+  return ignored;
+}
 export function initializeTeam(root: string, teamId: string, templatePath: string, brief?: string) {
   const repo = join(root, "repos", `${teamId}.git`);
   const integration = join(root, "integration", teamId);

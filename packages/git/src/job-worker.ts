@@ -36,7 +36,7 @@ try {
     const main = git(repo, ["rev-parse", "main"]).toString().trim();
     git(source, ["fetch", repo, "main"]);
     const base = git(source, ["merge-base", main, commit]).toString().trim();
-    if (base !== main)
+    if (base !== main && !input.replace)
       throw new Error(
         "Your local commit is saved, but the team repository has newer changes. Update your workspace from the team repository, resolve any conflicts, then Share again.",
       );
