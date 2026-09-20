@@ -11,6 +11,7 @@ import {
   type SpriteTransport,
 } from "../../../../packages/sprites/src/transport.ts";
 import { AgentRunner } from "./agent-runner.ts";
+import { IntegrationRunner } from "./integration-runner.ts";
 import type { FromWorker, ToWorker } from "./protocol.ts";
 import { TerminalRunner } from "./terminal-runner.ts";
 
@@ -28,14 +29,17 @@ const stderrLimit = 65536;
 
 /**
  * Hosts the Sprite CLI children for one relay worker: agent runners, terminal
- * PTYs, helper sessions and one-shot commands. Everything it sends is already
- * batched: agent frames are merged per session per tick, terminal output is
- * one frame per tick and merged further while the channel is congested, and
- * only bounded classification fields leave for failed commands.
+ * PTYs, agent integration relays, helper sessions and one-shot commands.
+ * Everything it sends is already batched or compact: agent frames are merged
+ * per session per tick, terminal output is one frame per tick and merged
+ * further while the channel is congested, integration traffic is one
+ * validated request or reply per message, and only bounded classification
+ * fields leave for failed commands.
  */
 export class RelayWorkerHost {
   private agents = new Map<string, AgentRunner>();
   private terminals = new Map<string, TerminalRunner>();
+  private integrations = new Map<string, IntegrationRunner>();
   private helpers = new Map<string, HelperSessionLike>();
   private commands = new Map<string, AbortController>();
   private outbox: FromWorker[] = [];
@@ -76,6 +80,7 @@ export class RelayWorkerHost {
         rssMb: Math.round(process.memoryUsage.rss() / 1048576),
         agents: this.agents.size,
         terminals: this.terminals.size,
+        integrations: this.integrations.size,
         helpers: this.helpers.size,
         commands: this.commands.size,
       });
@@ -174,6 +179,12 @@ export class RelayWorkerHost {
         return this.terminals.get(message.session)?.resize(message.cols, message.rows);
       case "terminal.kill":
         return this.terminals.get(message.session)?.kill();
+      case "integration.start":
+        return this.startIntegration(message.session, message.sprite);
+      case "integration.reply":
+        return this.integrations.get(message.session)?.respond(message.id, message.response);
+      case "integration.stop":
+        return this.integrations.get(message.session)?.stop();
       case "command.run":
         return this.runCommand(message);
       case "command.abort":
@@ -221,6 +232,21 @@ export class RelayWorkerHost {
       this.terminals.set(session, runner);
     } catch {
       this.send({ type: "terminal.ended", session, startFailed: true });
+    }
+  }
+  private startIntegration(session: string, sprite: string) {
+    if (this.stopping) return this.send({ type: "integration.ended", session });
+    try {
+      const runner = new IntegrationRunner(sprite, {
+        request: (request) => this.send({ type: "integration.request", session, request }),
+        ended: () => {
+          this.integrations.delete(session);
+          this.send({ type: "integration.ended", session });
+        },
+      });
+      this.integrations.set(session, runner);
+    } catch {
+      this.send({ type: "integration.ended", session });
     }
   }
   private async runCommand(message: Extract<ToWorker, { type: "command.run" }>) {
@@ -307,6 +333,7 @@ export class RelayWorkerHost {
     if (this.telemetry) clearInterval(this.telemetry);
     for (const runner of this.agents.values()) runner.stop();
     for (const runner of this.terminals.values()) runner.kill();
+    for (const runner of this.integrations.values()) runner.stop();
     for (const controller of this.commands.values()) controller.abort();
     const closing = [...this.helpers.values()].map((helper) => helper.closed);
     for (const helper of this.helpers.values()) helper.end("ok");

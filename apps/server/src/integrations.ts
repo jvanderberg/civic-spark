@@ -1,4 +1,3 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   existsSync,
@@ -11,8 +10,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { Identity } from "../../../packages/domain/src/access-types.ts";
 import type { EventService } from "../../../packages/domain/src/service.ts";
@@ -20,21 +17,52 @@ import type { Result } from "../../../packages/domain/src/types.ts";
 import { gitAsync } from "../../../packages/git/src/async.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 import { type ChangeNotifier, silentNotifier } from "./events.ts";
+import {
+  type IntegrationRequest,
+  type IntegrationResponse,
+  IntegrationRunner,
+  integrationRequestSchema,
+} from "./relay/integration-runner.ts";
 
-const requestSchema = z.object({
-  id: z.uuid(),
-  operation: z.enum([
-    "git-publish",
-    "git-status",
-    "preview-start",
-    "preview-restart",
-    "preview-status",
-    "preview-logs",
-    "preview-stop",
-  ]),
-  port: z.number().int().min(1024).max(65535).optional(),
-  command: z.array(z.string().min(1).max(4096)).min(1).max(40).optional(),
-});
+export type IntegrationEvents = {
+  /** One validated request from the in-Sprite CLI. */
+  request(request: IntegrationRequest): void;
+  /** The relay process is gone (exit, spawn failure or relay worker loss); called once. */
+  ended(): void;
+};
+/** One relay.py child as seen by the integration manager, wherever its process lives. */
+export interface IntegrationHandle {
+  readonly ended: boolean;
+  /** Answer one request by id; dropped once the relay ended. */
+  respond(id: string, response: IntegrationResponse): void;
+  stop(): void;
+}
+export interface IntegrationBackend {
+  start(id: string, sprite: string, events: IntegrationEvents): IntegrationHandle;
+}
+/** Spawns and reads relay.py in this process. */
+export const localIntegrationBackend: IntegrationBackend = {
+  start(_id, sprite, events) {
+    const runner = new IntegrationRunner(sprite, events);
+    return {
+      get ended() {
+        return runner.ended;
+      },
+      respond: (id, response) => runner.respond(id, response),
+      stop: () => runner.stop(),
+    };
+  },
+};
+export type IntegrationOptions = {
+  backend?: IntegrationBackend;
+  /**
+   * Whether an agent or terminal session currently exists for a workspace.
+   * When given, the relay child runs only while one does (plus a grace
+   * period) and `wake` starts it when a session begins; without it the child
+   * runs from `ensure` until `stop`.
+   */
+  inUse?: (id: string) => boolean;
+};
 const pendingSchema = z.object({
   id: z.uuid(),
   owner: z.string(),
@@ -45,10 +73,18 @@ const pendingSchema = z.object({
   backup: z.string().optional(),
 });
 type Pending = z.infer<typeof pendingSchema>;
+/**
+ * One prepared workspace: who may use the relay and which Sprite and
+ * generation it was prepared for. `handle` is the running child, if any.
+ */
 type Relay = {
-  process: ChildProcessWithoutNullStreams;
   owner: Identity;
+  sprite: string;
+  generation: number;
   authorized: () => Promise<boolean>;
+  handle?: IntegrationHandle;
+  /** When the last agent or terminal session was seen gone, while a child runs. */
+  idleSince?: number;
   timer: NodeJS.Timeout;
 };
 function unwrap<T>(value: Result<T>): T {
@@ -57,17 +93,24 @@ function unwrap<T>(value: Result<T>): T {
 }
 
 export class WorkspaceIntegrations {
+  /** Authorization, generation and idle re-check period per prepared workspace. */
+  static checkIntervalMs = 15000;
+  /** How long a relay child outlives the last agent or terminal session (checked per interval). */
+  static idleGraceMs = 30000;
   private relays = new Map<string, Relay>();
   private directory: string;
+  private backend: IntegrationBackend;
   constructor(
     private service: EventService,
     root: string,
     private busy: Set<string>,
     private client = new SpriteClient(),
     private notify: ChangeNotifier = silentNotifier,
+    private options: IntegrationOptions = {},
   ) {
     this.directory = join(root, "agent-integrations");
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+    this.backend = options.backend ?? localIntegrationBackend;
   }
   private path(id: string) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid workspace");
@@ -90,126 +133,174 @@ export class WorkspaceIntegrations {
     rmSync(this.path(id), { force: true });
     this.notify.changed(id, "agent-git");
   }
+  /**
+   * Register a prepared workspace so the in-Sprite `civic-spark` CLI can reach
+   * the host. Without `inUse`, the relay child starts now and runs until
+   * `stop`; with it, the child starts when an agent or terminal session exists
+   * (`wake`) and ends a grace period after the last one is gone. A changed
+   * Sprite or generation replaces the registration.
+   */
   ensure(id: string, owner: Identity, sprite: string, authorized: () => Promise<boolean>) {
     const access = this.service.executionAllowed(id);
     if (!access.ok) throw new Error(access.error);
-    const old = this.relays.get(id);
-    if (old) {
-      old.authorized = authorized;
+    const generation = this.service.runtime(id).generation;
+    let relay = this.relays.get(id);
+    if (relay && (relay.sprite !== sprite || relay.generation !== generation)) {
+      this.stop(id);
+      relay = undefined;
+    }
+    if (relay) relay.authorized = authorized;
+    else {
+      relay = {
+        owner,
+        sprite,
+        generation,
+        authorized,
+        timer: setInterval(() => this.check(id), WorkspaceIntegrations.checkIntervalMs),
+      };
+      this.relays.set(id, relay);
+    }
+    if (!this.options.inUse || this.options.inUse(id)) this.start(id, relay);
+  }
+  /** An agent or terminal session began: start the relay child of a prepared workspace. */
+  wake(id: string) {
+    const relay = this.relays.get(id);
+    if (!relay || (relay.handle && !relay.handle.ended)) return;
+    if (
+      this.service.runtime(id).generation !== relay.generation ||
+      !this.service.executionAllowed(id).ok
+    ) {
+      this.stop(id);
       return;
     }
-    const lease = this.client.lease(sprite, true);
-    const child = spawn(
-      "sprite",
-      [
-        ...(process.env.CIVIC_SPARK_SPRITE_ORG ? ["-o", process.env.CIVIC_SPARK_SPRITE_ORG] : []),
-        "-s",
-        sprite,
-        "exec",
-        "--no-port-forward",
-        "--file",
-        `${fileURLToPath(new URL("../../../packages/agents/runtime/relay.py", import.meta.url))}:/home/sprite/.civic-spark-agent/relay.py`,
-        "--",
-        "python3",
-        "/home/sprite/.civic-spark-agent/relay.py",
-      ],
-      { stdio: "pipe" },
-    );
-    const abort = () => child.kill();
-    lease?.signal.addEventListener("abort", abort, { once: true });
-    child.once("error", () => lease?.release());
-    child.once("close", () => {
-      lease?.signal.removeEventListener("abort", abort);
-      lease?.release();
-    });
-    const relay: Relay = {
-      process: child,
-      owner,
-      authorized,
-      timer: setInterval(() => {
-        void relay
-          .authorized()
-          .then((ok) => {
-            if (!ok && this.relays.get(id) === relay) this.stop(id);
-          })
-          .catch(() => {
-            if (this.relays.get(id) === relay) this.stop(id);
-          });
-      }, 15000),
-    };
-    this.relays.set(id, relay);
-    child.stderr.resume();
+    this.start(id, relay);
+  }
+  /** A relay child is running for the workspace. */
+  active(id: string) {
+    const handle = this.relays.get(id)?.handle;
+    return Boolean(handle && !handle.ended);
+  }
+  private start(id: string, relay: Relay) {
+    if (relay.handle && !relay.handle.ended) return;
+    relay.idleSince = undefined;
+    const lease = this.client.lease(relay.sprite, true);
+    let handle: IntegrationHandle | undefined;
+    let ended = false;
+    const abort = () => handle?.stop();
     let queued = Promise.resolve();
-    createInterface({ input: child.stdout }).on("line", (line) => {
-      if (line.length > 65536) return;
-      let raw: unknown;
-      try {
-        raw = JSON.parse(line);
-      } catch {
-        return;
+    try {
+      handle = this.backend.start(id, relay.sprite, {
+        request: (request) => {
+          const current = handle;
+          if (!current) return;
+          queued = queued
+            .then(() => this.answer(id, relay, current, request))
+            .catch(() => {
+              /* One failed request must not stop later requests. */
+            });
+        },
+        ended: () => {
+          ended = true;
+          lease?.signal.removeEventListener("abort", abort);
+          lease?.release();
+          if (handle && relay.handle === handle) relay.handle = undefined;
+        },
+      });
+    } catch {
+      lease?.release();
+      return;
+    }
+    if (ended) {
+      lease?.release();
+      return;
+    }
+    relay.handle = handle;
+    lease?.signal.addEventListener("abort", abort, { once: true });
+  }
+  private async answer(
+    id: string,
+    relay: Relay,
+    handle: IntegrationHandle,
+    request: IntegrationRequest,
+  ) {
+    const { owner, sprite } = relay;
+    let response: IntegrationResponse;
+    let operation: ReturnType<SpriteClient["lease"]>;
+    try {
+      // Re-validate on the main side: the worker already filtered lines, but
+      // authorization and ticket state are decided only here.
+      const input = integrationRequestSchema.parse(request);
+      if (
+        !(await relay.authorized()) ||
+        this.relays.get(id) !== relay ||
+        relay.handle !== handle ||
+        this.service.runtime(id).generation !== relay.generation
+      )
+        throw new Error("Workspace access ended. Sign in again.");
+      operation = this.client.lease(sprite);
+      unwrap(this.service.workspace(owner, id, true));
+      if (input.operation === "git-publish")
+        response = { ok: true, value: await this.publish(id, owner, relay.authorized) };
+      else if (input.operation === "git-status")
+        response = {
+          ok: true,
+          value: {
+            pending: this.pending(id, owner),
+            instructions:
+              "If conflict resolution is pending, the participant must approve in the workspace top bar. Once resolving is approved, resolve conflicts, git add the resolved paths, and GIT_EDITOR=true git rebase --continue. Summarize the resolved result and ask for explicit publication confirmation before civic-spark git publish. Conflict approval alone does not authorize publication.",
+          },
+        };
+      else
+        response = {
+          ok: true,
+          value: await this.preview(
+            id,
+            owner,
+            input.operation.slice(8) as "start" | "restart" | "stop" | "status" | "logs",
+            input.port && input.command ? { port: input.port, command: input.command } : undefined,
+            relay.authorized,
+          ),
+        };
+    } catch (error) {
+      response = {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Integration failed; your saved work is preserved.",
+      };
+    } finally {
+      operation?.release();
+    }
+    handle.respond(request.id, response);
+  }
+  // Every interval: lost authorization or a changed generation ends the
+  // registration; with `inUse`, a child whose sessions are all gone ends after
+  // the grace period while the registration stays for the next `wake`.
+  private check(id: string) {
+    const relay = this.relays.get(id);
+    if (!relay) return;
+    if (this.service.runtime(id).generation !== relay.generation) {
+      this.stop(id);
+      return;
+    }
+    void relay
+      .authorized()
+      .then((ok) => {
+        if (!ok && this.relays.get(id) === relay) this.stop(id);
+      })
+      .catch(() => {
+        if (this.relays.get(id) === relay) this.stop(id);
+      });
+    if (!this.options.inUse || !relay.handle || relay.handle.ended) return;
+    if (this.options.inUse(id)) relay.idleSince = undefined;
+    else {
+      relay.idleSince ??= Date.now();
+      if (Date.now() - relay.idleSince >= WorkspaceIntegrations.idleGraceMs) {
+        relay.handle.stop();
+        relay.handle = undefined;
       }
-      const input = requestSchema.safeParse(raw);
-      if (!input.success) return;
-      queued = queued
-        .then(async () => {
-          const request = input.data;
-          let response: object;
-          let operation: ReturnType<SpriteClient["lease"]>;
-          try {
-            if (!(await relay.authorized()) || this.relays.get(id) !== relay)
-              throw new Error("Workspace access ended. Sign in again.");
-            operation = this.client.lease(sprite);
-            unwrap(this.service.workspace(owner, id, true));
-            if (request.operation === "git-publish")
-              response = { ok: true, value: await this.publish(id, owner, relay.authorized) };
-            else if (request.operation === "git-status")
-              response = {
-                ok: true,
-                value: {
-                  pending: this.pending(id, owner),
-                  instructions:
-                    "If conflict resolution is pending, the participant must approve in the workspace top bar. Once resolving is approved, resolve conflicts, git add the resolved paths, and GIT_EDITOR=true git rebase --continue. Summarize the resolved result and ask for explicit publication confirmation before civic-spark git publish. Conflict approval alone does not authorize publication.",
-                },
-              };
-            else
-              response = {
-                ok: true,
-                value: await this.preview(
-                  id,
-                  owner,
-                  request.operation.slice(8) as "start" | "restart" | "stop" | "status" | "logs",
-                  request.port && request.command
-                    ? { port: request.port, command: request.command }
-                    : undefined,
-                  relay.authorized,
-                ),
-              };
-          } catch (error) {
-            response = {
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Integration failed; your saved work is preserved.",
-            };
-          } finally {
-            operation?.release();
-          }
-          if (!child.stdin.destroyed)
-            child.stdin.write(`${JSON.stringify({ id: request.id, ...response })}\n`);
-        })
-        .catch(() => {
-          /* One malformed request must not stop later requests. */
-        });
-    });
-    const ended = () => {
-      if (this.relays.get(id) === relay) {
-        clearInterval(relay.timer);
-        this.relays.delete(id);
-      }
-    };
-    child.on("error", ended);
-    child.on("close", ended);
+    }
   }
   async preview(
     id: string,
@@ -467,11 +558,13 @@ export class WorkspaceIntegrations {
       this.busy.delete(id);
     }
   }
+  /** Lifecycle disconnect, hold or shutdown: end the child and forget the registration. */
   stop(id: string) {
     const relay = this.relays.get(id);
     if (relay) {
       clearInterval(relay.timer);
-      relay.process.kill();
+      relay.handle?.stop();
+      relay.handle = undefined;
       this.relays.delete(id);
     }
   }

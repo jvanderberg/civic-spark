@@ -185,7 +185,12 @@ export async function createApp(
     notifier.changed,
   );
   const sharing = new Set<string>();
-  const integrations = new WorkspaceIntegrations(service, root, sharing, client, notifier);
+  // The relay.py child runs only while an agent or terminal session exists,
+  // in the same relay worker as that workspace's other children.
+  const integrations = new WorkspaceIntegrations(service, root, sharing, client, notifier, {
+    backend: relay?.integrations,
+    inUse: (id) => agents.hasSession(id) || terminals.hasSession(id),
+  });
   const lifecycle: WorkspaceLifecycle = new WorkspaceLifecycle(
     service,
     lifecycleProvider ?? new SpriteLifecycle(),
@@ -780,6 +785,7 @@ export async function createApp(
               allowed(r.params.id),
           );
         });
+        integrations.wake(r.params.id);
       } catch {
         socket.close(1011, "Agent runner could not start");
       }
@@ -836,6 +842,7 @@ export async function createApp(
               allowed(r.params.id),
           );
         });
+        integrations.wake(r.params.id);
       } catch {
         socket.close(1011, "Sprite terminal could not start");
       }
@@ -1117,5 +1124,5 @@ export async function createApp(
         : reply.sendFile("index.html"),
     );
   }
-  return { app, service, authentication, backups, relay };
+  return { app, service, authentication, backups, relay, integrations };
 }

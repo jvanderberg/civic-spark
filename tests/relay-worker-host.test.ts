@@ -369,24 +369,73 @@ it("runs one-shot commands with execFile-shaped results, honors aborts, and rela
   expect(helper.killed).toBe(true);
 });
 
+it("relays validated integration requests from relay.py, writes the main process's reply by id, and reports the end", async () => {
+  const c = channel();
+  await c.tick();
+  c.to({ type: "integration.start", session: "i", workspaceId: "w", sprite: "civic-spark-x" });
+  const child = spawned[0]?.child as FakeChild;
+  expect(spawned[0]?.args.slice(-2)).toEqual([
+    "python3",
+    "/home/sprite/.civic-spark-agent/relay.py",
+  ]);
+  const stdin = lines(child.stdin);
+  const id = "0f1e2d3c-4b5a-4697-8877-665544332211";
+  child.stdout.write(
+    `${["garbage", JSON.stringify({ id, operation: "shell" }), JSON.stringify({ id, operation: "git-publish" })].join("\n")}\n`,
+  );
+  await c.tick();
+  await c.tick();
+  // Only the validated request crosses the channel; nothing about the bad lines does.
+  expect(c.sent.slice(1)).toEqual([
+    { type: "integration.request", session: "i", request: { id, operation: "git-publish" } },
+  ]);
+  c.to({
+    type: "integration.reply",
+    session: "i",
+    id,
+    response: { ok: true, value: { status: "published", commit: "abc" } },
+  });
+  c.to({ type: "integration.reply", session: "gone", id, response: { ok: false, error: "x" } });
+  await c.tick();
+  expect(stdin.map((line) => JSON.parse(line))).toEqual([
+    { id, ok: true, value: { status: "published", commit: "abc" } },
+  ]);
+  c.to({ type: "integration.stop", session: "i" });
+  await c.tick();
+  await c.tick();
+  expect(child.killed).toBe(true);
+  expect(c.sent.at(-1)).toEqual({ type: "integration.ended", session: "i" });
+  c.to({ type: "integration.reply", session: "i", id, response: { ok: true, value: null } });
+  await c.tick();
+  expect(stdin).toHaveLength(1);
+});
+
 it("stops every child on shutdown, answers late start requests, and exits once helpers close", async () => {
   const c = channel();
   c.to({ type: "agent.start", session: "a", workspaceId: "w", sprite: "civic-spark-x" });
   c.to({ type: "terminal.start", session: "t", workspaceId: "w", sprite: "civic-spark-x" });
+  c.to({ type: "integration.start", session: "i", workspaceId: "w", sprite: "civic-spark-x" });
   c.to({
     type: "session.start",
     session: "h",
     args: [],
     options: { scripts: {}, readyTimeoutMs: 5000, idleMs: 5000, maxLine: 4096, maxInFlight: 2 },
   });
-  const [agent, helper] = [spawned[0]?.child as FakeChild, spawned[1]?.child as FakeChild];
+  const [agent, integration, helper] = [
+    spawned[0]?.child as FakeChild,
+    spawned[1]?.child as FakeChild,
+    spawned[2]?.child as FakeChild,
+  ];
   c.to({ type: "shutdown" });
   c.to({ type: "agent.start", session: "late", workspaceId: "w", sprite: "civic-spark-y" });
+  c.to({ type: "integration.start", session: "late-i", workspaceId: "w", sprite: "civic-spark-y" });
   await vi.waitFor(() => expect(c.exit).toHaveBeenCalledWith(0));
-  expect(agent.killed && helper.killed).toBe(true);
+  expect(agent.killed && integration.killed && helper.killed).toBe(true);
   expect(ptys[0]?.kill).toHaveBeenCalled();
-  expect(spawned).toHaveLength(2);
+  expect(spawned).toHaveLength(3);
   expect(c.sent).toContainEqual({ type: "agent.ended", session: "late" });
+  expect(c.sent).toContainEqual({ type: "integration.ended", session: "late-i" });
+  expect(c.sent).toContainEqual({ type: "integration.ended", session: "i" });
 });
 
 it("emits per-worker relay telemetry with loop delay, CPU share and owned session counts", async () => {
@@ -396,6 +445,7 @@ it("emits per-worker relay telemetry with loop delay, CPU share and owned sessio
   try {
     const c = channel();
     c.to({ type: "agent.start", session: "a", workspaceId: "w", sprite: "civic-spark-x" });
+    c.to({ type: "integration.start", session: "i", workspaceId: "w", sprite: "civic-spark-x" });
     await vi.advanceTimersByTimeAsync(10000);
     const record = sink.mock.calls
       .map((call) => JSON.parse(String(call[0])))
@@ -405,6 +455,7 @@ it("emits per-worker relay telemetry with loop delay, CPU share and owned sessio
       worker: 3,
       agents: 1,
       terminals: 0,
+      integrations: 1,
       helpers: 0,
     });
     for (const key of ["loopP50Ms", "loopP99Ms", "loopMaxMs", "cpuPercent", "rssMb", "commands"])

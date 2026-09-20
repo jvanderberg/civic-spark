@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentBackend, AgentHandle } from "../agents.ts";
+import type { IntegrationBackend, IntegrationHandle } from "../integrations.ts";
 import type { TerminalBackend, TerminalHandle } from "../terminal.ts";
 import type { RelayPool } from "./pool.ts";
 
@@ -69,6 +70,48 @@ export function relayAgentBackend(pool: RelayPool): AgentBackend {
         },
         stop: () => worker.send({ type: "agent.stop", session }),
         kill: () => worker.send({ type: "agent.kill", session }),
+      };
+      return handle;
+    },
+  };
+}
+
+/**
+ * Agent integration relays whose relay.py child lives in a relay worker. The
+ * worker validates and forwards each CLI request; the main process authorizes
+ * it, keeps ticket state, performs Git work on the host and sends the answer
+ * back. Worker loss ends the relay like a child exit: requests still in
+ * flight can no longer be answered, and the next attach may start a new one.
+ */
+export function relayIntegrationBackend(pool: RelayPool): IntegrationBackend {
+  return {
+    start(id, sprite, events) {
+      const worker = pool.for(id);
+      const session = randomUUID();
+      let ended = false;
+      const finish = () => {
+        if (ended) return;
+        ended = true;
+        worker.unregister(session);
+        events.ended();
+      };
+      worker.register(session, {
+        message(message) {
+          if (message.type === "integration.request") events.request(message.request);
+          else if (message.type === "integration.ended") finish();
+        },
+        lost: finish,
+      });
+      worker.send({ type: "integration.start", session, workspaceId: id, sprite });
+      const handle: IntegrationHandle = {
+        get ended() {
+          return ended;
+        },
+        respond(requestId, response) {
+          if (ended) return;
+          worker.send({ type: "integration.reply", session, id: requestId, response });
+        },
+        stop: () => worker.send({ type: "integration.stop", session }),
       };
       return handle;
     },
