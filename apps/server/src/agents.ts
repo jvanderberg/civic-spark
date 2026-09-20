@@ -1,57 +1,67 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { WebSocket } from "ws";
 import { z } from "zod";
-import { AgentReplay } from "../../../packages/agents/src/history.ts";
-import { agentImagesSchema, agentWireByteLimit } from "../../../packages/agents/src/images.ts";
-import { agentInputSchema } from "../../../packages/agents/src/protocol.ts";
+import { agentWireByteLimit } from "../../../packages/agents/src/images.ts";
+import { type AgentInput, agentInputSchema } from "../../../packages/agents/src/protocol.ts";
 import { diagnostic, spriteWorkspaceId } from "../../../packages/diagnostics/src/index.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
+import { AgentRunner } from "./relay/agent-runner.ts";
 
-const eventSchema = z.object({
-  type: z.enum([
-    "state",
-    "ready",
-    "configured",
-    "user",
-    "text",
-    "tool",
-    "approval",
-    "resolved",
-    "status",
-    "done",
-    "error",
-  ]),
-  id: z.string(),
-  text: z.string().max(200000),
-  details: z.string().max(20000).optional(),
-  images: agentImagesSchema.optional(),
-  requestId: z.uuid().optional(),
-  outcome: z.enum(["success", "failed", "stopped"]).optional(),
-  cost: z.number().optional(),
-  runtimeReady: z.boolean().optional(),
-  working: z.boolean().optional(),
-  workingStartedAt: z.iso.datetime().optional(),
-  configuredProviders: z.array(z.enum(["claude", "opencode"])).optional(),
-  savedProviders: z.array(z.enum(["claude", "opencode"])).optional(),
-  failedProviders: z.array(z.enum(["claude", "opencode"])).optional(),
-  provider: z.enum(["claude", "opencode"]).optional(),
-  credentialFailure: z.boolean().optional(),
-  replayed: z.boolean().optional(),
-});
+export type AgentSessionEvents = {
+  /** One serialized, batched live event to fan out to attached clients. */
+  frame(frame: string): void;
+  /** Throttled participant use. */
+  activity(): void;
+  /** The runner is gone (exit, spawn failure or relay worker loss); called once. */
+  ended(): void;
+};
+/** One agent runner as seen by the session manager, wherever its process lives. */
+export interface AgentHandle {
+  /** A prompt is pending or a turn is running. */
+  readonly busy: boolean;
+  /**
+   * Deliver the replay (retained transcript plus state) for a newly attached
+   * client. Synchronous in-process; asynchronous through a relay worker, where
+   * the client only joins live fan-out once its replay has been sent.
+   */
+  replay(deliver: (frames: string[]) => void): void;
+  send(message: AgentInput): void;
+  /** Stop the turn and end the runner. */
+  stop(): void;
+  kill(): void;
+}
+export interface AgentBackend {
+  start(id: string, sprite: string, events: AgentSessionEvents): AgentHandle;
+}
+/** Spawns and reads the runner in this process. */
+export const localAgentBackend: AgentBackend = {
+  start(id, sprite, events) {
+    const runner = new AgentRunner(id, sprite, events);
+    return {
+      get busy() {
+        return runner.busy;
+      },
+      replay: (deliver) => deliver(runner.replayFrames()),
+      send: (message) => runner.send(JSON.stringify(message), message.type === "prompt"),
+      stop: () => runner.stop(),
+      kill: () => runner.kill(),
+    };
+  },
+};
 type Session = {
-  process: ChildProcessWithoutNullStreams;
-  replay: AgentReplay;
+  handle: AgentHandle;
+  /** Every attached socket, including those still waiting for their replay. */
   clients: Set<WebSocket>;
-  pendingPrompt: boolean;
+  /** Sockets that received their replay and now get live frames. */
+  live: Set<WebSocket>;
 };
 export class AgentSessions {
   constructor(
     private client = new SpriteClient(),
     private allowed: (id: string) => boolean = () => true,
     private activity: (id: string) => void = () => {},
+    private backend: AgentBackend = localAgentBackend,
   ) {}
   private sessions = new Map<string, Session>();
   private preparing = new Map<string, Promise<boolean>>();
@@ -64,8 +74,7 @@ export class AgentSessions {
     return this.preparing.has(sprite);
   }
   isWorking(id: string) {
-    const session = this.sessions.get(id);
-    return Boolean(session?.pendingPrompt || session?.replay.snapshot().working);
+    return Boolean(this.sessions.get(id)?.handle.busy);
   }
   async credentials(sprite: string) {
     const result = await this.client.exec(sprite, [
@@ -142,144 +151,40 @@ export class AgentSessions {
     if (!/^civic-spark-[a-z0-9-]{1,45}$/.test(sprite)) throw new Error("Invalid Sprite");
     let session = this.sessions.get(id);
     if (!session) {
-      const org = process.env.CIVIC_SPARK_SPRITE_ORG;
-      const runner = fileURLToPath(
-        new URL("../../../packages/agents/src/runner.ts", import.meta.url),
-      );
-      const protocol = fileURLToPath(
-        new URL("../../../packages/agents/src/protocol.ts", import.meta.url),
-      );
       const lease = this.client.lease(sprite, true);
-      const child = spawn(
-        "sprite",
-        [
-          ...(org ? ["-o", org] : []),
-          "-s",
-          sprite,
-          "exec",
-          "--no-port-forward",
-          "--file",
-          `${runner}:/home/sprite/.civic-spark-agent/runner.ts`,
-          "--file",
-          `${protocol}:/home/sprite/.civic-spark-agent/protocol.ts`,
-          "--file",
-          `${fileURLToPath(new URL("../../../packages/agents/src/credentials.ts", import.meta.url))}:/home/sprite/.civic-spark-agent/credentials.ts`,
-          ...[
-            "history.ts",
-            "journal.ts",
-            "provider.ts",
-            "context.ts",
-            "activity.ts",
-            "images.ts",
-            "multimodal.ts",
-            "opencode-turn.ts",
-          ].flatMap((name) => [
-            "--file",
-            `${fileURLToPath(new URL(`../../../packages/agents/src/${name}`, import.meta.url))}:/home/sprite/.civic-spark-agent/${name}`,
-          ]),
-          "--",
-          "node",
-          "--experimental-strip-types",
-          "/home/sprite/.civic-spark-agent/runner.ts",
-        ],
-        { stdio: "pipe" },
-      );
-      const spawnedAt = Date.now();
-      const abort = () => child.kill();
-      lease?.signal.addEventListener("abort", abort, { once: true });
-      child.once("error", () => lease?.release());
-      child.once("close", (code, signal) => {
-        lease?.signal.removeEventListener("abort", abort);
-        lease?.release();
-        diagnostic({
-          event: "agent.runner",
-          workspaceId: id,
-          durationMs: Date.now() - spawnedAt,
-          ...(typeof code === "number" ? { exitCode: code } : {}),
-          ...(signal
-            ? {
-                signal: ["SIGTERM", "SIGKILL", "SIGINT", "SIGABRT"].includes(signal)
-                  ? (signal as "SIGTERM" | "SIGKILL" | "SIGINT" | "SIGABRT")
-                  : "other",
-              }
-            : {}),
-        });
-      });
-      const active: Session = {
-        process: child,
-        replay: new AgentReplay(),
-        clients: new Set(),
-        pendingPrompt: false,
-      };
-      session = active;
-      this.sessions.set(id, active);
-      // Streamed text arrives one delta per token chunk. Deltas of the same
-      // message are merged for up to 50 ms before replay bookkeeping and
-      // fan-out, which cuts loop work and socket frames by an order of
-      // magnitude on long turns without changing what clients accumulate.
-      type Event = z.infer<typeof eventSchema>;
-      let pendingText: Event | undefined;
-      let pendingTimer: NodeJS.Timeout | undefined;
-      let lastActivity = 0;
-      const deliver = (event: Event) => {
-        active.replay.accept(event);
-        if (
-          !event.replayed &&
-          ["user", "text", "tool", "done"].includes(event.type) &&
-          Date.now() - lastActivity >= 1000
-        ) {
-          lastActivity = Date.now();
-          this.activity(id);
-        }
-        if (
-          event.type === "done" ||
-          event.type === "error" ||
-          (event.type === "status" && event.text === "Working")
-        )
-          active.pendingPrompt = false;
-        const frame = JSON.stringify(event);
-        for (const client of active.clients) {
-          if (client.bufferedAmount > 2 * agentWireByteLimit)
-            client.close(1013, "Reconnect to catch up");
-          else if (client.readyState === 1) client.send(frame);
-        }
-      };
-      const flushText = () => {
-        if (pendingTimer) clearTimeout(pendingTimer);
-        pendingTimer = undefined;
-        if (!pendingText) return;
-        const event = pendingText;
-        pendingText = undefined;
-        deliver(event);
-      };
-      createInterface({ input: child.stdout }).on("line", (line) => {
-        if (this.sessions.get(id) !== active || line.length > agentWireByteLimit) return;
-        try {
-          const event = eventSchema.parse(JSON.parse(line));
-          if (event.type === "text" && !event.replayed) {
-            if (pendingText && pendingText.id === event.id) {
-              pendingText = { ...pendingText, text: pendingText.text + event.text };
-            } else {
-              flushText();
-              pendingText = event;
+      const clients = new Set<WebSocket>();
+      const live = new Set<WebSocket>();
+      let started: Session | undefined;
+      let ended = false;
+      const abort = () => started?.handle.kill();
+      let handle: AgentHandle;
+      try {
+        handle = this.backend.start(id, sprite, {
+          frame: (frame) => {
+            for (const client of live) {
+              if (client.bufferedAmount > 2 * agentWireByteLimit)
+                client.close(1013, "Reconnect to catch up");
+              else if (client.readyState === 1) client.send(frame);
             }
-            if (!pendingTimer) pendingTimer = setTimeout(flushText, 50);
-            return;
-          }
-          flushText();
-          deliver(event);
-        } catch {
-          /* Only structured events go to the browser. */
-        }
-      });
-      child.stdout.once("close", flushText);
-      child.stderr.resume(); // Provider diagnostics may contain secrets; never forward or log them.
-      const end = () => {
-        if (this.sessions.get(id) === active) this.sessions.delete(id);
-        for (const client of active.clients) client.close(1011, "Agent runner ended; reconnect");
-      };
-      child.on("error", end);
-      child.on("close", end);
+          },
+          activity: () => this.activity(id),
+          ended: () => {
+            ended = true;
+            lease?.signal.removeEventListener("abort", abort);
+            lease?.release();
+            if (started && this.sessions.get(id) === started) this.sessions.delete(id);
+            for (const client of clients) client.close(1011, "Agent runner ended; reconnect");
+          },
+        });
+      } catch (error) {
+        lease?.release();
+        throw error;
+      }
+      if (ended) throw new Error("Agent runner could not start");
+      started = { handle, clients, live };
+      lease?.signal.addEventListener("abort", abort, { once: true });
+      session = started;
+      this.sessions.set(id, started);
     }
     const active = session;
     active.clients.add(socket);
@@ -293,9 +198,11 @@ export class AgentSessions {
         durationMs: Date.now() - attachedAt,
       }),
     );
-    for (const event of active.replay.events)
-      socket.send(JSON.stringify({ ...event, replayed: true }));
-    socket.send(JSON.stringify(active.replay.snapshot()));
+    active.handle.replay((frames) => {
+      if (!active.clients.has(socket)) return;
+      for (const frame of frames) socket.send(frame);
+      active.live.add(socket);
+    });
     const check = async () => {
       try {
         if (
@@ -363,21 +270,18 @@ export class AgentSessions {
               );
               return;
             }
-            if (message.type === "prompt") {
-              if (active.pendingPrompt || active.replay.snapshot().working) {
-                socket.send(
-                  JSON.stringify({
-                    type: "error",
-                    id: crypto.randomUUID(),
-                    requestId: message.id,
-                    text: "A turn is already running. Wait or stop it before sending another message.",
-                  }),
-                );
-                return;
-              }
-              active.pendingPrompt = true;
+            if (message.type === "prompt" && active.handle.busy) {
+              socket.send(
+                JSON.stringify({
+                  type: "error",
+                  id: crypto.randomUUID(),
+                  requestId: message.id,
+                  text: "A turn is already running. Wait or stop it before sending another message.",
+                }),
+              );
+              return;
             }
-            active.process.stdin.write(`${JSON.stringify(message)}\n`);
+            active.handle.send(message);
           }
         })
         .catch(() => socket.close(1008, "Invalid agent request"))
@@ -385,27 +289,24 @@ export class AgentSessions {
           queuedBytes -= bytes;
         });
     });
-    socket.on("close", () => {
+    const detached = () => {
       clearInterval(timer);
       active.clients.delete(socket);
-    });
-    socket.on("error", () => {
-      clearInterval(timer);
-      active.clients.delete(socket);
-    });
+      active.live.delete(socket);
+    };
+    socket.on("close", detached);
+    socket.on("error", detached);
   }
   stop(id: string) {
     const session = this.sessions.get(id);
     if (!session) return;
-    if (!session.process.stdin.destroyed) session.process.stdin.write('{"type":"stop"}\n');
+    session.handle.stop();
     for (const socket of session.clients) socket.close(1008, "Sprite paused; reload to resume");
-    session.process.kill();
     this.sessions.delete(id);
   }
   close() {
     for (const session of this.sessions.values()) {
-      session.process.stdin.write('{"type":"stop"}\n');
-      session.process.kill();
+      session.handle.stop();
       for (const client of session.clients) client.close();
     }
     this.sessions.clear();

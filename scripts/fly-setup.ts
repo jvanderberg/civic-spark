@@ -51,6 +51,8 @@ export const setupSchema = z
     managementMemoryMb: z.number().int().min(1024).max(32768).default(1024),
     diagnostics: z.boolean().default(false),
     maxProvisioning: z.number().int().min(1).max(20).default(2),
+    // Relay worker processes that own the Sprite CLI children; 0 keeps them in the main process.
+    relayWorkers: z.number().int().min(0).max(16).default(2),
     smtpHost: z
       .string()
       .regex(/^[a-zA-Z0-9.-]+$/)
@@ -94,6 +96,7 @@ export function flyConfig(input: Setup) {
     CIVIC_SPARK_PROXY: "fly",
     CIVIC_SPARK_TRUSTED_PROXY_CIDRS: input.proxyCidrs.join(","),
     CIVIC_SPARK_MAX_PROVISIONING: String(input.maxProvisioning),
+    CIVIC_SPARK_RELAY_WORKERS: String(input.relayWorkers),
   };
   if (input.diagnostics) env.CIVIC_SPARK_DIAGNOSTICS = "1";
   if (input.siteEventId) env.CIVIC_SPARK_SITE_EVENT_ID = input.siteEventId;

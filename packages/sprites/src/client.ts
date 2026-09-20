@@ -1,7 +1,5 @@
-import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { promisify } from "node:util";
 import { z } from "zod";
 import {
   commandFailure,
@@ -39,7 +37,11 @@ import {
   type SpriteCreateLogger,
 } from "./create-diagnostics.ts";
 import { validateSpriteToken } from "./credentials.ts";
-import { HelperSession, HelperSessionLost, type HelperSessionOptions } from "./helper-session.ts";
+import {
+  type HelperSessionLike,
+  HelperSessionLost,
+  type HelperSessionOptions,
+} from "./helper-session.ts";
 import {
   certifiesSpriteResource,
   listWitnessesTarget,
@@ -50,8 +52,8 @@ import {
   spriteResourceCandidateSchema,
 } from "./metadata.ts";
 import { boundedProviderJson, classifyCreationFailure } from "./provisioning.ts";
+import { localSpriteTransport, type SpriteTransport } from "./transport.ts";
 
-const execute = promisify(execFile);
 const spriteNamePattern = /^civic-spark-[a-z0-9-]{1,45}$/;
 const commandFailed =
   "Sprite command failed. Check your CLI login and connectivity; no account credentials were logged.";
@@ -94,8 +96,8 @@ export class SpriteClient {
   private transfers = new CommandQueue(2);
   private org: string | undefined;
   private readonly usesConfiguredOrg: boolean;
-  private sessions = new Map<string, HelperSession>();
-  private sessionStarts = new Map<string, Promise<HelperSession | undefined>>();
+  private sessions = new Map<string, HelperSessionLike>();
+  private sessionStarts = new Map<string, Promise<HelperSessionLike | undefined>>();
   // A session starts only for a Sprite that has answered a real one-shot command
   // in this process, so unreachable Sprites never get a long-lived process.
   private sessionReachable = new Set<string>();
@@ -107,6 +109,7 @@ export class SpriteClient {
     private request: typeof fetch = fetch,
     private createLogger: SpriteCreateLogger = logSpriteCreate,
     sessionOptions: Partial<HelperSessionSettings> = {},
+    private transport: SpriteTransport = localSpriteTransport,
   ) {
     this.usesConfiguredOrg = org === undefined;
     this.org = org ?? process.env.CIVIC_SPARK_SPRITE_ORG;
@@ -221,7 +224,6 @@ export class SpriteClient {
         ? args.at(-1)
         : undefined;
     let lease: SpriteLease | undefined;
-    let closed: Promise<void> | undefined;
     let releaseCommand: (() => void) | undefined;
     let releaseTransfer: (() => void) | undefined;
     try {
@@ -232,15 +234,12 @@ export class SpriteClient {
       await beforeDispatch?.();
       lease?.signal.throwIfAborted();
       dispatched = performance.now();
-      const pending = execute("sprite", this.args(args), {
+      const stdout = await this.transport.execute(this.args(args), {
         timeout,
         maxBuffer,
-        encoding: "buffer",
+        input,
         signal: lease?.signal,
       });
-      closed = new Promise((resolve) => pending.child.once("close", () => resolve()));
-      pending.child.stdin?.end(input);
-      const { stdout } = await pending;
       if (name && args[2] === "exec") this.sessionReachable.add(name);
       return ok(stdout);
     } catch (error) {
@@ -256,7 +255,6 @@ export class SpriteClient {
       if (error instanceof CommandBusy) return fail(error.message, 429);
       return fail(commandFailed, 502);
     } finally {
-      await closed;
       diagnostic({
         event: "sprite.command",
         transport: "process",
@@ -291,7 +289,7 @@ export class SpriteClient {
       new Promise((resolve) => setTimeout(resolve, 5000).unref()),
     ]);
   }
-  private session(name: string, signal?: AbortSignal): Promise<HelperSession | undefined> {
+  private session(name: string, signal?: AbortSignal): Promise<HelperSessionLike | undefined> {
     const existing = this.sessions.get(name);
     if (existing && !existing.ended)
       return existing.ready.then(
@@ -315,7 +313,7 @@ export class SpriteClient {
     this.sessionStarts.set(name, start);
     return start;
   }
-  private async startSession(name: string): Promise<HelperSession | undefined> {
+  private async startSession(name: string): Promise<HelperSessionLike | undefined> {
     let lease: SpriteLease | undefined;
     let releaseCommand: (() => void) | undefined;
     try {
@@ -327,8 +325,8 @@ export class SpriteClient {
       return undefined;
     }
     const startedAt = performance.now();
-    const child = spawn(
-      "sprite",
+    const session = this.transport.session(
+      name,
       this.args([
         "-s",
         name,
@@ -339,17 +337,16 @@ export class SpriteClient {
         "-c",
         helperSource("helper_session.py"),
       ]),
-      { stdio: "pipe" },
+      {
+        ...this.sessionOptions,
+        scripts: Object.fromEntries(
+          ["files.py", "workspace.py", "preview.py", "team_git.py"].map((script) => [
+            script,
+            helperSource(script),
+          ]),
+        ),
+      },
     );
-    const session = new HelperSession(child, {
-      ...this.sessionOptions,
-      scripts: Object.fromEntries(
-        ["files.py", "workspace.py", "preview.py", "team_git.py"].map((script) => [
-          script,
-          helperSource(script),
-        ]),
-      ),
-    });
     this.sessions.set(name, session);
     const abort = () => session.end("lease_aborted");
     lease?.signal.addEventListener("abort", abort, { once: true });

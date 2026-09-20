@@ -9,6 +9,7 @@
   "proxyCidrs": ["172.19.0.0/16"],
   "volumeGb": 10,
   "maxProvisioning": 2,
+  "relayWorkers": 2,
   "volumeAutoExtend": {
     "enabled": false
   },
