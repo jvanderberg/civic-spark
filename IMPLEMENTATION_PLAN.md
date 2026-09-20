@@ -270,6 +270,7 @@ Deployment setup, exact commands, constraints and validation gaps: [Fly deployme
 - [x] Reconcile missing/stalled SSE and uncertain ACKs without resubmitting inference; Stop drains delayed acceptance through a subsequent native abort and idle check. Distinguish provider failures from local runtime transport loss.
 - [x] Complete final local runner/browser/context checks and the opt-in Node 24.18.0 / OpenCode 1.18.31 loopback turn beyond 300 seconds, including Tasks renewal; see [evidence and limits](docs/opencode-turns.md).
 - [x] Correct independent-review findings: recover durable current-answer text without duplicate streaming/replay, and validate message/status evidence before terminal hold release; actual-runner regressions added.
+- [x] End a turn whose native run stops at a tool step (dismissed question) once idle with no pending tool part, and keep Stop converging when each abort republishes idle events; deployed stuck-turn diagnosis in artifacts/participant-load/backend-20260920b, tracker and actual-runner regressions plus interrupted-journal restart coverage added.
 - [ ] Reviewer reread, root integration and separately authorized deployment/live acceptance. No participant resources or paid inference used by this workstream.
 
 ## Corrective owner recovery for missing legacy reservations

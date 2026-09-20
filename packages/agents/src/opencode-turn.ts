@@ -23,17 +23,20 @@ export type OpenCodeTurnMessage = {
   cost?: number;
 };
 
+export type OpenCodeTurnPart = { type: string; messageID?: string; state?: { status?: string } };
+
 export type OpenCodeTurnEvent = {
   type: string;
   properties?: {
     sessionID?: string;
     info?: OpenCodeTurnMessage;
+    part?: OpenCodeTurnPart;
     status?: { type: string };
     error?: unknown;
   };
 };
 
-export type OpenCodeTurnRecord = { info: OpenCodeTurnMessage };
+export type OpenCodeTurnRecord = { info: OpenCodeTurnMessage; parts?: OpenCodeTurnPart[] };
 // Validate every record/entry before using any of a control response as evidence.
 // Unused native fields are allowed; consumed identity, terminal and text fields
 // must match the pinned API shapes rather than just an array/object container.
@@ -59,11 +62,15 @@ const partSchema = z.discriminatedUnion("type", [
   z.object({ ...partFields, type: z.literal("text"), text: z.string() }),
   z.object({
     ...partFields,
+    type: z.literal("tool"),
+    state: z.object({ status: identity }).passthrough(),
+  }),
+  z.object({
+    ...partFields,
     type: z.enum([
       "subtask",
       "reasoning",
       "file",
-      "tool",
       "step-start",
       "step-finish",
       "snapshot",
@@ -133,11 +140,34 @@ function isFinished(message: OpenCodeTurnMessage) {
   );
 }
 
+// A step that ended at a tool call can still be the last step of the run: the
+// native loop stops there when a question or permission is rejected.
+function isStepEnded(message: OpenCodeTurnMessage) {
+  return Boolean(message.finish) || Boolean(message.time?.completed);
+}
+
+// Unknown or missing tool status counts as unfinished work.
+function isToolPending(part: OpenCodeTurnPart) {
+  return part.type === "tool" && !["completed", "error"].includes(part.state?.status ?? "");
+}
+
+// The native runtime publishes these on every abort, including of an idle
+// session. They cannot make a concurrent idle status read stale.
+function isIdleNotification(event: OpenCodeTurnEvent) {
+  return (
+    event.type === "session.idle" ||
+    (event.type === "session.status" && event.properties?.status?.type === "idle")
+  );
+}
+
 /**
  * Correlates one async prompt with its native OpenCode messages and idle state.
  * An assistant message is only a completion candidate: tool-call steps can have
  * a finish value while the session remains busy. The idle transition is the
- * terminal boundary for the current user message.
+ * terminal boundary for the current user message. An authoritative idle read
+ * also ends a run whose last step stopped at a tool call once none of the
+ * turn's tool parts is still pending or running (for example after the
+ * participant dismissed a question).
  */
 export class OpenCodeTurnTracker {
   eventRevision = 0;
@@ -145,7 +175,10 @@ export class OpenCodeTurnTracker {
   private currentUser = false;
   private idle = false;
   private assistantComplete = false;
+  private assistantStepEnded = false;
+  private pendingTools = false;
   private assistantID: string | undefined;
+  private assistantIDs = new Set<string>();
   private assistantCost: number | undefined;
   private providerError: unknown;
   private stopRequested = false;
@@ -245,11 +278,17 @@ export class OpenCodeTurnTracker {
   }
 
   observe(event: OpenCodeTurnEvent) {
-    this.eventRevision++;
     const properties = event.properties;
     if (properties?.sessionID && properties.sessionID !== this.sessionID) return;
+    if (!isIdleNotification(event)) this.eventRevision++;
     if (event.type === "message.updated" && properties?.info) {
       this.observeMessage(properties.info);
+    } else if (event.type === "message.part.updated" && properties?.part) {
+      const part = properties.part;
+      // Streamed tool activity blocks the tool-step boundary until the next
+      // durable message read recomputes it from every part of this turn.
+      if (part.messageID && this.assistantIDs.has(part.messageID) && isToolPending(part))
+        this.pendingTools = true;
     } else if (event.type === "session.status") {
       this.observeStatus(properties?.status?.type);
     } else if (event.type === "session.idle") {
@@ -266,8 +305,20 @@ export class OpenCodeTurnTracker {
     messages: OpenCodeTurnRecord[] | undefined,
     authoritativeStatus = false,
   ) {
-    if (messages) this.assistantComplete = false;
+    if (messages) {
+      this.assistantComplete = false;
+      this.assistantStepEnded = false;
+      this.pendingTools = false;
+    }
     for (const message of messages ?? []) this.observeMessage(message.info);
+    if (messages) {
+      this.pendingTools = messages.some(
+        ({ info, parts }) =>
+          info.role === "assistant" &&
+          info.parentID === this.userMessageID &&
+          (parts ?? []).some(isToolPending),
+      );
+    }
     if (status) this.observeStatus(status.type, authoritativeStatus);
     else if (authoritativeStatus) this.observeStatus("idle", true);
     if (authoritativeStatus) this.trySettle();
@@ -289,15 +340,18 @@ export class OpenCodeTurnTracker {
       this.authoritativeIdle = false;
     }
     this.currentUser = true;
+    this.assistantIDs.add(message.id);
     if (message.id !== this.assistantID) {
       this.assistantID = message.id;
       this.assistantComplete = false;
+      this.assistantStepEnded = false;
       this.idle = false;
       this.authoritativeIdle = false;
     }
     if (message.error) this.providerError = message.error;
     this.assistantComplete = isFinished(message);
-    if (this.assistantComplete) {
+    this.assistantStepEnded = isStepEnded(message);
+    if (this.assistantComplete || this.assistantStepEnded) {
       this.assistantCost = message.cost;
     }
   }
@@ -328,7 +382,9 @@ export class OpenCodeTurnTracker {
       this.currentUser &&
       this.idle &&
       this.authoritativeIdle &&
-      (this.assistantComplete || this.providerError)
+      (this.assistantComplete ||
+        this.providerError ||
+        (this.assistantStepEnded && !this.pendingTools))
     ) {
       this.terminal = this.providerError
         ? { outcome: "failed", error: this.providerError }
