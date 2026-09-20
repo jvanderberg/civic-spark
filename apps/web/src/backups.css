@@ -1,0 +1,173 @@
+.backups {
+  min-width: 0;
+}
+.backup-actions-row {
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.backup-progress,
+.backup-list-note {
+  margin-block: 8px;
+  font-size: 12px;
+  color: var(--app-muted);
+}
+.backup-config,
+.backup-report {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 14px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.backup-config dt,
+.backup-report dt {
+  color: var(--app-muted);
+  font-weight: 500;
+}
+.backup-config dd,
+.backup-report dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.backup-pending,
+.backup-restart {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-muted-surface);
+  padding: 14px;
+  margin: 14px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.backup-pending .button {
+  margin-top: 10px;
+}
+.backup-last-restore {
+  margin: 14px 0;
+  font-size: 12px;
+}
+.backup-last-restore summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.backup-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.backup-list th,
+.backup-list td {
+  padding: 8px;
+  border-bottom: 1px solid var(--app-border);
+  text-align: left;
+  vertical-align: middle;
+}
+.backup-list thead th {
+  font-weight: 500;
+  color: var(--app-muted);
+}
+.backup-created span,
+.backup-created small {
+  display: block;
+}
+.backup-created small {
+  color: var(--app-muted);
+}
+.backup-contents {
+  overflow-wrap: anywhere;
+}
+.backup-contents .badge {
+  margin-left: 6px;
+}
+.backup-size {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.backup-actions {
+  white-space: nowrap;
+}
+.backup-actions .button {
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.backup-actions .button + .button {
+  margin-left: 4px;
+}
+.backup-mobile-label {
+  display: none;
+}
+.backup-restore-body ul {
+  margin: 12px 0 0 18px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.backup-restore-body li + li {
+  margin-top: 8px;
+}
+.backup-restore-actions {
+  padding: 0 24px 24px;
+}
+@media (max-width: 760px) {
+  .backup-list,
+  .backup-list tbody {
+    display: block;
+  }
+  .backup-list thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .backup-list tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 8px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--app-border);
+  }
+  .backup-list td {
+    display: block;
+    padding: 0;
+    border: none;
+  }
+  .backup-created,
+  .backup-contents,
+  .backup-actions {
+    grid-column: 1 / -1;
+  }
+  .backup-mobile-label {
+    display: block;
+    font-size: 11px;
+    color: var(--app-muted);
+  }
+  .backup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    white-space: normal;
+  }
+  .backup-actions .button + .button {
+    margin-left: 0;
+  }
+  .backup-config,
+  .backup-report {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
+  .backup-config dd,
+  .backup-report dd {
+    margin-bottom: 8px;
+  }
+}
+.backups p,
+.backups summary,
+.backup-restart,
+.backup-pending {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

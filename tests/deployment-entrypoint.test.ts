@@ -20,7 +20,7 @@ it("initializes private app-owned Sprite state before dropping privileges, witho
   const root = mkdtempSync(join(tmpdir(), "civic-spark-entrypoint-"));
   try {
     const log = join(root, "calls");
-    for (const command of ["install", "setpriv", "mountpoint"])
+    for (const command of ["install", "setpriv", "mountpoint", "chown"])
       writeFileSync(
         join(root, command),
         '#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$CIVIC_SPARK_TEST_LOG"\n',
@@ -44,6 +44,7 @@ it("initializes private app-owned Sprite state before dropping privileges, witho
     expect(commands).toEqual([
       "mountpoint -q /data",
       "install -d -m 0700 -o node -g node /data/civic-spark",
+      "chown node:node /data",
       "install -d -m 0700 -o node -g node /home/node/.sprites",
       "setpriv --reuid=node --regid=node --init-groups node --import tsx apps/server/src/index.ts",
     ]);

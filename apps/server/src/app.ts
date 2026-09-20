@@ -38,6 +38,7 @@ import {
 import { registerAdminRoutes } from "./admin.ts";
 import { AgentSessions } from "./agents.ts";
 import { createAuthentication } from "./auth.ts";
+import { BackupManager, registerBackupRoutes } from "./backups.ts";
 import {
   clientAddress,
   createStorageReadiness,
@@ -76,11 +77,14 @@ export async function createApp(
     .parse(process.env.CIVIC_SPARK_AUTH_MODE ?? "email"),
   siteEventId = z.uuid().optional().parse(process.env.CIVIC_SPARK_SITE_EVENT_ID),
   lifecycleProvider?: SpriteLifecycleProvider,
+  restart?: () => void,
 ) {
   const deployment = validateDeployment(root, baseURL, authMode);
   const prototype = authMode === "prototype";
   const demo = authMode === "demo";
   const unverifiedSignIn = prototype || demo;
+  // Backups cover the whole data directory, including every sign-in mode's stores.
+  const dataRoot = root;
   if (demo) root = join(root, "demo");
   if (prototype) {
     if (!["127.0.0.1", "localhost"].includes(new URL(baseURL).hostname))
@@ -487,6 +491,15 @@ export async function createApp(
     return { recorded: true };
   });
   registerAdminRoutes(app, service);
+  const backups = new BackupManager({
+    base: dataRoot,
+    authMode,
+    origin: baseURL,
+    service,
+    restart,
+    configuration: { spritesEnabled, siteEventId: siteEventId ?? null },
+  });
+  registerBackupRoutes(app, backups);
   app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled, siteEventId));
   app.post("/api/events", async (r, reply) =>
     send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body))),
@@ -999,5 +1012,5 @@ export async function createApp(
         : reply.sendFile("index.html"),
     );
   }
-  return { app, service, authentication };
+  return { app, service, authentication, backups };
 }

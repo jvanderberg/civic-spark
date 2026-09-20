@@ -224,6 +224,8 @@ export function invalidateAuthentication(root: string) {
         db.exec('DELETE FROM "session"; DELETE FROM "verification";');
       })();
       db.pragma("wal_checkpoint(TRUNCATE)");
+      // Deleted rows stay in free pages until the file is rebuilt; copies must not carry them.
+      db.exec("VACUUM");
     } finally {
       db.close();
     }
