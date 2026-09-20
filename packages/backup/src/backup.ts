@@ -41,6 +41,14 @@ export const installationSchema = z
     spriteApiOrigin: z.url(),
   })
   .strict();
+export const operatorFilesSchema = z
+  .object({
+    configuration: z.string(),
+    receipt: z.string(),
+    // Live in-app captures never include a secrets file; the CLI capture requires one.
+    secrets: z.string().optional(),
+  })
+  .strict();
 export const createSchema = z
   .object({
     dataRoot: z.string().min(1),
@@ -65,7 +73,7 @@ export const restoreSchema = z
   })
   .strict();
 export type RestoreOptions = z.infer<typeof restoreSchema>;
-const manifestSchema = z
+export const manifestSchema = z
   .object({
     format: z.literal("civic-spark-management-backup"),
     version: z.literal(1),
@@ -75,18 +83,19 @@ const manifestSchema = z
     createdAt: z.iso.datetime(),
     installation: installationSchema,
     sourceDataRoot: z.string().min(1),
-    consistency: z.literal("coordinated-offline-exclusive-writer"),
+    consistency: z.enum(["coordinated-offline-exclusive-writer", "live-online-snapshot"]),
     spritePrivateState: z.literal("excluded-disposable"),
-    operatorFiles: createSchema.shape.operatorFiles,
+    operatorFiles: operatorFilesSchema,
     inventory: z.unknown(),
     entries: z.array(entrySchema).max(2000000),
   })
   .strict();
 export type Manifest = z.infer<typeof manifestSchema>;
-const fenceName = ".civic-spark-recovery.json";
+export const fenceName = ".civic-spark-recovery.json";
 
-function requireOperatorFiles(root: string, files: CreateOptions["operatorFiles"]) {
+function requireOperatorFiles(root: string, files: z.infer<typeof operatorFilesSchema>) {
   for (const path of Object.values(files)) {
+    if (path === undefined) continue;
     if (
       !path ||
       !contained(root, join(root, path)) ||
@@ -121,7 +130,6 @@ export async function createBackup(input: CreateOptions) {
   requireOperatorFiles(operator, options.operatorFiles);
   const key = readKey(options.keyFile);
   const release = acquireWriter(root);
-  let stage: string | undefined;
   try {
     if (existsSync(join(root, fenceName)))
       throw new Error("Cannot back up an unreconciled restore as a live installation");
@@ -129,50 +137,25 @@ export async function createBackup(input: CreateOptions) {
     if (summary.reservations.length && !options.installation.spriteOrg)
       throw new Error("Reserved Sprites require recorded provider ownership");
     const before = [...snapshot(root, "data"), ...snapshot(operator, "operator")];
-    stage = mkdtempSync(join(dirname(destination), ".civic-spark-backup-partial-"));
-    chmodSync(stage, 0o700);
-    const entries = [...inventory(root, "data"), ...inventory(operator, "operator")];
-    let number = 0;
-    for (const entry of entries) {
-      if (entry.kind !== "file") continue;
-      const source = entry.path.startsWith("data/")
-        ? join(root, entry.path.slice(5))
-        : join(operator, entry.path.slice(9));
-      entry.blob = `${String(number++).padStart(8, "0")}.enc`;
-      const result = await encryptFile(source, join(stage, entry.blob), key, entry.path);
-      if (result.size !== entry.size) throw new Error("Source changed during backup");
-      entry.sha256 = result.sha256;
-    }
-    const after = [...snapshot(root, "data"), ...snapshot(operator, "operator")];
-    if (JSON.stringify(before) !== JSON.stringify(after))
-      throw new Error("Source changed during backup; coordinate all writers");
-    const manifest: Manifest = {
-      format: "civic-spark-management-backup",
-      version: 1,
-      app: "civic-spark",
-      appVersion: "0.1.0",
-      backupId: randomUUID(),
-      createdAt: new Date().toISOString(),
-      installation: options.installation,
-      sourceDataRoot: root,
-      consistency: "coordinated-offline-exclusive-writer",
-      spritePrivateState: "excluded-disposable",
-      operatorFiles: options.operatorFiles,
-      inventory: summary,
-      entries,
-    };
-    validateEntries(entries);
-    const plain = join(stage, "manifest.tmp");
-    writePrivate(plain, JSON.stringify(manifest));
-    await encryptFile(plain, join(stage, "manifest.enc"), key, "civic-spark-manifest-v1");
-    rmSync(plain);
-    writePrivate(join(stage, "FINALIZED"), digest(readFileSync(join(stage, "manifest.enc"))));
-    syncPath(stage);
-    // Parent is required private; no cooperating operator may race this finalization.
-    absentDestination(destination);
-    renameSync(stage, destination);
-    stage = undefined;
-    syncPath(dirname(destination));
+    const manifest = await sealArchive({
+      dataRoot: root,
+      operatorRoot: operator,
+      destination,
+      key,
+      manifest: {
+        installation: options.installation,
+        sourceDataRoot: root,
+        consistency: "coordinated-offline-exclusive-writer",
+        operatorFiles: options.operatorFiles,
+        inventory: summary,
+      },
+      // Parent is required private; no cooperating operator may race this finalization.
+      beforeFinalize: () => {
+        const after = [...snapshot(root, "data"), ...snapshot(operator, "operator")];
+        if (JSON.stringify(before) !== JSON.stringify(after))
+          throw new Error("Source changed during backup; coordinate all writers");
+      },
+    });
     return {
       backupId: manifest.backupId,
       ...summary,
@@ -181,20 +164,78 @@ export async function createBackup(input: CreateOptions) {
   } finally {
     release();
     key.fill(0);
-    if (stage) rmSync(stage, { recursive: true, force: true });
   }
 }
 
-function manifestDigest(archive: string) {
+/** Encrypt complete data/operator trees into a finalized archive directory. */
+export async function sealArchive(input: {
+  dataRoot: string;
+  operatorRoot: string;
+  destination: string;
+  key: Buffer | null;
+  manifest: Pick<
+    Manifest,
+    "installation" | "sourceDataRoot" | "consistency" | "operatorFiles" | "inventory"
+  >;
+  beforeFinalize?: () => void;
+  identity?: { backupId: string; createdAt: string };
+}) {
+  const destination = resolve(input.destination);
+  absentDestination(destination);
+  const stage = mkdtempSync(join(dirname(destination), ".civic-spark-backup-partial-"));
+  chmodSync(stage, 0o700);
+  try {
+    const entries = [
+      ...inventory(input.dataRoot, "data"),
+      ...inventory(input.operatorRoot, "operator"),
+    ];
+    let number = 0;
+    for (const entry of entries) {
+      if (entry.kind !== "file") continue;
+      const source = entry.path.startsWith("data/")
+        ? join(input.dataRoot, entry.path.slice(5))
+        : join(input.operatorRoot, entry.path.slice(9));
+      entry.blob = `${String(number++).padStart(8, "0")}.enc`;
+      const result = await encryptFile(source, join(stage, entry.blob), input.key, entry.path);
+      if (result.size !== entry.size) throw new Error("Source changed during backup");
+      entry.sha256 = result.sha256;
+    }
+    input.beforeFinalize?.();
+    const manifest: Manifest = {
+      format: "civic-spark-management-backup",
+      version: 1,
+      app: "civic-spark",
+      appVersion: "0.1.0",
+      backupId: input.identity?.backupId ?? randomUUID(),
+      createdAt: input.identity?.createdAt ?? new Date().toISOString(),
+      ...input.manifest,
+      spritePrivateState: "excluded-disposable",
+      entries,
+    };
+    validateEntries(entries);
+    const plain = join(stage, "manifest.tmp");
+    writePrivate(plain, JSON.stringify(manifest));
+    await encryptFile(plain, join(stage, "manifest.enc"), input.key, "civic-spark-manifest-v1");
+    rmSync(plain);
+    writePrivate(join(stage, "FINALIZED"), digest(readFileSync(join(stage, "manifest.enc"))));
+    syncPath(stage);
+    absentDestination(destination);
+    renameSync(stage, destination);
+    syncPath(dirname(destination));
+    return manifest;
+  } finally {
+    rmSync(stage, { recursive: true, force: true });
+  }
+}
+
+export function manifestDigest(archive: string) {
   const path = join(archive, "manifest.enc");
   const info = lstatSync(path);
   if (!info.isFile() || info.size > 256 * 1024 * 1024)
     throw new Error("Manifest is not a bounded regular file");
   return digest(readFileSync(path));
 }
-
-async function unpack(options: RestoreOptions, stage: string) {
-  const archive = resolve(options.archive);
+function checkArchiveShape(archive: string) {
   // Check the requested path BEFORE canonicalization so links cannot impersonate copies.
   privateDirectory(archive);
   if (!existsSync(join(archive, "FINALIZED"))) throw new Error("Backup is partial, not finalized");
@@ -205,42 +246,75 @@ async function unpack(options: RestoreOptions, stage: string) {
     throw new Error("Invalid finalized marker size");
   if (readFileSync(join(archive, "FINALIZED"), "utf8") !== manifestDigest(archive))
     throw new Error("Backup manifest checksum mismatch");
+}
+/** Decrypt and validate only the manifest; no data files are unpacked. */
+export async function readManifest(archive: string, key: Buffer | null, scratch: string) {
+  checkArchiveShape(resolve(archive));
+  const plain = join(scratch, `manifest-${randomUUID()}.json`);
+  try {
+    try {
+      await decryptFile(join(archive, "manifest.enc"), plain, key, "civic-spark-manifest-v1");
+    } catch {
+      throw new Error("Backup cannot be read: it is damaged or uses a different format");
+    }
+    const manifest = manifestSchema.parse(JSON.parse(readFileSync(plain, "utf8")));
+    validateEntries(manifest.entries);
+    return manifest;
+  } finally {
+    rmSync(plain, { force: true });
+  }
+}
+function sameInstallation(expected: Manifest["installation"]) {
+  return (manifest: Manifest) => {
+    if (JSON.stringify(manifest.installation) !== JSON.stringify(expected))
+      throw new Error("Installation, release, origin or authentication mode mismatch");
+  };
+}
+export async function unpackArchive(
+  archive: string,
+  key: Buffer | null,
+  stage: string,
+  check: (manifest: Manifest) => void,
+) {
+  archive = resolve(archive);
+  checkArchiveShape(archive);
+  const manifest = await readManifest(archive, key, stage);
+  check(manifest);
+  // Recovery reconciliation reads the plaintext manifest beside the restored data tree.
+  writePrivate(join(stage, "manifest.json"), JSON.stringify(manifest));
+  const expected = new Set([
+    "manifest.enc",
+    "FINALIZED",
+    ...manifest.entries.flatMap((e) => (e.blob ? [e.blob] : [])),
+  ]);
+  if (readdirSync(archive).some((n) => !expected.delete(n)) || expected.size)
+    throw new Error("Backup has missing or unexpected files");
+  for (const entry of manifest.entries) {
+    const destination = join(stage, entry.path);
+    if (entry.kind === "directory") makeDirectory(destination);
+    if (entry.kind === "file") {
+      const result = await decryptFile(
+        join(archive, entry.blob as string),
+        destination,
+        key,
+        entry.path,
+      );
+      if (result.size !== entry.size || result.sha256 !== entry.sha256)
+        throw new Error("Backup file checksum mismatch");
+      chmodSync(destination, 0o600 | (entry.mode & 0o100));
+    }
+    // Links are inert metadata until all verification and database writes have completed.
+  }
+  requireOperatorFiles(join(stage, "operator"), manifest.operatorFiles);
+  const verified = verifyTree(join(stage, "data"), manifest.installation.authMode);
+  if (JSON.stringify(verified) !== JSON.stringify(manifest.inventory))
+    throw new Error("Restored inventory mismatch");
+  return { manifest, verified };
+}
+async function unpack(options: RestoreOptions, stage: string) {
   const key = readKey(options.keyFile);
   try {
-    const plain = join(stage, "manifest.json");
-    await decryptFile(join(archive, "manifest.enc"), plain, key, "civic-spark-manifest-v1");
-    const manifest = manifestSchema.parse(JSON.parse(readFileSync(plain, "utf8")));
-    if (JSON.stringify(manifest.installation) !== JSON.stringify(options.installation))
-      throw new Error("Installation, release, origin or authentication mode mismatch");
-    validateEntries(manifest.entries);
-    const expected = new Set([
-      "manifest.enc",
-      "FINALIZED",
-      ...manifest.entries.flatMap((e) => (e.blob ? [e.blob] : [])),
-    ]);
-    if (readdirSync(archive).some((n) => !expected.delete(n)) || expected.size)
-      throw new Error("Backup has missing or unexpected files");
-    for (const entry of manifest.entries) {
-      const destination = join(stage, entry.path);
-      if (entry.kind === "directory") makeDirectory(destination);
-      if (entry.kind === "file") {
-        const result = await decryptFile(
-          join(archive, entry.blob as string),
-          destination,
-          key,
-          entry.path,
-        );
-        if (result.size !== entry.size || result.sha256 !== entry.sha256)
-          throw new Error("Backup file checksum mismatch");
-        chmodSync(destination, 0o600 | (entry.mode & 0o100));
-      }
-      // Links are inert metadata until all verification and database writes have completed.
-    }
-    requireOperatorFiles(join(stage, "operator"), manifest.operatorFiles);
-    const verified = verifyTree(join(stage, "data"), manifest.installation.authMode);
-    if (JSON.stringify(verified) !== JSON.stringify(manifest.inventory))
-      throw new Error("Restored inventory mismatch");
-    return { manifest, verified };
+    return await unpackArchive(options.archive, key, stage, sameInstallation(options.installation));
   } finally {
     key.fill(0);
   }

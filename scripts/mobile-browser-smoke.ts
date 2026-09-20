@@ -7,6 +7,7 @@ import { chromium, type Locator, type WebSocketRoute } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
 import type { AgentEvent, AgentInput } from "../packages/agents/src/protocol.ts";
 import type { PortalState } from "../packages/domain/src/access-types.ts";
+import { verifyAdminBackups } from "./admin-backups-browser-smoke.ts";
 import { verifyAdminEventDetails } from "./admin-event-browser-smoke.ts";
 import { verifyAdminProjects } from "./admin-projects-browser-smoke.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
@@ -462,3 +463,5 @@ await verifyAdminEventDetails();
 await verifyParticipantProjects();
 
 await verifyProvisioning();
+
+await verifyAdminBackups();

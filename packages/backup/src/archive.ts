@@ -75,25 +75,43 @@ export function writePrivate(path: string, content: string | Buffer) {
   writeFileSync(path, content, { flag: "wx", mode: 0o600, flush: true });
 }
 
-// Format: magic (8), nonce (12), ciphertext, GCM tag (16). All metadata is encrypted too.
+// Encrypted format: magic (8), nonce (12), ciphertext, GCM tag (16). All metadata is
+// encrypted too. Plain format (key null): magic (8), 12 zero bytes, plaintext, 16-byte
+// truncated SHA-256 of the path label and content. Both carry the same framing.
 const magic = Buffer.from("CSPARK01");
-export async function encryptFile(source: string, destination: string, key: Buffer, aad: string) {
-  const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, nonce);
-  cipher.setAAD(Buffer.from(aad));
+const plainMagic = Buffer.from("CSPARKP1");
+const plainTag = (aad: string, content: ReturnType<typeof createHash>) =>
+  createHash("sha256")
+    .update(Buffer.from(aad))
+    .update(Buffer.from([0]))
+    .update(content.digest())
+    .digest()
+    .subarray(0, 16);
+export async function encryptFile(
+  source: string,
+  destination: string,
+  key: Buffer | null,
+  aad: string,
+) {
+  const nonce = key ? randomBytes(12) : Buffer.alloc(12);
+  const cipher = key ? createCipheriv("aes-256-gcm", key, nonce) : null;
+  cipher?.setAAD(Buffer.from(aad));
   const hash = createHash("sha256");
+  const content = createHash("sha256");
   let size = 0;
   const counter = new Transform({
     transform(chunk: Buffer, _encoding, done) {
       hash.update(chunk);
+      content.update(chunk);
       size += chunk.length;
       done(null, chunk);
     },
   });
   const output = createWriteStream(destination, { flags: "wx", mode: 0o600 });
-  output.write(Buffer.concat([magic, nonce]));
-  await pipeline(createReadStream(source), counter, cipher, output, { end: false });
-  output.end(cipher.getAuthTag());
+  output.write(Buffer.concat([key ? magic : plainMagic, nonce]));
+  if (cipher) await pipeline(createReadStream(source), counter, cipher, output, { end: false });
+  else await pipeline(createReadStream(source), counter, output, { end: false });
+  output.end(cipher ? cipher.getAuthTag() : plainTag(aad, content));
   await new Promise<void>((resolveDone, reject) => {
     output.on("finish", resolveDone);
     output.on("error", reject);
@@ -101,7 +119,12 @@ export async function encryptFile(source: string, destination: string, key: Buff
   syncPath(destination);
   return { sha256: hash.digest("hex"), size };
 }
-export async function decryptFile(source: string, destination: string, key: Buffer, aad: string) {
+export async function decryptFile(
+  source: string,
+  destination: string,
+  key: Buffer | null,
+  aad: string,
+) {
   const size = statSync(source).size;
   if (size < 36) throw new Error("Truncated encrypted file");
   const header = Buffer.alloc(20);
@@ -114,25 +137,33 @@ export async function decryptFile(source: string, destination: string, key: Buff
   } finally {
     closeSync(fd);
   }
-  if (!header.subarray(0, 8).equals(magic)) throw new Error("Unknown backup encryption format");
-  const decipher = createDecipheriv("aes-256-gcm", key, header.subarray(8));
-  decipher.setAAD(Buffer.from(aad));
-  decipher.setAuthTag(tag);
+  const encrypted = header.subarray(0, 8).equals(magic);
+  if (!encrypted && !header.subarray(0, 8).equals(plainMagic))
+    throw new Error("Unknown backup archive format");
+  if (encrypted && !key) throw new Error("This backup is encrypted; restore it with the CLI key");
+  if (!encrypted && key) throw new Error("This backup is not encrypted; no key applies");
+  const decipher = key ? createDecipheriv("aes-256-gcm", key, header.subarray(8)) : null;
+  decipher?.setAAD(Buffer.from(aad));
+  decipher?.setAuthTag(tag);
   const hash = createHash("sha256");
+  const content = createHash("sha256");
   let plainSize = 0;
   const counter = new Transform({
     transform(chunk: Buffer, _encoding, done) {
       hash.update(chunk);
+      content.update(chunk);
       plainSize += chunk.length;
       done(null, chunk);
     },
   });
-  await pipeline(
-    size === 36 ? Readable.from([]) : createReadStream(source, { start: 20, end: size - 17 }),
-    decipher,
-    counter,
-    createWriteStream(destination, { flags: "wx", mode: 0o600 }),
-  );
+  const body =
+    size === 36 ? Readable.from([]) : createReadStream(source, { start: 20, end: size - 17 });
+  const output = createWriteStream(destination, { flags: "wx", mode: 0o600 });
+  if (decipher) await pipeline(body, decipher, counter, output);
+  else {
+    await pipeline(body, counter, output);
+    if (!plainTag(aad, content).equals(tag)) throw new Error("Backup file checksum mismatch");
+  }
   return { sha256: hash.digest("hex"), size: plainSize };
 }
 

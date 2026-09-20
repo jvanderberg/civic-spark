@@ -22,6 +22,7 @@ import type {
   TeamView,
 } from "../../../packages/domain/src/access-types.ts";
 import type { Contribution, Event } from "../../../packages/domain/src/types.ts";
+import { AdminBackups } from "./AdminBackups.tsx";
 import { AdminEventDetails } from "./AdminEventDetails.tsx";
 import { AdminProjects } from "./AdminProjects.tsx";
 import { AdminSprites } from "./AdminSprites.tsx";
@@ -33,13 +34,14 @@ import { type CreationRequest, ParticipantCreation } from "./ParticipantCreation
 import { ProjectBrief } from "./ProjectBrief.tsx";
 import { Workspace } from "./Workspace.tsx";
 
-type AdminSection = "event" | "sprites" | "projects" | "teams" | "people";
+type AdminSection = "event" | "sprites" | "projects" | "teams" | "people" | "backups";
 const adminSections: { id: AdminSection; label: string }[] = [
   { id: "event", label: "Event details" },
   { id: "sprites", label: "Sprites" },
   { id: "projects", label: "Projects" },
   { id: "teams", label: "Teams" },
   { id: "people", label: "People & roles" },
+  { id: "backups", label: "Backups" },
 ];
 type Tab = "discover" | "all-teams" | "teams" | "admin" | "schedule";
 const nextStatus = {
@@ -986,6 +988,9 @@ export function App() {
                   )}
                   {adminSection === "teams" && (
                     <AdminTeams key={eventId} teams={teams} members={members} refresh={refresh} />
+                  )}
+                  {adminSection === "backups" && (
+                    <AdminBackups key={`backups-${eventId}`} eventId={eventId} />
                   )}
                 </>
               )}

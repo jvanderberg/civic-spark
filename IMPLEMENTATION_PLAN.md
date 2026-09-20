@@ -1,3 +1,11 @@
+## Admin console backups — local, pending integration
+
+- [x] Live in-process capture (SQLite online backup, Git mirror clones, verified and sealed in the archive layout as plain checksummed files; sessions/auth secret excluded) from Admin → Backups without stopping the application.
+- [x] Backup list, download as flat tar, upload with checksum verification, delete; optional `CIVIC_SPARK_BACKUP_OPERATORS` allowlist on top of event admin access.
+- [x] Restore of any same-mode backup with cross-installation warnings: staged recovered root, session revocation, preserved newer preview origins, Sprite reservation report, restart-and-swap with startup completion, retained replaced root, discard while pending.
+- [x] Integration tests with a real demo-mode application and the browser Backups check at phone/desktop/short widths in both themes.
+- [ ] Root integration, hosted restart-path acceptance on Fly and first live backup/restore rehearsal.
+
 ## Administrative Sprite deletion reset — deployed `6c48d0f`
 
 - [x] Trace row Delete through API/admin/generation checks, drains, provider deletion and owner recovery.
@@ -221,6 +229,7 @@ A native helper for syncing while the browser is closed is a possible later exte
 - [ ] Integration Sprite, configured checks and shared app preview
 - [ ] Enforced model budgets and deployment resource limits
 - [x] Versioned encrypted whole-management/shared-Git/operator backup, exclusive offline writer coordination, isolated restore validation/session revocation and startup fence; see [backup/restore](docs/backup-restore.md)
+- [x] Admin console unencrypted live backup/download/upload/restore of the running installation with restart-and-swap; see [admin console backups](docs/backup-restore.md#admin-console-backups)
 - [x] Explicit recovery reconciliation CLI with provider/org binding, metadata-only present/404 checks and preserved permanent preview-origin ledger; no automatic cloud mutation or model turns
 - [ ] Integrate/test explicit owner-reopen recovery of confirmed-missing ephemeral Sprites from canonical shared Git with lifecycle gates
 - [ ] First coordinated live/off-machine backup and disaster-recovery rehearsal, deployment-owner review and cutover
