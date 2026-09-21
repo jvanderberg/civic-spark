@@ -68,3 +68,20 @@
     font-size: 16px;
   }
 }
+.team-updates-menu .team-terminal-prompt {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--app-border);
+}
+:root .team-updates-menu .team-terminal-prompt textarea {
+  width: 100%;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  background: var(--app-input);
+  color: var(--app-text);
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}

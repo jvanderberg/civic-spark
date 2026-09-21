@@ -36,6 +36,7 @@ export function EnvironmentControls({
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [approved, setApproved] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [details, setDetails] = useState(false);
@@ -120,18 +121,27 @@ export function EnvironmentControls({
       else setBusy(false);
     }
   }
+  const resolutionPrompt =
+    "I explicitly approve resolving the pending agent-publication rebase conflicts. Run civic-spark git status to inspect the approved request. The controlled integration has begun the rebase and created a recovery reference. Reconcile both sides' intent, preserving unrelated work. Stage resolved paths and run GIT_EDITOR=true git rebase --continue until complete; run appropriate checks, summarize the resolved result, and ask me before publishing. This approval is for conflict resolution only. Run civic-spark git publish only after I explicitly confirm publication of the resolved changes. Do not force push or discard either side wholesale. If unsafe or ambiguous, keep recovery intact and ask me.";
+  // The server marks the ticket resolving; keep the confirmation visible locally
+  // too, until a different ticket arrives, so a refresh race cannot hide it.
+  const approvedTicket =
+    pending?.status === "resolving"
+      ? pending.id
+      : approved && (!pending || pending.id === approved)
+        ? approved
+        : null;
   async function confirm(allow: boolean) {
     if (!pending) return;
     setBusy(true);
     setError("");
     try {
       await api(`/workspaces/${workspace}/agent-git/confirm`, "POST", { id: pending.id, allow });
-      if (allow)
-        onResolve({
-          id: `publish-${pending.id}`,
-          prompt:
-            "I explicitly approve resolving the pending agent-publication rebase conflicts. Run civic-spark git status to inspect the approved request. The controlled integration has begun the rebase and created a recovery reference. Reconcile both sides' intent, preserving unrelated work. Stage resolved paths and run GIT_EDITOR=true git rebase --continue until complete; run appropriate checks, summarize the resolved result, and ask me before publishing. This approval is for conflict resolution only. Run civic-spark git publish only after I explicitly confirm publication of the resolved changes. Do not force push or discard either side wholesale. If unsafe or ambiguous, keep recovery intact and ask me.",
-        });
+      setApproved(allow ? pending.id : null);
+      // Approval only records consent and starts the recoverable rebase. Which
+      // agent continues is the person's choice: a terminal session reads the
+      // approved state through civic-spark git status; the Agent tab gets the
+      // instructions only when asked for below.
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Conflict confirmation failed");
@@ -232,8 +242,9 @@ export function EnvironmentControls({
             <div className="environment-conflict">
               <strong>Allow the agent to resolve team conflicts?</strong>
               <p>
-                Your checkout has not changed. Approval starts a recoverable rebase, then lets the
-                agent resolve and publish.
+                Your checkout has not changed. Approval starts a recoverable rebase; the agent you
+                are using, in the Agent tab or in the terminal, then resolves and asks before
+                publishing.
               </p>
               {pending.conflicts.length > 0 && (
                 <ul>
@@ -249,7 +260,7 @@ export function EnvironmentControls({
                   disabled={busy || dirty || working}
                   onClick={() => void confirm(true)}
                 >
-                  Resolve with agent
+                  Approve resolution
                 </button>
                 <button
                   type="button"
@@ -265,8 +276,26 @@ export function EnvironmentControls({
               )}
             </div>
           )}
-          {pending?.status === "resolving" && (
-            <p>Conflict resolution approved. Continue the rebase in Agent, then publish.</p>
+          {approvedTicket && (
+            <div className="environment-conflict">
+              <p>
+                Conflict resolution approved and the rebase has started. Tell the agent you are
+                using to run <code>civic-spark git status</code> and continue; it asks before
+                publishing. Working in the Agent tab? Send it the instructions.
+              </p>
+              <div className="environment-actions">
+                <button
+                  type="button"
+                  className="button small"
+                  disabled={working}
+                  onClick={() =>
+                    onResolve({ id: `publish-${approvedTicket}`, prompt: resolutionPrompt })
+                  }
+                >
+                  Send to Agent tab
+                </button>
+              </div>
+            </div>
           )}
           {(error || preview?.error) && <p role="alert">{error || preview?.error}</p>}
           {preview?.logs && <pre>{preview.logs}</pre>}

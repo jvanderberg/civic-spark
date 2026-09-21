@@ -299,11 +299,21 @@ try {
   await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
   await page.getByRole("button", { name: "Confirm conflict resolution", exact: true }).click();
   assert.equal(approved, false);
-  await page.getByRole("button", { name: "Resolve with agent", exact: true }).click();
+  // Approval records consent and starts the rebase without handing anything to
+  // the Agent tab; a terminal agent continues on its own. The hand-off is explicit.
+  await page.getByRole("button", { name: "Approve resolution", exact: true }).click();
   assert.equal(approved, true);
+  await page.getByText("Conflict resolution approved and the rebase has started").waitFor();
+  assert.equal(
+    await page.locator(".agent-panel").evaluate((node) => (node as HTMLElement).hidden),
+    true,
+    "No automatic Agent hand-off",
+  );
+  await page.getByRole("button", { name: "Send to Agent tab", exact: true }).click();
+  await page.getByLabel("Message to agent").waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: Launch/Restart/Stop, real public popup with isolated origin, light/dark/mobile controls, explicit conflict confirmation and agent handoff; no model calls.",
+    "PASS: Launch/Restart/Stop, real public popup with isolated origin, light/dark/mobile controls, explicit conflict approval without automatic hand-off, explicit Send to Agent tab; no model calls.",
   );
 } finally {
   await browser.close();

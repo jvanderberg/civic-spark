@@ -55,6 +55,8 @@ export function TeamUpdates({
   const [mine, setMine] = useState(false);
   const [mineTitle, setMineTitle] = useState("Keep my version");
   const [confirmation, setConfirmation] = useState("");
+  const [terminalPrompt, setTerminalPrompt] = useState("");
+  const [copied, setCopied] = useState(false);
   const mineTitleId = useId();
   const confirmId = useId();
   const polling = useRef(false);
@@ -126,7 +128,10 @@ export function TeamUpdates({
       void verify({ head: current.head, remote: current.remote });
   }, [completedRequest, verify]);
 
-  async function update(mode: "pull" | "agent" | "replace") {
+  async function update(
+    mode: "pull" | "agent" | "replace",
+    handoff: "agent" | "terminal" = "agent",
+  ) {
     if (disabled || dirty || working || status?.agentWorking || busy || !status) return;
     const expected = status.resolution ?? conflict ?? status;
     if (
@@ -154,8 +159,16 @@ export function TeamUpdates({
         const id = crypto.randomUUID();
         resolution.current = { id, head: expected.head, remote: expected.remote };
         setConflict(result);
-        setOpen(false);
-        request = { id, prompt: result.prompt };
+        if (handoff === "terminal") {
+          // The merge has started; the person pastes the prompt into whichever
+          // agent session they run. Check agent result verifies it afterwards.
+          setTerminalPrompt(result.prompt);
+          setCopied(false);
+          setOpen(true);
+        } else {
+          setOpen(false);
+          request = { id, prompt: result.prompt };
+        }
       } else {
         setConflict(null);
         setNotice(
@@ -277,6 +290,14 @@ export function TeamUpdates({
                   type="button"
                   className="button"
                   disabled={blocked}
+                  onClick={() => void update("agent", "terminal")}
+                >
+                  Resolve in terminal
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={blocked}
                   onClick={() => void update("replace")}
                 >
                   Use team version
@@ -291,6 +312,41 @@ export function TeamUpdates({
                   Use my version
                 </button>
               </div>
+              {terminalPrompt && (
+                <div className="team-terminal-prompt">
+                  <p>
+                    The merge has started in your workspace. Paste this into the agent running in
+                    your terminal, then use Check agent result when it is done.
+                  </p>
+                  <textarea
+                    readOnly
+                    rows={4}
+                    value={terminalPrompt}
+                    aria-label="Resolution prompt"
+                  />
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="button small"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(terminalPrompt).then(
+                          () => setCopied(true),
+                          () => setCopied(false),
+                        );
+                      }}
+                    >
+                      {copied ? "Copied" : "Copy prompt"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button small"
+                      onClick={() => setTerminalPrompt("")}
+                    >
+                      Hide
+                    </button>
+                  </div>
+                </div>
+              )}
               {mine && (
                 <div className="team-replace-mine">
                   <p>

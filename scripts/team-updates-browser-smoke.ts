@@ -88,6 +88,16 @@ try {
           backup: "refs/civic-spark/recovery/test",
         },
       });
+    } else if (conflicted && input.mode === "agent") {
+      await route.fulfill({
+        json: {
+          status: "agent",
+          head,
+          remote,
+          conflicts: ["README.md"],
+          prompt: `Resolve the Git merge that I requested in this workspace. The original local commit is ${head}; the incoming team commit is ${remote}.`,
+        },
+      });
     } else if (conflicted) {
       await route.fulfill({ json: { status: "conflict", head, remote, conflicts: ["README.md"] } });
     } else {
@@ -144,13 +154,34 @@ try {
   await page.getByText("Team version loaded.", { exact: false }).waitFor();
   assert.equal(calls, 3);
   await page.getByRole("button", { name: "Later", exact: true }).click();
-  // Use my version: the typed-confirmation escape hatch publishes this workspace
-  // over the team head through Share, never through team-update.
+  // Resolve in terminal: starts the agent-mode merge and shows the prompt inline
+  // for a terminal agent instead of handing it to the Agent tab.
   incoming = true;
   await top.click();
   await page.getByRole("button", { name: "Get updates", exact: true }).click();
   await page.getByText("Some changes overlap").waitFor();
   assert.equal(calls, 4);
+  await page.getByRole("button", { name: "Resolve in terminal", exact: true }).click();
+  await page.getByLabel("Resolution prompt", { exact: true }).waitFor();
+  assert.equal(calls, 5);
+  assert(
+    (await page.getByLabel("Resolution prompt", { exact: true }).inputValue()).includes(
+      "Resolve the Git merge",
+    ),
+  );
+  assert.equal(
+    await page.locator(".agent-panel").evaluate((node) => (node as HTMLElement).hidden),
+    true,
+    "No Agent tab hand-off",
+  );
+  await page.getByRole("button", { name: "Hide", exact: true }).click();
+  await page.getByRole("button", { name: "Later", exact: true }).click();
+  // Use my version: the typed-confirmation escape hatch publishes this workspace
+  // over the team head through Share, never through team-update. The overlap
+  // state is still open from the terminal hand-off above.
+  await top.click();
+  await page.getByText("Some changes overlap").waitFor();
+  assert.equal(calls, 5);
   const dir = service.workspacePath(id);
   writeFileSync(join(dir, "mine.txt"), "My version\n");
   const replace = page.getByRole("button", { name: "Replace team version", exact: true });
@@ -166,7 +197,7 @@ try {
   await page.screenshot({ path: join(artifacts, "team-updates-use-mine.png") });
   await replace.click();
   await page.getByText("team repository now matches", { exact: false }).waitFor();
-  assert.equal(calls, 4, "Use my version never calls team-update");
+  assert.equal(calls, 5, "Use my version never calls team-update");
   const repo = join(root, "repos", `${team.team.id}.git`);
   assert.equal(
     git(repo, ["rev-parse", "main"]).toString().trim(),
