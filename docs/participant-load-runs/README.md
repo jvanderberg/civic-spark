@@ -17,6 +17,7 @@ ran the cohort; the reports are the durable record. How to repeat a run is in
 | 2026-09-20 06:54 | 50 | 47/50 on one vCPU after the round-two fixes | b6608e5, 1 vCPU | [run-20260920d.md](run-20260920d.md) |
 | 2026-09-20 13:58 | 50 | 48/50 with relay workers and pushed status | 98ffdaa | [run-20260920e.md](run-20260920e.md) |
 | 2026-09-20 15:01 | 50 | 48/50, main loop 17 % median, first byte 0.25 s at peak | 903f55d | [run-20260920f.md](run-20260920f.md) |
+| 2026-09-21 19:05 | 50 | 41/50; eight refused Shares from scaffold `.oxlintrc.json` under the old dotfile rule, one harness timing miss; host 32 % peak, no platform errors | 0ad0cd5 (v40) | [run-20260921a.md](run-20260921a.md) |
 
 ## Timeline of findings
 
@@ -54,7 +55,12 @@ ran the cohort; the reports are the durable record. How to repeat a run is in
    first; `fly logs --json` is multi-line; the demo sign-in throttle needs a
    3.5 s arrival stagger; a stuck agent session came from a dismissed question
    that never settled the turn tracker ([stuck-workspace-20260920.md](stuck-workspace-20260920.md)).
-8. **Instance cleared on 2026-09-20 after the fourth run:** 55 Sprite rows and
+8. **Fifth run, 2026-09-21.** Forty-one passed. Every Share refusal traced to
+   one file: the Vite scaffold's `.oxlintrc.json`, which the "no hidden files
+   except `.gitignore`" policy rejected across the whole committed history.
+   The policy became a denylist of genuinely private paths; hidden config
+   files and directories are now ordinary project data.
+9. **Instance cleared on 2026-09-20 after the fourth run:** 55 Sprite rows and
    51 teams deleted through the admin APIs, the event and its 16 projects kept,
    and the provider left with no `civic-spark-*` Sprites. One admin-list row
    remains for workspace `02b81fe6` (Rehearsal P01, 2026-09-17): its Sprite and

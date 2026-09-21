@@ -79,7 +79,7 @@ function setProject(home: string, kind: string) {
   if (kind === "private") writeFileSync(join(project, "PRIVATE.txt"), "private");
   if (kind === "excluded") {
     mkdirSync(join(project, "node_modules"));
-    writeFileSync(join(project, ".hidden"), "private");
+    writeFileSync(join(project, ".env"), "private");
   }
 }
 it.each(["absent", "empty", "private", "excluded", "file", "symlink", "dangling", "unreadable"])(

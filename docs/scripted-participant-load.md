@@ -51,6 +51,10 @@ Enable backend diagnostics with `CIVIC_SPARK_DIAGNOSTICS=1`; the Fly setup helpe
 
 Each invocation writes a timestamped directory under `artifacts/participant-load/` containing `steps.jsonl`, `result.json`, milestone/failure screenshots and, on success, `project.zip`. Results include workspace/team IDs, verified commit hashes, completion-check count, timings and browser console/page errors. Console errors are retained even if the workflow recovers; a passing workflow does not imply a clean console. Artifacts and generated JSON stay ignored by Git.
 
+## Live concurrent acceptance — September 21, 2026, fifty people on the final September build
+
+Release v40 (main `0ad0cd5`), one vCPU, cohort H with a canary first. 41 of 50 passed; median 8m55s, p90 12m24s; main loop 32 % peak and p99 delay 146 ms during the arrival minute, no 5xx/429 across about 17,000 requests. Eight failures were Share refusals with a single cause, the scaffold-written `.oxlintrc.json` rejected by the old hidden-file rule, and one was a runner timing miss on the editor during the peak minute. The hidden-path policy became a denylist afterwards. Report: [participant-load-runs/run-20260921a.md](participant-load-runs/run-20260921a.md).
+
 ## Operator tooling and run archive
 
 The instance-side helpers (roster generation, capacity, backend log capture, correlation, per-minute telemetry, cleanup) are tracked under [scripts/participant-load](../scripts/participant-load/README.md) with a start-to-finish runbook. Every run's report is archived under [docs/participant-load-runs](participant-load-runs/README.md).

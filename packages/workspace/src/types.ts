@@ -16,21 +16,60 @@ const excluded = new Set([
   "credentials",
   "secrets",
 ]);
+/**
+ * Hidden paths that are private or machine state rather than project data:
+ * environment files, package-manager and shell credentials, cloud and SSH
+ * keys, agent state, the folder-sync marker, and caches. Every other hidden
+ * file or directory (.github, .vscode, .editorconfig, lint and format
+ * configuration) is ordinary project data and is committed and shared.
+ */
+export const privateDotfiles = new Set([
+  ".git",
+  ".env",
+  ".npmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  ".netrc",
+  ".pypirc",
+  ".ssh",
+  ".aws",
+  ".gnupg",
+  ".docker",
+  ".kube",
+  ".civic-spark-agent",
+  ".civic-spark-sync.json",
+  ".claude",
+  ".opencode",
+  ".codex",
+  ".ds_store",
+  ".cache",
+  ".next",
+  ".nuxt",
+  ".turbo",
+  ".parcel-cache",
+]);
+const environmentExamples = new Set([".env.example", ".env.sample", ".env.template"]);
+export function privatePathPart(part: string) {
+  const lower = part.toLowerCase();
+  if (privateDotfiles.has(lower)) return true;
+  return lower.startsWith(".env.") && !environmentExamples.has(lower);
+}
 export function projectPath(path: string): boolean {
   return (
     path.length <= 500 &&
     ![...path].some((c) => c.charCodeAt(0) < 32) &&
     !/[\\<>:"|?*]/.test(path) &&
-    path.split("/").every(
-      (part, index, parts) =>
-        Boolean(part) &&
-        // Git's ordinary ignore file is project data, never a hidden directory.
-        (!part.startsWith(".") || (part === ".gitignore" && index === parts.length - 1)) &&
-        !/[. ]$/.test(part) &&
-        !excluded.has(part.toLowerCase()) &&
-        !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part) &&
-        !/\.(pem|key|p12|pfx|log)$/i.test(part),
-    )
+    path
+      .split("/")
+      .every(
+        (part) =>
+          Boolean(part) &&
+          !privatePathPart(part) &&
+          !/[. ]$/.test(part) &&
+          !excluded.has(part.toLowerCase()) &&
+          !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part) &&
+          !/\.(pem|key|p12|pfx|log)$/i.test(part),
+      )
   );
 }
 export const stampSchema = z.object({ revision: z.string(), size: z.number() });

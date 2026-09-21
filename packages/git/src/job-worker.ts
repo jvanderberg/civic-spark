@@ -54,6 +54,7 @@ try {
       .filter(Boolean);
     if (incoming.length > 500)
       throw new Error("Contribution history exceeds 500 commits. Your files are preserved.");
+    const offending = new Set<string>();
     for (const revision of incoming) {
       for (const entry of git(source, ["ls-tree", "-rz", revision]).toString().split("\0")) {
         const tab = entry.indexOf("\t");
@@ -64,20 +65,22 @@ try {
           entry.startsWith("120000") ||
           entry.startsWith("160000")
         )
-          throw new Error(
-            "The contribution history includes excluded files or links. Your private workspace is preserved.",
-          );
+          offending.add(path);
       }
     }
-
     for (const path of git(source, ["diff", "--name-only", "-z", base, commit])
       .toString()
       .split("\0")
       .filter(Boolean)) {
-      if (!projectPath(path))
-        throw new Error(
-          "The committed history includes excluded files. Remove them from the contribution before sharing.",
-        );
+      if (!projectPath(path)) offending.add(path);
+    }
+    if (offending.size) {
+      // Naming the paths lets the person or agent remove them; paths are project data, not secrets.
+      const shown = [...offending].slice(0, 3).join(", ");
+      const more = offending.size > 3 ? ` and ${offending.size - 3} more` : "";
+      throw new Error(
+        `The committed history includes excluded files or links (${shown}${more}). Remove them from the contribution before sharing; your private workspace is preserved.`,
+      );
     }
     let diff = git(source, [
       "diff",

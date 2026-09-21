@@ -16,7 +16,10 @@ EXCLUDED = {'node_modules', 'dist', 'build', 'coverage', '__pycache__', 'vendor'
 def allowed(name):
     parts = name.split('/')
     return bool(name) and len(name) <= 500 and not re.search(r'[\\\x00-\x1f<>:"|?*]', name) and all(
-        p and (not p.startswith('.') or (p == '.gitignore' and i == len(parts) - 1))
+        p and not (p.lower() in {'.git', '.env', '.npmrc', '.yarnrc', '.yarnrc.yml', '.netrc', '.pypirc', '.ssh', '.aws', '.gnupg',
+                                 '.docker', '.kube', '.civic-spark-agent', '.civic-spark-sync.json', '.claude', '.opencode', '.codex',
+                                 '.ds_store', '.cache', '.next', '.nuxt', '.turbo', '.parcel-cache'}
+                   or (p.lower().startswith('.env.') and p.lower() not in {'.env.example', '.env.sample', '.env.template'}))
         and not p.endswith(('.', ' ')) and p.lower() not in EXCLUDED
         and not re.search(r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)', p, re.I)
         and not re.search(r'\.(pem|key|p12|pfx|log)$', p, re.I) for i, p in enumerate(parts))
