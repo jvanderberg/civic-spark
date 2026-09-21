@@ -15,7 +15,7 @@ Git and are per-machine.
 
 | File | Purpose |
 | --- | --- |
-| `make-roster.py` | Write N person JSON files plus `roster.json` (fresh identities, projects in rotation, optional single-person canary). |
+| `make-roster.py` | Write N person JSON files plus `roster.json` (fresh identities, projects in rotation, optional single-person canary). Its MVP prompt asks for real data fetched from the brief's sources into `public/data` with a `SOURCES.md`; placeholders only when a source is unreachable. |
 | `raise-capacity.py` | Raise one event's participant capacity through the admin API with the optimistic revision check. |
 | `collect.py` | Stream `fly logs --json` into one JSON-lines file of structured `civic-spark.diagnostic` records. Handles Fly's pretty-printed multi-line objects and backfills with `--no-tail` every 45 s. |
 | `analyze.py` | Correlate a cohort directory's per-person `requests.jsonl` with backend records; prints a markdown report and writes `correlation.json`. |
@@ -64,7 +64,9 @@ Demo sign-in accepts a name and email, not a password.
 9. **Analyse.** `python3 scripts/participant-load/analyze.py artifacts/participant-load/cohort-<stamp> artifacts/participant-load/backend-<run>/backend.jsonl > REPORT.md`
    and `python3 scripts/participant-load/telemetry.py artifacts/participant-load/backend-<run>/backend.jsonl <run-start-iso>`.
    Read the failures' `result.json` and final screenshots before blaming the
-   platform; several early failures were harness defects.
+   platform; several early failures were harness defects. The analysis also
+   reports data evidence: how many archives carry files under `public/data`
+   and a `SOURCES.md`, from the `zip.data` field the runner records.
 10. **Record the result** in `docs/scripted-participant-load.md` (one section per
     run), copy the report into `docs/participant-load-runs/`, and check the
     plan item in `IMPLEMENTATION_PLAN.md`. Stop the collector.

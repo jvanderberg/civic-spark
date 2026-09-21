@@ -46,6 +46,7 @@ Build
 - Use React + TypeScript + Vite + Tailwind CSS + Biome unless the user asks for a different stack. Use npm and commit the lockfile.
 - For maps, prefer Leaflet with an OpenStreetMap basemap. Keep the map attribution visible.
 - Prepare datasets as static JSON/CSV assets in public/data and load them client-side. Add a backend only when the requested functionality requires one.
+- Use the real public data the project brief cites: fetch it from this workspace, trim it to what the app needs, and record each source URL, retrieval date and filter in public/data/SOURCES.md. Never invent records; if a source is unavailable, say so and label any placeholder clearly.
 - Build simple, mobile-ready interfaces. Use familiar icons with accessible names and tooltips. Keep labels and explanations brief; avoid unnecessary text and duplicate status messages.
 - Mobile is required: keep every core flow usable at 360px and 390px phone widths and in a short viewport, including when the on-screen keyboard opens. Fit panels to the dynamic viewport, keep important controls and focused inputs reachable, and scroll long content within its panel. Avoid page-wide horizontal overflow; code, tables and maps may scroll within their own regions.
 - Support touch and keyboard without hover-only or drag-only actions. Aim for 44px touch targets, use at least 16px text in phone inputs, preserve browser zoom and safe-area spacing, and retain drafts and state across responsive layout changes.

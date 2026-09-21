@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -200,6 +200,13 @@ describe("React ZIP inspection", () => {
       manifest({ react: "19", "react-dom": "19" });
       archive();
       expect(verifyReactZip(zip).manifest).toBe("package.json");
+      expect(verifyReactZip(zip).data).toEqual({ files: 0, sources: false });
+      mkdirSync(join(root, "public", "data"), { recursive: true });
+      writeFileSync(join(root, "public", "data", "stops.json"), "[]");
+      writeFileSync(join(root, "public", "data", "SOURCES.md"), "# Sources\n");
+      execFileSync("zip", ["-q", "-r", zip, "public"], { cwd: root });
+      expect(verifyReactZip(zip).data).toEqual({ files: 1, sources: true });
+      archive();
       writeFileSync(join(root, "main.tsx"), "// React is planned");
       archive();
       expect(() => verifyReactZip(zip)).toThrow("ZIP lacks a React app");

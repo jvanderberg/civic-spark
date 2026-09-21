@@ -20,12 +20,16 @@ DEFAULT_PROJECTS = [
     "How resilient is our urban forest?", "Build an architecture walking tour",
     "What do our commissions do?", "Oak Park crime data explorer", "What does ECHO see?",
 ]
-PROMPT = ("Read PROJECT.md and the existing repository, then implement a small working React and TypeScript MVP "
-          "for this specific project. Choose one useful core interaction from the brief and a clear mobile-ready screen. "
-          "Use static sample data, clearly labelled, without external data downloads or follow-up questions. Include a "
-          "README explaining the MVP scope, sample-data limitations and how to run it. Preserve hello.txt containing "
-          "exactly 42. Keep this first MVP small enough to finish promptly. If you make a local commit, use exactly MVP "
-          "as its message. Do not publish; I will use Share.")
+PROMPT = ("Read PROJECT.md and the existing repository, then build a small working React and TypeScript MVP that answers "
+          "this project's civic question with real data. Use the data sources listed in the brief: fetch them from inside "
+          "this workspace with curl or a short script, keep only what the MVP needs (filter to Oak Park and cap each file "
+          "at about 2 MB), and store the extracts as static JSON or CSV under public/data with a SOURCES.md that records "
+          "each URL, the retrieval date and the filters applied. Do not invent records. If a source is unreachable, say "
+          "so in the README and use the smallest clearly labelled placeholder that keeps the app working. If the brief "
+          "lists no data, choose one real public dataset about Oak Park, Illinois and cite it the same way. Choose one "
+          "useful core interaction and a clear mobile-ready screen. Include a README explaining the scope, the data and "
+          "how to run it. Preserve hello.txt containing exactly 42. Keep this first MVP small enough to finish promptly. "
+          "If you make a local commit, use exactly MVP as its message. Do not publish; I will use Share.")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--prefix", required=True)

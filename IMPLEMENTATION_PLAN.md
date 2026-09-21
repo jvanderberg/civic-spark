@@ -188,6 +188,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 - [x] Real local commit + exact-commit Share, conflict preservation and ZIP export
 - [x] Narrow `.gitignore` file allowance across editor/Changes/sync and native-history Share, with TypeScript/Python parity and unchanged secret/link/history guards
 - [x] Fifth fifty-person run on release v40: 41/50, median 8m55s, host 32 % peak, no platform errors; all eight Share failures were the hidden-file rule. See [scripted rehearsal](docs/scripted-participant-load.md).
+- [x] MVP prompt and agent preamble ask for real data: fetch the brief's cited sources from the workspace, trim into `public/data` with a `SOURCES.md`, never invent records, label placeholders only when a source is down. The runner records data evidence per archive and the analysis summarizes it; earlier cohorts produced sample-data-only apps.
 - [x] Hidden paths are project data unless private: the "no dotfiles except `.gitignore`" rule became a denylist of environment files, credentials, keys, agent state, the sync marker and caches, in TypeScript and both Python helpers. The fifth fifty-person run showed Vite-scaffolded `.oxlintrc.json` blocking Share for six of fifty. Refusals now name the excluded paths.
 - [x] Auth/session/domain tests and separate-browser participant/admin workflow
 - [x] Live Sprite file API verification; remote temporary edit restored

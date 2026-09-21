@@ -34,7 +34,7 @@ export const scenarioSchema = z.strictObject({
     .min(10)
     .max(18000)
     .default(
-      "Read PROJECT.md and the existing repository, then implement a working MVP for this project using React and TypeScript. Preserve hello.txt with its exact contents. Make reasonable scope decisions and document any data limitations. Leave your work ready for me to review and Share. If you make a local commit, use exactly MVP as its message. Do not publish it yourself.",
+      "Read PROJECT.md and the existing repository, then build a small working React and TypeScript MVP that answers this project's civic question with real data. Use the data sources listed in the brief: fetch them from inside this workspace with curl or a short script, keep only what the MVP needs (filter to Oak Park and cap each file at about 2 MB), and store the extracts as static JSON or CSV under public/data with a SOURCES.md that records each URL, the retrieval date and the filters applied. Do not invent records. If a source is unreachable, say so in the README and use the smallest clearly labelled placeholder that keeps the app working. If the brief lists no data, choose one real public dataset about Oak Park, Illinois and cite it the same way. Choose one useful core interaction and a clear mobile-ready screen. Include a README explaining the scope, the data and how to run it. Preserve hello.txt containing exactly 42. Keep this first MVP small enough to finish promptly. If you make a local commit, use exactly MVP as its message. Do not publish; I will use Share.",
     ),
   timing: z
     .strictObject({
@@ -202,8 +202,26 @@ export function verifyReactZip(filename: string) {
     const source = sources.find((entry) =>
       /(?:from\s*|import\s*|require\s*\()\s*["']react(?:-dom)?(?:\/[^"']*)?["']/.test(read(entry)),
     );
-    if (source && entries.includes(`${root}index.html`))
-      return { manifest, source, entries: entries.length, hello };
+    if (source && entries.includes(`${root}index.html`)) {
+      // Evidence that the app carries data, recorded rather than required: a
+      // source that is down on the day must not fail the run by itself.
+      const dataRoot = `${root}public/data/`;
+      const dataFiles = entries.filter(
+        (entry) =>
+          entry.startsWith(dataRoot) && !entry.endsWith("/") && !/SOURCES\.md$/i.test(entry),
+      );
+      const sourcesNote = entries.some(
+        (entry) =>
+          /^public\/data\/SOURCES\.md$/i.test(entry.slice(root.length)) && entry.startsWith(root),
+      );
+      return {
+        manifest,
+        source,
+        entries: entries.length,
+        hello,
+        data: { files: dataFiles.length, sources: sourcesNote },
+      };
+    }
   }
   throw new Error(
     "ZIP lacks a React app: require react/react-dom, build script, index.html and React source imports",

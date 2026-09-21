@@ -15,6 +15,18 @@ for rec in backend:
         by_request[rec['requestId']].append(rec)
 
 people = sorted(p for p in cohort.iterdir() if p.is_dir())
+# Real-data evidence from the ZIP inspection (recorded by newer runners; absent in older results).
+_data = []
+for _p in people:
+    _r = _p / 'result.json'
+    if _r.exists():
+        _z = (json.loads(_r.read_text()).get('zip') or {}).get('data')
+        if _z is not None:
+            _data.append((_p.name, _z.get('files', 0), _z.get('sources', False)))
+if _data:
+    print(f"Data evidence: {sum(1 for _, f, _s in _data if f)} of {len(_data)} archives carry files under public/data; "
+          f"{sum(1 for _, _f, s in _data if s)} include SOURCES.md; without data: {[n for n, f, _s in _data if not f]}")
+
 run_start = None
 report = {'people': {}, 'backend': {}}
 out = []
