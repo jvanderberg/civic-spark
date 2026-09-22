@@ -21,6 +21,20 @@ export class WorkspaceLifecycle {
     .min(1)
     .max(120)
     .parse(process.env.CIVIC_SPARK_WORKSPACE_IDLE_MINUTES ?? "5");
+  /**
+   * Idle limit while someone has the workspace open in a visible browser tab.
+   * A person reading, thinking or watching a long agent turn is not idle, but
+   * a tab left open all night should still release; the attended limit caps it.
+   */
+  readonly attendedIdleMinutes = Math.max(
+    this.idleMinutes,
+    z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(240)
+      .parse(process.env.CIVIC_SPARK_WORKSPACE_ATTENDED_IDLE_MINUTES ?? "30"),
+  );
   private operations = new Map<
     string,
     Set<{ controller: AbortController; done: Promise<void>; passive: boolean }>
@@ -38,6 +52,7 @@ export class WorkspaceLifecycle {
     private working: (id: string) => boolean,
     private protectedUse: (id: string) => boolean = () => false,
     private drain: (id: string) => Promise<void> = async () => {},
+    private attended: (id: string) => boolean = () => false,
   ) {
     this.timer = setInterval(() => this.releaseIdle(), 15000);
     this.timer.unref();
@@ -106,7 +121,7 @@ export class WorkspaceLifecycle {
         w.spriteStatus !== "ready" ||
         runtime.held ||
         !used ||
-        now - used < this.idleMinutes * 60000 ||
+        now - used < (this.attended(w.id) ? this.attendedIdleMinutes : this.idleMinutes) * 60000 ||
         this.working(w.id) ||
         this.protectedUse(w.id) ||
         [...(this.operations.get(w.spriteName) ?? [])].some((operation) => !operation.passive)

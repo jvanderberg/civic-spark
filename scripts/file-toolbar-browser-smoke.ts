@@ -185,9 +185,38 @@ try {
     await page.getByRole("treeitem", { name: "upload-note.txt", exact: true }).count(),
     1,
   );
+  // A file list requested just before a new file is written arrives late: it
+  // must neither hide the new file nor reopen the previously selected one.
+  let delayOnce = true;
+  let releaseDelayed!: () => void;
+  const delayedStarted = new Promise<void>((resolve) => {
+    releaseDelayed = resolve;
+  });
+  await page.route("**/files", async (route) => {
+    if (delayOnce) {
+      delayOnce = false;
+      releaseDelayed();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    await route.continue();
+  });
+  await page.request.put(`${endpoint}/blob`, {
+    data: { path: "trigger.txt", data: Buffer.from("x").toString("base64"), revision: null },
+  });
+  await delayedStarted;
+  page.once("dialog", (dialog) => void dialog.accept("race.txt"));
+  await toolbar.getByRole("button", { name: "New file", exact: true }).click();
+  await page.locator(".editor-toolbar").getByText("race.txt", { exact: true }).waitFor();
+  await page.waitForTimeout(2500);
+  assert.equal(
+    await page.locator(".editor-toolbar").getByText("race.txt", { exact: true }).count(),
+    1,
+    "Late file list must not reopen the previous file",
+  );
+  await page.getByRole("treeitem", { name: "race.txt", exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: compact six-icon light/dark/mobile toolbar; keyboard upload, create, download, Save shortcut, reload safeguards, confirmed/cancelled/stale/unauthorized deletion.",
+    "PASS: compact six-icon light/dark/mobile toolbar; keyboard upload, create, download, Save shortcut, reload safeguards, confirmed/cancelled/stale/unauthorized deletion, late file-list race.",
   );
 } finally {
   await browser.close();

@@ -408,3 +408,85 @@ it("releases idle polling without stopping active turns or protected terminal/pr
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it("keeps a workspace that someone has open in a visible tab until the attended idle limit", () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-attended-idle-"));
+  const service = new EventService(root);
+  const actor = {
+    id: "fixture",
+    name: "Admin",
+    email: "fixture@example.test",
+    emailVerified: true as const,
+  };
+  const event = unwrap(service.createEvent(actor, eventInput));
+  const own = unwrap(
+    service.createTeam(actor, { eventId: event.id, name: "Attended", projectId: "data-starter" }),
+  ).workspace;
+  service.setSprite(own.id, `civic-spark-${own.id}`, "ready", null);
+  const attended = true;
+  const coordinator = new WorkspaceLifecycle(
+    service,
+    provider(),
+    vi.fn(),
+    () => false,
+    () => false,
+    async () => {},
+    () => attended,
+  );
+  try {
+    coordinator.touch(own.id);
+    coordinator.flushUse();
+    const used = Date.parse(service.runtime(own.id).lastUsedAt as string);
+    expect(coordinator.attendedIdleMinutes).toBe(30);
+    // Five quiet minutes with the tab visible: a person reading or waiting on a long turn.
+    coordinator.releaseIdle(used + 5 * 60000);
+    expect(service.runtime(own.id).held).toBe(false);
+    coordinator.releaseIdle(used + 29 * 60000);
+    expect(service.runtime(own.id).held).toBe(false);
+    // A tab left open still releases at the attended limit.
+    coordinator.releaseIdle(used + 30 * 60000);
+    expect(service.runtime(own.id).held).toBe(true);
+    expect(service.runtime(own.id).reason).toBe("idle");
+  } finally {
+    coordinator.close();
+    service.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+it("releases an unattended workspace at the ordinary idle limit", () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-unattended-idle-"));
+  const service = new EventService(root);
+  const actor = {
+    id: "fixture",
+    name: "Admin",
+    email: "fixture@example.test",
+    emailVerified: true as const,
+  };
+  const event = unwrap(service.createEvent(actor, eventInput));
+  const own = unwrap(
+    service.createTeam(actor, { eventId: event.id, name: "Unattended", projectId: "data-starter" }),
+  ).workspace;
+  service.setSprite(own.id, `civic-spark-${own.id}`, "ready", null);
+  const coordinator = new WorkspaceLifecycle(
+    service,
+    provider(),
+    vi.fn(),
+    () => false,
+    () => false,
+    async () => {},
+    () => false,
+  );
+  try {
+    coordinator.touch(own.id);
+    coordinator.flushUse();
+    const used = Date.parse(service.runtime(own.id).lastUsedAt as string);
+    coordinator.releaseIdle(used + 5 * 60000 - 1);
+    expect(service.runtime(own.id).held).toBe(false);
+    coordinator.releaseIdle(used + 5 * 60000);
+    expect(service.runtime(own.id).held).toBe(true);
+  } finally {
+    coordinator.close();
+    service.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

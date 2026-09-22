@@ -172,61 +172,76 @@ export function Workspace({
   const updating = useRef(false);
   const refreshQueued = useRef(false);
   const refreshedAt = useRef(0);
+  const refreshing = useRef<Promise<void> | null>(null);
+  // Counts explicit opens so a refresh that began earlier never reapplies the
+  // file it snapshotted over one opened since; React refs lag a render behind.
+  const openSequence = useRef(0);
   const live = !blocked && !(spritesEnabled && !remote);
-  const refreshFiles = useCallback(async () => {
-    if (!live || document.hidden) return;
-    if (updating.current) {
-      // A notification during a refresh that began over a second ago may
-      // describe a change that refresh did not see; run once more after it.
-      if (Date.now() - refreshedAt.current > 1000) refreshQueued.current = true;
-      return;
-    }
-    const refreshOnce = async () => {
-      const [paths, diff] = await Promise.all([
-        api<string[]>(`/workspaces/${participant.id}/files`),
-        api<WorkspaceChanges>(`/workspaces/${participant.id}/changes`)
-          .then((value) => {
-            setChangesError("");
-            return value;
-          })
-          .catch((e: Error) => {
-            setChangesError(e.message);
-            return null;
-          }),
-      ]);
-      setFiles(paths);
-      if (diff) setChanges(diff);
-      const snapshot = current.current;
-      if (snapshot.file && paths.includes(snapshot.file.path)) {
-        const next = await api<FileContent>(
-          `/workspaces/${participant.id}/file?path=${encodeURIComponent(snapshot.file.path)}`,
-        );
-        if (current.current.file?.path !== snapshot.file.path) return;
-        if (
-          current.current.text !== snapshot.file.content ||
-          current.current.file.revision !== snapshot.file.revision
-        ) {
-          setExternalChange(next.revision !== current.current.file.revision);
-        } else {
-          setFile(next);
-          setText(next.content);
-          setExternalChange(false);
+  const refreshFiles = useCallback(
+    async (wait = false) => {
+      if (!live || document.hidden) return;
+      if (updating.current) {
+        // A notification during a refresh that began over a second ago may
+        // describe a change that refresh did not see; run once more after it.
+        // A caller that just wrote a file needs the list to reflect it: always
+        // queue another pass and wait for it.
+        if (wait || Date.now() - refreshedAt.current > 1000) refreshQueued.current = true;
+        if (wait) await refreshing.current;
+        return;
+      }
+      const refreshOnce = async () => {
+        const sequence = openSequence.current;
+        const [paths, diff] = await Promise.all([
+          api<string[]>(`/workspaces/${participant.id}/files`),
+          api<WorkspaceChanges>(`/workspaces/${participant.id}/changes`)
+            .then((value) => {
+              setChangesError("");
+              return value;
+            })
+            .catch((e: Error) => {
+              setChangesError(e.message);
+              return null;
+            }),
+        ]);
+        setFiles(paths);
+        if (diff) setChanges(diff);
+        const snapshot = current.current;
+        if (snapshot.file && paths.includes(snapshot.file.path)) {
+          const next = await api<FileContent>(
+            `/workspaces/${participant.id}/file?path=${encodeURIComponent(snapshot.file.path)}`,
+          );
+          if (openSequence.current !== sequence) return;
+          if (current.current.file?.path !== snapshot.file.path) return;
+          if (
+            current.current.text !== snapshot.file.content ||
+            current.current.file.revision !== snapshot.file.revision
+          ) {
+            setExternalChange(next.revision !== current.current.file.revision);
+          } else {
+            setFile(next);
+            setText(next.content);
+            setExternalChange(false);
+          }
+        } else if (snapshot.file) setExternalChange(true);
+      };
+      updating.current = true;
+      refreshing.current = (async () => {
+        try {
+          do {
+            refreshQueued.current = false;
+            refreshedAt.current = Date.now();
+            await refreshOnce();
+          } while (refreshQueued.current && !document.hidden);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Refresh failed");
+        } finally {
+          updating.current = false;
         }
-      } else if (snapshot.file) setExternalChange(true);
-    };
-    updating.current = true;
-    try {
-      do {
-        refreshQueued.current = false;
-        refreshedAt.current = Date.now();
-        await refreshOnce();
-      } while (refreshQueued.current && !document.hidden);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Refresh failed");
-    } finally {
-      updating.current = false;
-    }
-  }, [participant.id, live]);
+      })();
+      await refreshing.current;
+    },
+    [participant.id, live],
+  );
   const updated = useCallback(() => {
     void refreshFiles();
   }, [refreshFiles]);
@@ -259,11 +274,13 @@ export function Workspace({
   }, [view, refreshFiles]);
   async function open(path: string) {
     if (dirty && !window.confirm("Discard unsaved edits and open another file?")) return false;
+    const sequence = ++openSequence.current;
     setLoading(true);
     try {
       const next = await api<FileContent>(
         `/workspaces/${participant.id}/file?path=${encodeURIComponent(path)}`,
       );
+      if (openSequence.current !== sequence) return false;
       setFile(next);
       setText(next.content);
       setExternalChange(false);
@@ -337,7 +354,7 @@ export function Workspace({
     setFile(saved);
     setMessage("Saved to your workspace.");
     setExternalChange(false);
-    await refreshFiles();
+    await refreshFiles(true);
   }
   const csv = useMemo(
     () => Papa.parse<string[]>(text, { skipEmptyLines: true, preview: 501 }),
@@ -578,7 +595,7 @@ export function Workspace({
                   data: "",
                   revision: null,
                 });
-                await refreshFiles();
+                await refreshFiles(true);
                 await open(path);
               })
             }
@@ -619,7 +636,7 @@ export function Workspace({
                   data: btoa(data),
                   revision: null,
                 });
-                await refreshFiles();
+                await refreshFiles(true);
               });
             }}
           />
@@ -697,7 +714,7 @@ export function Workspace({
                   setExternalChange(false);
                 }
                 setMessage(`Deleted ${selected.path}.`);
-                await refreshFiles();
+                await refreshFiles(true);
               });
             }}
           >

@@ -207,6 +207,9 @@ export async function createApp(
       terminals.recentlyUsed(id, lifecycle.idleMinutes * 60000) ||
       agents.isPreparing(service.provisioningRecords().find((w) => w.id === id)?.spriteName ?? ""),
     (id) => provisioning.wait(id),
+    // The per-workspace events socket closes when the tab is hidden, so an
+    // attached subscriber means a person has the workspace visible right now.
+    (id) => events.subscribers(id) > 0,
   );
   const provisioning: WorkspaceProvisioning = new WorkspaceProvisioning(
     service,

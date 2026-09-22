@@ -55,6 +55,10 @@ Each invocation writes a timestamped directory under `artifacts/participant-load
 
 Release v40 (main `0ad0cd5`), one vCPU, cohort H with a canary first. 41 of 50 passed; median 8m55s, p90 12m24s; main loop 32 % peak and p99 delay 146 ms during the arrival minute, no 5xx/429 across about 17,000 requests. Eight failures were Share refusals with a single cause, the scaffold-written `.oxlintrc.json` rejected by the old hidden-file rule, and one was a runner timing miss on the editor during the peak minute. The hidden-path policy became a denylist afterwards. Report: [participant-load-runs/run-20260921a.md](participant-load-runs/run-20260921a.md).
 
+## Live concurrent acceptance — September 21, 2026, fifty people with the real-data prompt
+
+Release v43 (main `63c2d57`), one vCPU, cohort I after a canary. 32 of 50 passed; median 12m03s, p90 18m25s; all 32 passing archives carry files under `public/data` with a `SOURCES.md`; main loop 51 % peak, no 5xx/429 across about 29,000 requests. Sixteen failures were the five-minute idle hold landing between an agent's "not yet" and the runner's next question during the longer real-data turns, and two were the file-list race at the hello step. Both were fixed afterwards: an attended idle limit while a tab is visible, and an open-sequence guard on file refreshes. Report: [participant-load-runs/run-20260921b.md](participant-load-runs/run-20260921b.md).
+
 ## Operator tooling and run archive
 
 The instance-side helpers (roster generation, capacity, backend log capture, correlation, per-minute telemetry, cleanup) are tracked under [scripts/participant-load](../scripts/participant-load/README.md) with a start-to-finish runbook. Every run's report is archived under [docs/participant-load-runs](participant-load-runs/README.md).

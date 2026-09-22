@@ -18,6 +18,7 @@ ran the cohort; the reports are the durable record. How to repeat a run is in
 | 2026-09-20 13:58 | 50 | 48/50 with relay workers and pushed status | 98ffdaa | [run-20260920e.md](run-20260920e.md) |
 | 2026-09-20 15:01 | 50 | 48/50, main loop 17 % median, first byte 0.25 s at peak | 903f55d | [run-20260920f.md](run-20260920f.md) |
 | 2026-09-21 19:05 | 50 | 41/50; eight refused Shares from scaffold `.oxlintrc.json` under the old dotfile rule, one harness timing miss; host 32 % peak, no platform errors | 0ad0cd5 (v40) | [run-20260921a.md](run-20260921a.md) |
+| 2026-09-21 23:51 | 50 | 32/50 with the real-data prompt; all 32 archives carry real data with sources; sixteen five-minute idle holds during long turns, two file-list races; host 51 % peak, no platform errors | 63c2d57 (v43) | [run-20260921b.md](run-20260921b.md) |
 
 ## Timeline of findings
 
@@ -60,7 +61,13 @@ ran the cohort; the reports are the durable record. How to repeat a run is in
    except `.gitignore`" policy rejected across the whole committed history.
    The policy became a denylist of genuinely private paths; hidden config
    files and directories are now ordinary project data.
-9. **Instance cleared on 2026-09-20 after the fourth run:** 55 Sprite rows and
+9. **Sixth run, 2026-09-21, real-data prompt.** Every passing app shipped
+   real Oak Park data with a sources note, and turns doubled in length. That
+   exposed the five-minute idle hold landing between an agent's answer and the
+   next message, and a file-list race at the hello step. An attended idle
+   limit of thirty minutes for visible tabs and an open-sequence guard on
+   refreshes followed.
+10. **Instance cleared on 2026-09-20 after the fourth run:** 55 Sprite rows and
    51 teams deleted through the admin APIs, the event and its 16 projects kept,
    and the provider left with no `civic-spark-*` Sprites. One admin-list row
    remains for workspace `02b81fe6` (Rehearsal P01, 2026-09-17): its Sprite and
