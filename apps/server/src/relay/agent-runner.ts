@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { AgentReplay } from "../../../../packages/agents/src/history.ts";
 import { agentImagesSchema, agentWireByteLimit } from "../../../../packages/agents/src/images.ts";
-import type { AgentPrompt } from "../../../../packages/agents/src/protocol.ts";
+import { type AgentPrompt, agentQueueLimit } from "../../../../packages/agents/src/protocol.ts";
 import { count, diagnostic } from "../../../../packages/diagnostics/src/index.ts";
 
 const eventSchema = z.object({
@@ -81,7 +81,8 @@ export class AgentRunner {
   private finished = false;
   /** A participant stop was acknowledged; the turn has not reported back yet. */
   private interrupting = false;
-  private queued: AgentPrompt | undefined;
+  /** Messages waiting for the running turn, oldest first. */
+  private queued: AgentPrompt[] = [];
   constructor(
     workspaceId: string,
     sprite: string,
@@ -250,35 +251,68 @@ export class AgentRunner {
    * Acknowledge a participant stop at once and forward it. The runner can take
    * a moment to abandon provider work; clients must not wait for that to see
    * the turn end, and every later client attach must see the same state.
+   * Stop also cancels the queue: waiting messages must not start a new turn by
+   * themselves, so the client takes their content back into the composer.
    */
   interrupt() {
     if (this.stopped) return;
+    this.queued = [];
+    this.publishQueued();
     if (this.busy) {
       this.interrupting = true;
       this.replay.requestStop();
-      this.publishState();
     }
+    this.publishState();
     this.write('{"type":"stop"}');
   }
-  /** Hold one prompt until the running turn finishes; deliver it exactly once. */
+  /** Hold a prompt until the turns before it finish; deliver it exactly once. */
   queue(prompt: AgentPrompt) {
-    if (this.stopped) return;
-    this.queued = prompt;
-    this.replay.setQueued({ id: prompt.id ?? "", text: prompt.text, images: prompt.images });
+    if (this.stopped || this.queued.length >= agentQueueLimit) return;
+    this.queued.push(prompt);
+    this.publishQueued();
     if (!this.busy) this.flushQueued();
     else this.publishState();
   }
-  unqueue() {
-    if (!this.queued) return;
-    this.queued = undefined;
-    this.replay.setQueued(null);
+  unqueue(id: string) {
+    const remaining = this.queued.filter((prompt) => prompt.id !== id);
+    if (remaining.length === this.queued.length) return;
+    this.queued = remaining;
+    this.publishQueued();
     this.publishState();
   }
+  /**
+   * Send now. Each harness turn is one request, so a queued message cannot be
+   * injected into the running turn: it moves to the front of the queue and the
+   * turn is stopped, which flushes it as the next prompt. The rest stays queued.
+   */
+  steer(id: string) {
+    const prompt = this.queued.find((entry) => entry.id === id);
+    if (this.stopped || !prompt) return;
+    this.queued = [prompt, ...this.queued.filter((entry) => entry !== prompt)];
+    this.publishQueued();
+    if (!this.busy) {
+      this.flushQueued();
+      return;
+    }
+    this.interrupting = true;
+    this.replay.requestStop();
+    this.publishState();
+    this.write('{"type":"stop"}');
+  }
+  private publishQueued() {
+    this.replay.setQueued(
+      this.queued.map((prompt) => ({
+        id: prompt.id ?? "",
+        text: prompt.text,
+        images: prompt.images,
+      })),
+    );
+  }
   private flushQueued() {
-    const prompt = this.queued;
+    const prompt = this.queued[0];
     if (!prompt || this.stopped || this.busy) return;
-    this.queued = undefined;
-    this.replay.setQueued(null);
+    this.queued = this.queued.slice(1);
+    this.publishQueued();
     this.send(JSON.stringify(prompt), true);
     this.publishState();
   }

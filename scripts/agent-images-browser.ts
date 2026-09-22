@@ -106,7 +106,7 @@ export async function checkAgentImages(
       await composer.focus();
       if (height === 300) {
         const inputBox = await composer.boundingBox();
-        const sendBox = await page.getByRole("button", { name: "Send to agent" }).boundingBox();
+        const sendBox = await page.getByRole("button", { name: "Send message" }).boundingBox();
         assert(
           inputBox && sendBox && inputBox.y >= 0 && inputBox.y + inputBox.height <= sendBox.y,
           "Focused image prompt must stay above Send",
@@ -116,7 +116,7 @@ export async function checkAgentImages(
         path: join(artifacts, `agent-images-${width}-${height}-${theme}.png`),
       });
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      const send = page.getByRole("button", { name: "Send to agent" });
+      const send = page.getByRole("button", { name: "Send message" });
       await send.scrollIntoViewIfNeeded();
       const sendBox = await send.boundingBox();
       assert(sendBox && sendBox.y >= 0 && sendBox.y + sendBox.height <= height);
@@ -170,7 +170,7 @@ export async function checkAgentImages(
     if (event.defaultPrevented) throw Error("Mixed clipboard must preserve native text insertion");
   }, png);
   await page.getByRole("button", { name: "Remove Screenshot.png" }).waitFor();
-  await page.getByRole("button", { name: "Send to agent" }).click();
+  await page.getByRole("button", { name: "Send message" }).click();
   await wait(() => count() === beforePaste + 1);
   const rejected = requests.filter((request) => request.type === "prompt").at(-1);
   assert(rejected?.id);

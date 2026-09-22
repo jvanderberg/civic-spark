@@ -120,19 +120,20 @@ await page.route("**/agent/credentials", (route) =>
   route.fulfill({ json: { savedProviders: ["opencode"] } }),
 );
 await page.route("**/agent/prepare", (route) => route.fulfill({ json: { ready: true } }));
-// The server holds one message sent during a turn and reports it in its state
-// snapshots, so a reload finds it still waiting. This fixture does the same,
-// answering with the runtime state the test has most recently published.
-let queuedPrompt: QueuedPrompt | null = null;
+// The server holds the messages sent during a turn and reports them in its
+// state snapshots, so a reload finds them still waiting. This fixture does the
+// same, answering with the runtime state the test has most recently published.
+let queuedPrompts: QueuedPrompt[] = [];
 let liveConfigured: ("claude" | "opencode")[] = [];
-const queueState = (queued: QueuedPrompt | null): AgentEvent => ({
+const queueState = (extra: Partial<AgentEvent> = {}): AgentEvent => ({
   type: "state",
   id: "queue-state",
   text: "Working",
   runtimeReady: true,
   working: true,
   configuredProviders: liveConfigured,
-  queued,
+  queued: queuedPrompts,
+  ...extra,
 });
 await page.routeWebSocket("**/api/workspaces/*/agent", (socket) => {
   connection = socket;
@@ -145,21 +146,29 @@ await page.routeWebSocket("**/api/workspaces/*/agent", (socket) => {
     const input = JSON.parse(message.toString()) as AgentInput;
     requests.push(input);
     if (input.type === "prompt" && input.queue && input.id) {
-      queuedPrompt = {
-        id: input.id,
-        text: input.text,
-        ...(input.images ? { images: input.images } : {}),
-      };
-      socket.send(JSON.stringify(queueState(queuedPrompt)));
+      queuedPrompts = [
+        ...queuedPrompts,
+        { id: input.id, text: input.text, ...(input.images ? { images: input.images } : {}) },
+      ];
+      socket.send(JSON.stringify(queueState()));
     }
     if (input.type === "unqueue") {
-      queuedPrompt = null;
-      socket.send(JSON.stringify(queueState(null)));
+      queuedPrompts = queuedPrompts.filter((prompt) => prompt.id !== input.id);
+      socket.send(JSON.stringify(queueState()));
     }
+    // Send now moves the message to the front and acknowledges a stop; the
+    // server sends it as the next prompt once the stopped turn settles.
+    if (input.type === "steer") {
+      const chosen = queuedPrompts.find((prompt) => prompt.id === input.id);
+      if (chosen) queuedPrompts = [chosen, ...queuedPrompts.filter((prompt) => prompt !== chosen)];
+      socket.send(JSON.stringify(queueState({ stopping: true })));
+    }
+    // A stop cancels the queue; its content returns to the participant's composer.
+    if (input.type === "stop") queuedPrompts = [];
   });
   if (restoreOnConnect) {
     for (const event of history) socket.send(JSON.stringify({ ...event, replayed: true }));
-    socket.send(JSON.stringify({ ...snapshot, queued: queuedPrompt }));
+    socket.send(JSON.stringify({ ...snapshot, queued: queuedPrompts }));
   }
 });
 function emit(event: AgentEvent, retained = true) {
@@ -177,9 +186,9 @@ function activeSocket() {
   assert(connection);
   return connection;
 }
-async function waitFor(check: () => boolean, label: string) {
+async function waitFor(check: () => boolean | Promise<boolean>, label: string) {
   const deadline = Date.now() + 5000;
-  while (!check()) {
+  while (!(await check())) {
     if (Date.now() > deadline) throw new Error(`Timed out: ${label}`);
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
@@ -239,8 +248,11 @@ try {
     "Wait for saved credential state before asking for a key",
   );
   assert.equal(connections, 1);
+  // Upstream names the send control for its current state, so address the
+  // composer's submit control structurally when checking a disabled state.
+  const sendControl = page.locator('[data-chat-composer-footer] button[type="submit"]');
   await page.screenshot({ animations: "disabled", path: join(artifacts, "agent-chat-empty.png") });
-  assert.equal(await page.getByRole("button", { name: "Send to agent" }).isEnabled(), false);
+  assert.equal(await sendControl.isEnabled(), false);
   assert.equal(
     await page.locator(".agent-panel").getByRole("status").innerText(),
     "Starting runtime",
@@ -323,7 +335,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Stop generation" }).isVisible(), true);
   // A running turn keeps Stop and offers the send control as the queue action.
   await composer.fill("Typed while the turn runs");
-  await page.getByRole("button", { name: "Queue for the current turn" }).waitFor();
+  await page.getByRole("button", { name: "Queue message" }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Stop generation" }).isVisible(), true);
   await page.screenshot({
     animations: "disabled",
@@ -562,17 +574,16 @@ try {
     "T3 question option selection",
   );
   emit({ type: "resolved", id: "question-2", text: "Answered" });
-  // Stop answers at once: the control reports stopping, the server acknowledges
-  // it before the model exits, and the composer is usable from that moment.
+  // Stop interrupts at once: the idle controls return before the server answers,
+  // with no stopping spinner, and the acknowledgement reconciles silently.
   await page.getByRole("button", { name: "Stop generation" }).click();
-  const stopping = page.getByRole("button", { name: "Stopping generation" });
-  await stopping.waitFor();
-  assert.equal(await stopping.isDisabled(), true);
-  assert.equal(await page.getByRole("button", { name: "Stop generation" }).count(), 0);
+  await page.getByRole("button", { name: "Stop generation" }).waitFor({ state: "detached" });
+  assert.equal(await page.locator(".agent-panel .lucide-loader-circle").count(), 0);
+  assert.equal(await composer.isEditable(), true);
   await hasRequest("stop");
   await page.screenshot({
     animations: "disabled",
-    path: join(artifacts, "agent-chat-stopping.png"),
+    path: join(artifacts, "agent-chat-stopped.png"),
   });
   emit({
     type: "state",
@@ -583,8 +594,13 @@ try {
     configuredProviders: ["opencode"],
     stopping: true,
   });
-  await page.getByRole("button", { name: "Queue for the current turn" }).waitFor();
-  assert.equal(await page.locator(".agent-panel").getByRole("status").innerText(), "Stopping");
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(
+    await page.getByRole("button", { name: "Stop generation" }).count(),
+    0,
+    "An acknowledged stop must not bring the running controls back",
+  );
+  assert.equal(await page.locator(".agent-panel .lucide-loader-circle").count(), 0);
   assert.equal(await composer.isEditable(), true);
   // Output from the stopping turn is no longer appended. The server drops it
   // from its retained transcript too, so the fixture does not replay it.
@@ -593,16 +609,55 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(await page.getByText("Output after the accepted stop").count(), 0);
   await page.getByRole("heading", { name: "Traffic at a glance" }).waitFor();
-  // A message typed while the turn winds down waits for it instead of failing.
+  // Messages sent while the turn winds down wait for it instead of failing, and
+  // appear as dashed queued rows at the end of the timeline, in order.
   await composer.fill("Then compare the two locations.");
-  const queueAction = page.getByRole("button", { name: "Queue for the current turn" });
-  assert.equal(await queueAction.isEnabled(), true);
-  await queueAction.click();
-  await page.getByRole("region", { name: "Queued message" }).waitFor();
+  await page.getByRole("button", { name: "Send message" }).click();
+  const queuedRows = page.locator("[data-queued-message-id]");
+  await queuedRows.first().waitFor();
   assert.equal(await composer.inputValue(), "");
   const queuedRequest = requests.filter((request) => request.type === "prompt").at(-1);
   assert(queuedRequest?.type === "prompt" && queuedRequest.queue === true && queuedRequest.id);
-  assert.equal(await queueAction.isDisabled(), true, "Only one message waits for a turn");
+  await composer.fill("Then add a short summary.");
+  await composer.press("Enter");
+  await waitFor(async () => (await queuedRows.count()) === 2, "two queued rows");
+  assert.deepEqual(
+    await queuedRows.locator(".whitespace-pre-wrap").allInnerTexts(),
+    ["Then compare the two locations.", "Then add a short summary."],
+    "Queued messages keep the order they were sent in",
+  );
+  // Upstream's row: a right-aligned dashed bubble with a Queued clock label and
+  // the two icon actions. Only the first is next.
+  assert.equal(
+    await queuedRows
+      .first()
+      .locator("div")
+      .first()
+      .evaluate((node) => getComputedStyle(node).borderStyle),
+    "dashed",
+  );
+  assert.deepEqual(
+    await queuedRows
+      .locator("span[title]")
+      .evaluateAll((nodes) => nodes.map((node) => [node.getAttribute("title"), node.textContent])),
+    [
+      [
+        "Sends after the next tool call or when the turn ends",
+        "Queued. Sends after the next tool call or when the turn ends.",
+      ],
+      ["Sends after the messages above it", "Queued. Sends after the messages above it."],
+    ],
+  );
+  assert.equal(await queuedRows.getByRole("button", { name: "Send now" }).count(), 2);
+  assert.equal(
+    await queuedRows.getByRole("button", { name: "Cancel and return to the composer" }).count(),
+    2,
+  );
+  assert.equal(
+    await page.locator(".chat-composer-wrap").getByText("Queued").count(),
+    0,
+    "The queue belongs to the timeline, not to a composer banner",
+  );
   for (const [width, height] of [
     [390, 844],
     [360, 780],
@@ -615,10 +670,12 @@ try {
         (value) => document.documentElement.dataset.theme === value,
         theme,
       );
-      await inViewport(page.getByRole("region", { name: "Queued message" }));
-      await inViewport(page.getByRole("button", { name: "Cancel queued message" }));
+      await inViewport(queuedRows.last());
+      await inViewport(queuedRows.last().getByRole("button", { name: "Send now" }));
+      await inViewport(
+        queuedRows.last().getByRole("button", { name: "Cancel and return to the composer" }),
+      );
       await inViewport(composer);
-      await inViewport(page.getByRole("button", { name: "Queue for the current turn" }));
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await page.screenshot({
         animations: "disabled",
@@ -629,10 +686,20 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
   await page.setViewportSize({ width: 1440, height: 1000 });
-  // The queued message can be taken back, returning to the composer.
-  await page.getByRole("button", { name: "Cancel queued message" }).click();
+  // Cancel returns that message's text to the composer; the other keeps waiting.
+  await queuedRows
+    .last()
+    .getByRole("button", { name: "Cancel and return to the composer" })
+    .click();
   await hasRequest("unqueue");
-  await page.getByRole("region", { name: "Queued message" }).waitFor({ state: "hidden" });
+  await waitFor(async () => (await queuedRows.count()) === 1, "one queued row after a cancel");
+  assert.equal(await composer.inputValue(), "Then add a short summary.");
+  await composer.fill("");
+  await queuedRows
+    .first()
+    .getByRole("button", { name: "Cancel and return to the composer" })
+    .click();
+  await queuedRows.first().waitFor({ state: "detached" });
   assert.equal(await composer.inputValue(), "Then compare the two locations.");
   await composer.fill("");
   emit({ type: "done", id: "done-2", text: "Ready", outcome: "stopped" });
@@ -659,7 +726,7 @@ try {
   await page.getByRole("button", { name: "Dismiss agent error" }).click();
   await page.getByLabel("Agent model").selectOption("claude");
   await page.getByPlaceholder("Anthropic API key").waitFor();
-  assert.equal(await page.getByRole("button", { name: "Send to agent" }).isEnabled(), false);
+  assert.equal(await sendControl.isEnabled(), false);
   const configuredBeforeInvalid = requests.filter((request) => request.type === "configure").length;
   await page.getByLabel("Agent API key").fill("test-fixture-claude-key");
   await page.getByLabel("Anthropic workspace ID").fill("invalid workspace");
@@ -808,7 +875,7 @@ try {
   // announcing its final ready event. Neither event alone enables a prompt.
   emit({ type: "configured", id: "opencode", text: "GLM ready" });
   await page.locator(".agent-panel").getByRole("alert").waitFor({ state: "hidden" });
-  assert.equal(await page.getByRole("button", { name: "Send to agent" }).isEnabled(), false);
+  assert.equal(await sendControl.isEnabled(), false);
   emit({ type: "ready", id: "runtime-restored", text: "Agent runner ready" });
   await page
     .getByRole("status")
@@ -848,13 +915,14 @@ try {
   // the runner that holds it, and is never sent twice by the browser.
   const queuedText = "Then export the chart as SVG.";
   await composer.fill(queuedText);
-  await page.getByRole("button", { name: "Queue for the current turn" }).click();
-  await page.getByRole("region", { name: "Queued message" }).waitFor();
+  await page.getByRole("button", { name: "Queue message" }).click();
+  const restoredRow = page.locator("[data-queued-message-id]");
+  await restoredRow.waitFor();
   assert.equal(await composer.inputValue(), "");
   const beforeQueueReload = connections;
   await page.reload();
   await waitFor(() => connections === beforeQueueReload + 1, "reload with a queued message");
-  await page.getByRole("region", { name: "Queued message" }).getByText(queuedText).waitFor();
+  await restoredRow.getByText(queuedText).waitFor();
   assert.equal(
     requests.filter((request) => request.type === "prompt" && request.text === queuedText).length,
     1,
@@ -864,10 +932,47 @@ try {
     !(await page.evaluate(() => JSON.stringify(localStorage))).includes("export the chart"),
     "The queue belongs to the runner, not to browser storage",
   );
-  await page.getByRole("button", { name: "Cancel queued message" }).click();
-  await page.getByRole("region", { name: "Queued message" }).waitFor({ state: "hidden" });
-  assert.equal(await composer.inputValue(), queuedText);
+  // Send now stops the running turn and asks the server to send that message
+  // next; the browser never sends the prompt a second time itself.
+  await restoredRow.getByRole("button", { name: "Send now" }).click();
+  await hasRequest("steer");
+  await page.getByRole("button", { name: "Stop generation" }).waitFor({ state: "detached" });
+  assert.equal(await page.locator(".agent-panel .lucide-loader-circle").count(), 0);
+  assert.equal(await composer.isEditable(), true);
+  assert.equal(requests.filter((request) => request.type === "steer").length, 1);
+  emit({ type: "done", id: "done-steered", text: "Ready", outcome: "stopped" });
+  emit({ type: "user", id: "user-steered", text: queuedText });
+  queuedPrompts = [];
+  emit(queueState({ workingStartedAt: new Date().toISOString() }));
+  emit({ type: "status", id: "working-steered", text: "Working" });
+  await restoredRow.waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Stop generation" }).waitFor();
+  assert.equal(
+    requests.filter((request) => request.type === "prompt" && request.text === queuedText).length,
+    1,
+    "Send now steers through the server rather than sending again",
+  );
+  // Stop takes the queue back into the composer instead of starting a new turn.
+  const stopRestoredText = "And publish the summary page.";
+  await composer.fill(stopRestoredText);
+  await page.getByRole("button", { name: "Queue message" }).click();
+  await restoredRow.waitFor();
+  const promptsBeforeStop = requests.filter((request) => request.type === "prompt").length;
+  await page.getByRole("button", { name: "Stop generation" }).click();
+  await hasRequest("stop");
+  await restoredRow.waitFor({ state: "detached" });
+  assert.equal(await composer.inputValue(), stopRestoredText);
+  assert.equal(await page.locator(".agent-panel .lucide-loader-circle").count(), 0);
+  assert.equal(await composer.isEditable(), true);
+  assert.equal(
+    requests.filter((request) => request.type === "prompt").length,
+    promptsBeforeStop,
+    "A drained queue must not start a turn",
+  );
   await composer.fill("");
+  emit({ type: "done", id: "done-stop-drain", text: "Ready", outcome: "stopped" });
+  emit(snapshot);
+  await page.getByRole("button", { name: "Stop generation" }).waitFor();
   const beforeReopen = connections;
   if (await page.getByRole("button", { name: "Workspace controls" }).isVisible())
     await page.getByRole("button", { name: "Workspace controls" }).click();
@@ -944,7 +1049,7 @@ try {
   });
   const beforeBillingRetry = requests.filter((request) => request.type === "prompt").length;
   await composer.fill("Add the chart legend now that credits are available.");
-  const retry = page.getByRole("button", { name: "Send to agent" });
+  const retry = page.getByRole("button", { name: "Send message" });
   assert.equal(await retry.isEnabled(), true, "A billing failure must not lock the composer");
   await retry.click();
   await waitFor(
@@ -1119,7 +1224,7 @@ try {
   assert.equal(connections, beforeExhaustion + 3, "Navigation cannot reset exhausted retry budget");
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: full-screen T3 chat, readiness, fixed models, streamed Markdown/code/table, copy, tools, files, questions, keyboard send/stop, immediate Stop with acknowledgement and dropped late output, queued message with cancel and reload persistence, billing failure keeping the key connected and the composer usable, errors, mobile, reload/project reopen restoring model/conversation/active turn without reentering a key, real team-resolution handoff and merge verification. Mock agent transport; no model requests or secrets.",
+    "PASS: full-screen T3 chat, readiness, fixed models, streamed Markdown/code/table, copy, tools, files, questions, keyboard send/stop, immediate Stop with acknowledgement and dropped late output, queued timeline rows with order, Send now, cancel, reload persistence and Stop returning them to the composer, billing failure keeping the key connected and the composer usable, errors, mobile, reload/project reopen restoring model/conversation/active turn without reentering a key, real team-resolution handoff and merge verification. Mock agent transport; no model requests or secrets.",
   );
 } catch (error) {
   await page.screenshot({

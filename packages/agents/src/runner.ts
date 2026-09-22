@@ -539,8 +539,9 @@ async function input(message: AgentInput) {
     await activeOpenTurn?.stop();
     return;
   }
-  // The server holds any queued message and sends it as an ordinary prompt.
-  if (message.type === "unqueue") return;
+  // The server owns the queue and sends each waiting message as an ordinary
+  // prompt, so cancelling or reordering it never reaches the runtime.
+  if (message.type === "unqueue" || message.type === "steer") return;
   if (active) {
     emit("error", "A turn is already running. Stop it before sending another message.");
     return;

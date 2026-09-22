@@ -23,7 +23,8 @@ export type ToWorker =
   | { type: "agent.input"; session: string; line: string; prompt: boolean }
   | { type: "agent.interrupt"; session: string }
   | { type: "agent.queue"; session: string; prompt: AgentPrompt }
-  | { type: "agent.unqueue"; session: string }
+  | { type: "agent.unqueue"; session: string; id: string }
+  | { type: "agent.steer"; session: string; id: string }
   | { type: "agent.stop"; session: string }
   | { type: "agent.kill"; session: string }
   | { type: "terminal.start"; session: string; workspaceId: string; sprite: string }

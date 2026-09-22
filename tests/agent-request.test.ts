@@ -220,7 +220,7 @@ it("external requests send once after an explicit action, preserve drafts, and i
     await request("dirty");
     await page.getByRole("region", { name: "Pending team resolution request" }).waitFor();
     await toggle("dirty", false);
-    await page.getByRole("button", { name: "Send to agent" }).waitFor();
+    await page.getByRole("button", { name: "Send message" }).waitFor();
     expect(prompts()).toHaveLength(1);
     await composer.press("Enter");
     await expect.poll(() => prompts().length).toBe(2);

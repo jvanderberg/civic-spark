@@ -251,16 +251,17 @@ it("relays a stop acknowledgement and a waiting message to the same runner child
     queue: true,
   };
   c.to({ type: "agent.queue", session: "a", prompt: waiting });
-  c.to({ type: "agent.interrupt", session: "a" });
+  c.to({ type: "agent.steer", session: "a", id: waiting.id });
   await c.tick();
   await c.tick();
-  const states = c.sent
-    .filter((message) => message.type === "agent.frames")
-    .flatMap((message) => (message as { frames: string[] }).frames)
-    .map((frame) => JSON.parse(frame) as { type: string })
-    .filter((event) => event.type === "state");
-  expect(states.at(-1)).toMatchObject({ stopping: true, queued: { text: "next" } });
-  // The stop reaches the runner; the waiting message does not until it ends.
+  const states = () =>
+    c.sent
+      .filter((message) => message.type === "agent.frames")
+      .flatMap((message) => (message as { frames: string[] }).frames)
+      .map((frame) => JSON.parse(frame) as { type: string })
+      .filter((event) => event.type === "state");
+  expect(states().at(-1)).toMatchObject({ stopping: true, queued: [{ text: "next" }] });
+  // Send now stops the running turn; the chosen message follows once it ends.
   expect(stdin).toEqual([first, '{"type":"stop"}']);
   child.stdout.write(
     `${JSON.stringify({ type: "done", id: "d1", text: "Ready", outcome: "stopped" })}\n`,
@@ -268,9 +269,23 @@ it("relays a stop acknowledgement and a waiting message to the same runner child
   await c.tick();
   await c.tick();
   expect(stdin).toEqual([first, '{"type":"stop"}', JSON.stringify(waiting)]);
-  c.to({ type: "agent.unqueue", session: "a" });
+  // A stop cancels the queue instead of letting it start another turn.
+  child.stdout.write(`${JSON.stringify({ type: "status", id: "s2", text: "Working" })}\n`);
   await c.tick();
-  expect(stdin).toHaveLength(3);
+  c.to({ type: "agent.queue", session: "a", prompt: { ...waiting, text: "dropped" } });
+  c.to({ type: "agent.interrupt", session: "a" });
+  await c.tick();
+  await c.tick();
+  expect(states().at(-1)).toMatchObject({ stopping: true, queued: [] });
+  child.stdout.write(
+    `${JSON.stringify({ type: "done", id: "d2", text: "Ready", outcome: "stopped" })}\n`,
+  );
+  await c.tick();
+  await c.tick();
+  expect(stdin).toEqual([first, '{"type":"stop"}', JSON.stringify(waiting), '{"type":"stop"}']);
+  c.to({ type: "agent.unqueue", session: "a", id: waiting.id });
+  await c.tick();
+  expect(stdin).toHaveLength(4);
 });
 
 it("relays terminal history and coalesced output, and merges output while the channel is congested without unbounded growth", async () => {

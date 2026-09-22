@@ -70,7 +70,8 @@ export function relayAgentBackend(pool: RelayPool): AgentBackend {
         },
         interrupt: () => worker.send({ type: "agent.interrupt", session }),
         queue: (prompt) => worker.send({ type: "agent.queue", session, prompt }),
-        unqueue: () => worker.send({ type: "agent.unqueue", session }),
+        unqueue: (id) => worker.send({ type: "agent.unqueue", session, id }),
+        steer: (id) => worker.send({ type: "agent.steer", session, id }),
         stop: () => worker.send({ type: "agent.stop", session }),
         kill: () => worker.send({ type: "agent.kill", session }),
       };

@@ -316,13 +316,13 @@ export async function runParticipant(scenario: Scenario, key: string, output: st
     // the five-minute mark; keep this question drafted until Send becomes ready.
     await agentWait(
       async () => {
-        const send = page.getByRole("button", { name: "Send to agent", exact: true });
+        const send = page.getByRole("button", { name: "Send message", exact: true });
         return (await send.isVisible()) && (await send.isEnabled());
       },
       s.timing.agentTurnMs,
       "agent ready to accept a message",
     );
-    await page.getByRole("button", { name: "Send to agent", exact: true }).click();
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
     // A lost acknowledgement is ambiguous: never blindly repeat paid prompts.
     await until(
       () => events.some((event) => event.type === "user" && event.text === text && !event.replayed),

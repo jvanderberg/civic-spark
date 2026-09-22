@@ -61,12 +61,13 @@ export class AgentReplay {
   private savedProviders: AgentEvent["savedProviders"];
   private failedProviders = new Set<"claude" | "opencode">();
   private stopping = false;
-  private queued: QueuedPrompt | null = null;
+  private queued: QueuedPrompt[] = [];
   /** The participant asked to stop; the turn is winding down but not finished. */
   requestStop() {
     this.stopping = true;
   }
-  setQueued(queued: QueuedPrompt | null) {
+  /** The ordered messages waiting for the running turn. */
+  setQueued(queued: QueuedPrompt[]) {
     this.queued = queued;
   }
   accept(event: AgentEvent) {

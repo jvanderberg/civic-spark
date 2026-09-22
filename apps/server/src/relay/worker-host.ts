@@ -156,7 +156,9 @@ export class RelayWorkerHost {
       case "agent.queue":
         return this.agents.get(message.session)?.queue(message.prompt);
       case "agent.unqueue":
-        return this.agents.get(message.session)?.unqueue();
+        return this.agents.get(message.session)?.unqueue(message.id);
+      case "agent.steer":
+        return this.agents.get(message.session)?.steer(message.id);
       case "agent.stop":
         return this.agents.get(message.session)?.stop();
       case "agent.kill":

@@ -3,8 +3,6 @@ import { LoaderCircle as Spinner } from "lucide-react";
 import { cn } from "./utils.ts";
 export function ComposerPrimaryActions({
   isRunning,
-  isStopping,
-  isQueueing,
   hasSendableContent,
   isConnecting,
   isSendBusy,
@@ -13,10 +11,6 @@ export function ComposerPrimaryActions({
   onInterrupt,
 }: {
   isRunning: boolean;
-  /** The stop was clicked and the server has not acknowledged it yet. */
-  isStopping: boolean;
-  /** A send waits for the running turn instead of starting one. */
-  isQueueing: boolean;
   hasSendableContent: boolean;
   isConnecting: boolean;
   isSendBusy: boolean;
@@ -29,7 +23,7 @@ export function ComposerPrimaryActions({
     <button
       type="button"
       className={cn(
-        "flex items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-all duration-150 enabled:cursor-pointer enabled:hover:bg-destructive enabled:hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none disabled:opacity-60",
+        "flex cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none",
         insidePendingAction
           ? "size-8 sm:size-7"
           : hasSendableContent
@@ -37,16 +31,11 @@ export function ComposerPrimaryActions({
             : "size-8 sm:h-8 sm:w-8",
       )}
       onClick={onInterrupt}
-      disabled={isStopping}
-      aria-label={isStopping ? "Stopping generation" : "Stop generation"}
+      aria-label="Stop generation"
     >
-      {isStopping ? (
-        <Spinner className="size-3.5" aria-hidden="true" />
-      ) : (
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-          <rect x="2" y="2" width="8" height="8" rx="1.5" />
-        </svg>
-      )}
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+        <rect x="2" y="2" width="8" height="8" rx="1.5" />
+      </svg>
     </button>
   );
   const sendButton = (
@@ -63,7 +52,19 @@ export function ComposerPrimaryActions({
         isEnvironmentUnavailable ||
         !hasSendableContent
       }
-      aria-label={isQueueing ? "Queue for the current turn" : "Send to agent"}
+      aria-label={
+        isEnvironmentUnavailable
+          ? "Environment disconnected"
+          : sendDisabledReason
+            ? sendDisabledReason
+            : isConnecting
+              ? "Connecting"
+              : isSendBusy
+                ? "Sending"
+                : isRunning
+                  ? "Queue message"
+                  : "Send message"
+      }
     >
       {isConnecting || isSendBusy ? (
         <Spinner className="size-3.5" aria-hidden="true" />
@@ -81,11 +82,13 @@ export function ComposerPrimaryActions({
     </button>
   );
 
-  // Upstream pairs the stop control with the send control while a turn runs;
-  // here that send control queues the message for the current turn. The
-  // wrapper keeps the pair together in Civic Spark's space-between footer.
-  if (isStopping) return renderStopGenerationButton(false);
-  if (!isRunning) return sendButton;
+  if (!isRunning) {
+    return sendButton;
+  }
+
+  // While a turn runs, a sendable draft queues for the next turn, so the send
+  // button stays next to Stop on every viewport. The wrapper keeps the pair
+  // together in Civic Spark's space-between footer.
   return (
     <div className="flex items-center justify-end gap-1.5">
       {renderStopGenerationButton(false)}

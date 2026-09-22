@@ -153,7 +153,7 @@ export async function verifyKeyboardViewport(engine: "chromium" | "webkit" = "ch
     await page.getByRole("button", { name: "Open my workspace" }).tap();
     await page.getByRole("button", { name: "Agent", exact: true }).tap();
     const composer = page.getByRole("textbox", { name: "Message to agent" });
-    const send = page.getByRole("button", { name: "Send to agent" });
+    const send = page.getByRole("button", { name: "Send message" });
     await page
       .getByRole("status")
       .filter({ hasText: /^Ready$/ })

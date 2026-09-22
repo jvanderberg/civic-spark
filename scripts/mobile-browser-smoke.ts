@@ -405,14 +405,14 @@ try {
     await page.setViewportSize({ width, height });
     await page.emulateMedia({ colorScheme: theme });
     await inViewport(composer);
-    await inViewport(page.getByRole("button", { name: "Send to agent" }));
+    await inViewport(page.getByRole("button", { name: "Send message" }));
     assert.equal(await composer.inputValue(), "Keep this draft while changing orientation.");
     await capture(`${width}-${height}-agent-${theme}`, true);
     await page.getByRole("button", { name: "Agent connection settings" }).tap();
     await inViewport(page.getByRole("button", { name: "Reconnect", exact: true }));
     await capture(`${width}-${height}-connection-${theme}`, true);
     await inViewport(composer);
-    await inViewport(page.getByRole("button", { name: "Send to agent" }));
+    await inViewport(page.getByRole("button", { name: "Send message" }));
     await page.getByRole("button", { name: "Agent connection settings" }).tap();
   }
   await page.setViewportSize({ width: 360, height: 430 });

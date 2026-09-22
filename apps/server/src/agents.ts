@@ -37,7 +37,9 @@ export interface AgentHandle {
   interrupt(): void;
   /** Hold one prompt for the running turn and deliver it exactly once. */
   queue(prompt: AgentPrompt): void;
-  unqueue(): void;
+  unqueue(id: string): void;
+  /** Stop the running turn and send this queued message as the next prompt. */
+  steer(id: string): void;
   /** Stop the turn and end the runner. */
   stop(): void;
   kill(): void;
@@ -57,7 +59,8 @@ export const localAgentBackend: AgentBackend = {
       send: (message) => runner.send(JSON.stringify(message), message.type === "prompt"),
       interrupt: () => runner.interrupt(),
       queue: (prompt) => runner.queue(prompt),
-      unqueue: () => runner.unqueue(),
+      unqueue: (id) => runner.unqueue(id),
+      steer: (id) => runner.steer(id),
       stop: () => runner.stop(),
       kill: () => runner.kill(),
     };
@@ -313,7 +316,11 @@ export class AgentSessions {
               return;
             }
             if (message.type === "unqueue") {
-              active.handle.unqueue();
+              active.handle.unqueue(message.id);
+              return;
+            }
+            if (message.type === "steer") {
+              active.handle.steer(message.id);
               return;
             }
             if (message.type === "prompt" && active.handle.busy) {

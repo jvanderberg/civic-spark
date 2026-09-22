@@ -103,7 +103,7 @@ export const agentInputSchema = z.discriminatedUnion("type", [
       images: agentImagesSchema.optional(),
       model: z.string().max(160).optional(),
       // Send when the running turn finishes instead of being refused. The
-      // server holds exactly one queued prompt and delivers it once.
+      // server keeps an ordered queue and delivers each prompt once.
       queue: z.boolean().optional(),
     })
     .refine((input) => input.text.length > 0 || Boolean(input.images?.length), {
@@ -120,11 +120,20 @@ export const agentInputSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({ type: z.literal("reconnect"), provider: z.enum(["claude", "opencode"]) }),
   z.strictObject({ type: z.literal("stop") }),
-  z.strictObject({ type: z.literal("unqueue") }),
+  // Take one queued message back out of the queue.
+  z.strictObject({ type: z.literal("unqueue"), id: z.uuid() }),
+  // Send now: stop the running turn and send this queued message as the next
+  // prompt. The rest of the queue keeps its order.
+  z.strictObject({ type: z.literal("steer"), id: z.uuid() }),
 ]);
 export type AgentInput = z.infer<typeof agentInputSchema>;
 export type AgentPrompt = Extract<AgentInput, { type: "prompt" }>;
-/** The one message waiting for the running turn to finish, as clients see it. */
+/**
+ * How many messages may wait for the running turn. Each is held with its
+ * images and repeated in every state snapshot, so the queue stays bounded.
+ */
+export const agentQueueLimit = 5;
+/** One message waiting for the running turn to finish, as clients see it. */
 export type QueuedPrompt = { id: string; text: string; images?: AgentImage[] };
 export type AgentEvent = {
   type:
@@ -164,7 +173,7 @@ export type AgentEvent = {
   // means this is a runner snapshot that does not own the server's error state.
   currentError?: string | null;
   // Server snapshots only, with the same convention: the stop was accepted and
-  // the turn is winding down, and the message waiting for it, or null for none.
+  // the turn is winding down, and the ordered messages waiting for it.
   stopping?: boolean;
-  queued?: QueuedPrompt | null;
+  queued?: QueuedPrompt[];
 };

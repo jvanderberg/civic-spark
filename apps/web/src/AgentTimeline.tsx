@@ -4,10 +4,11 @@ import { FileCode2, Terminal, Wrench } from "lucide-react";
 import { Fragment } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { AgentEvent } from "../../../packages/agents/src/protocol.ts";
+import type { AgentEvent, QueuedPrompt } from "../../../packages/agents/src/protocol.ts";
 import { AgentImages } from "./AgentImages.tsx";
 import { MarkdownCodeBlock } from "./vendor/t3code/MarkdownCodeBlock.tsx";
 import { MessageCopyButton } from "./vendor/t3code/MessageCopyButton.tsx";
+import { QueuedMessageRow } from "./vendor/t3code/QueuedMessageRow.tsx";
 import { SimpleWorkEntryRow } from "./vendor/t3code/SimpleWorkEntryRow.tsx";
 import { ThinkingIndicator, WorkingIndicator } from "./vendor/t3code/WorkingIndicator.tsx";
 import "./vendor/t3code/markdown.css";
@@ -72,12 +73,19 @@ export function AgentTimeline({
   working,
   workingStartedAt,
   awaitingInput,
+  queued,
+  onSendQueuedNow,
+  onCancelQueued,
 }: {
   events: AgentEvent[];
   working: boolean;
   workingStartedAt?: string;
   awaitingInput: boolean;
   onOpenFile: (path: string) => void;
+  /** Messages waiting for the running turn, oldest first. */
+  queued: QueuedPrompt[];
+  onSendQueuedNow: (id: string) => void;
+  onCancelQueued: (id: string) => void;
 }) {
   const timeline = events.filter((event) => ["user", "text", "tool"].includes(event.type));
   const activeStart = timeline.findLastIndex((event) => event.type === "user") + 1;
@@ -165,6 +173,15 @@ export function AgentTimeline({
       ))}
       {working && activeStart === rows.length && <WorkingIndicator startedAt={workingStartedAt} />}
       {working && !awaitingInput && !activeToolId && <ThinkingIndicator />}
+      {queued.map((message, index) => (
+        <QueuedMessageRow
+          key={message.id}
+          message={message}
+          isNext={index === 0}
+          onSendNow={() => onSendQueuedNow(message.id)}
+          onCancel={() => onCancelQueued(message.id)}
+        />
+      ))}
     </>
   );
 }
