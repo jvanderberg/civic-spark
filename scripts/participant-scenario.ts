@@ -24,6 +24,8 @@ export const scenarioSchema = z.strictObject({
   projectName: z.string().trim().min(1),
   participant: z.strictObject({ name: z.string().trim().min(2).max(80), email: z.email() }),
   teamName: z.string().trim().min(2).max(80),
+  /** Which saved harness the scenario connects: GLM through OpenRouter or Claude. */
+  agent: z.enum(["opencode", "claude"]).default("opencode"),
   credentialEnv: z
     .string()
     .regex(/^CIVIC_SPARK_[A-Z0-9_]+$/)

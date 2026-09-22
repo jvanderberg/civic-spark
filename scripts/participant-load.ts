@@ -466,14 +466,14 @@ export async function runParticipant(scenario: Scenario, key: string, output: st
     });
     await phase("05-agent-mvp", async () => {
       await page.getByRole("button", { name: "Agent", exact: true }).click();
-      await page.getByRole("combobox", { name: "Agent model" }).selectOption("opencode");
+      await page.getByRole("combobox", { name: "Agent model" }).selectOption(s.agent);
       await page.getByLabel("Agent API key", { exact: true }).fill(key);
       await page
         .locator(".chat-connection")
         .getByRole("button", { name: "Connect", exact: true })
         .click();
       await sendPrompt(s.prompt);
-      log("GLM acknowledged the MVP request");
+      log(`${s.agent === "claude" ? "Claude" : "GLM"} acknowledged the MVP request`);
     });
     await phase("06-completion-loop", async () => {
       let complete = false;

@@ -41,6 +41,8 @@ parser.add_argument("--auth", default="demo")
 parser.add_argument("--date", default=datetime.date.today().strftime("%Y%m%d"))
 parser.add_argument("--projects", help="comma-separated project names; defaults to the sixteen Day in Our Data projects")
 parser.add_argument("--credential-env", default="CIVIC_SPARK_LOAD_GLM_KEY")
+parser.add_argument("--agent", choices=["opencode", "claude"], default="opencode",
+                    help="saved harness to connect; pair claude with --credential-env CIVIC_SPARK_LOAD_ANTHROPIC_KEY")
 parser.add_argument("--canary", action="store_true")
 args = parser.parse_args()
 projects = [p.strip() for p in args.projects.split(",")] if args.projects else DEFAULT_PROJECTS
@@ -56,6 +58,7 @@ def person(identity, name, team, index):
         "projectName": projects[index % len(projects)],
         "participant": {"name": name, "email": f"{identity}@example.test"},
         "teamName": team,
+        "agent": args.agent,
         "credentialEnv": args.credential_env,
         "prompt": PROMPT,
         "browser": {"width": 1440, "height": 900, "theme": "light" if index % 2 == 0 else "dark"},

@@ -18,6 +18,8 @@ ran the cohort; the reports are the durable record. How to repeat a run is in
 | 2026-09-20 13:58 | 50 | 48/50 with relay workers and pushed status | 98ffdaa | [run-20260920e.md](run-20260920e.md) |
 | 2026-09-20 15:01 | 50 | 48/50, main loop 17 % median, first byte 0.25 s at peak | 903f55d | [run-20260920f.md](run-20260920f.md) |
 | 2026-09-21 19:05 | 50 | 41/50; eight refused Shares from scaffold `.oxlintrc.json` under the old dotfile rule, one harness timing miss; host 32 % peak, no platform errors | 0ad0cd5 (v40) | [run-20260921a.md](run-20260921a.md) |
+| 2026-09-22 01:54 | 50 | 22/50; the OpenRouter balance ran out two minutes in and stopped 26 agents, two more were still working at 25 min; no running participant was idle-paused on v44 | 9a2cdc5 (v44) | credit outage, evidence only in `artifacts/participant-load/backend-20260922a/` |
+| 2026-09-22 04:45 | 1 | pass, 12m50s, Claude (Opus 5) end to end on the chat-fix release; real CTA data with sources | 36c4410 (v45) | canary only |
 | 2026-09-21 23:51 | 50 | 32/50 with the real-data prompt; all 32 archives carry real data with sources; sixteen five-minute idle holds during long turns, two file-list races; host 51 % peak, no platform errors | 63c2d57 (v43) | [run-20260921b.md](run-20260921b.md) |
 
 ## Timeline of findings
