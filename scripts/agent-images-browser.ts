@@ -49,10 +49,15 @@ export async function checkAgentImages(
     const request = requests.filter((request) => request.type === "prompt").at(-1);
     assert(request?.type === "prompt" && request.id && request.images?.length);
     assert(agentInputSchema.safeParse(request).success);
+    // The composer empties the moment the message is handed over: the thumbnail
+    // goes with the text, before the agent acknowledges the turn.
+    await page.getByRole("button", { name: "Remove Screenshot.png" }).waitFor({ state: "hidden" });
+    assert.equal(await page.getByRole("region", { name: "Attached images" }).count(), 0);
+    assert.equal(await composer.inputValue(), "");
     emit({ type: "user", id: request.id, text: request.text, images: request.images });
     emit({ type: "done", id: crypto.randomUUID(), text: "Ready" });
-    await page.getByRole("button", { name: "Remove Screenshot.png" }).waitFor({ state: "hidden" });
-    assert.equal(await composer.inputValue(), "");
+    // The sent images stay in the conversation.
+    await page.locator(".chat-user .chat-images img").last().waitFor();
     return request;
   };
   emit({
@@ -178,7 +183,10 @@ export async function checkAgentImages(
   });
   emit({ type: "done", id: "image-rejection-done", text: "Ready" });
   await page.getByRole("alert").filter({ hasText: "could not accept these images" }).waitFor();
-  assert.equal(await composer.inputValue(), "Text draft");
+  // A rejected send returns the attachments so they are not lost.
+  await page.getByRole("button", { name: "Remove Screenshot.png" }).waitFor();
+  assert.equal(await composer.inputValue(), "");
+  await composer.fill("Text draft");
   await page.getByRole("button", { name: "Remove Screenshot.png" }).click();
   for (const [name, mime] of [
     ["bad.svg", "image/svg+xml"],

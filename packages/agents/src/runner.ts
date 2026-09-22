@@ -29,6 +29,7 @@ import {
   agentFailure,
   agentInputSchema,
   agentModels,
+  billingFailure,
   credentialFailure,
 } from "./protocol.ts";
 import { verifyProviderKey } from "./provider.ts";
@@ -272,10 +273,34 @@ const promptTimeout = () => AbortSignal.timeout(10000);
 const pause = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
+/** A poll interval that a stop request can cut short. */
+class Sleep {
+  private resume: (() => void) | undefined;
+  wait(milliseconds: number) {
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        this.resume = undefined;
+        resolve();
+      }, milliseconds);
+      this.resume = () => {
+        clearTimeout(timer);
+        this.resume = undefined;
+        resolve();
+      };
+    });
+  }
+  wake() {
+    this.resume?.();
+  }
+}
+
 async function reconcileOpenCodeTurn(
   client: ReturnType<typeof createOpencodeClient>,
   tracker: OpenCodeTurnTracker,
   getRejection: () => unknown,
+  // Stopping wakes this loop instead of waiting out its poll interval, so the
+  // native abort is issued as soon as the participant asks for it.
+  sleep: Sleep,
 ) {
   let refusedReads = 0;
   while (!tracker.result) {
@@ -339,7 +364,7 @@ async function reconcileOpenCodeTurn(
       refusedReads++;
     else refusedReads = 0;
     if (refusedReads >= 3) return tracker.fail(new OpenCodeTransportError());
-    if (!tracker.result) await pause(1000);
+    if (!tracker.result) await sleep.wait(1000);
   }
   return tracker.result;
 }
@@ -377,14 +402,18 @@ async function openTurn(
   const tracker = new OpenCodeTurnTracker(sessionID, userMessageID);
   let rejection: unknown;
   let reconcilePromise: Promise<OpenCodeTurnOutcome> | undefined;
+  const sleep = new Sleep();
   const reconcile = () => {
-    reconcilePromise ??= reconcileOpenCodeTurn(client, tracker, () => rejection);
+    reconcilePromise ??= reconcileOpenCodeTurn(client, tracker, () => rejection, sleep);
     return reconcilePromise;
   };
   const stop = async () => {
     tracker.requestStop();
     // Do not cancel the POST: a delayed server can accept it after cancellation.
     // The reconciler observes acceptance and then aborts the actual native turn.
+    // Waking it now issues that abort immediately instead of a poll interval
+    // later; the Sprite activity hold is still kept until the turn settles.
+    sleep.wake();
     await reconcile();
   };
   const activeTurn: ActiveOpenTurn = { client, tracker, stop, reconcile };
@@ -510,6 +539,8 @@ async function input(message: AgentInput) {
     await activeOpenTurn?.stop();
     return;
   }
+  // The server holds any queued message and sends it as an ordinary prompt.
+  if (message.type === "unqueue") return;
   if (active) {
     emit("error", "A turn is already running. Stop it before sending another message.");
     return;
@@ -553,11 +584,16 @@ async function input(message: AgentInput) {
   } catch (error) {
     outcome = cancellation.signal.aborted ? "stopped" : "failed";
     if (cancellation.signal.aborted) return;
-    if (credentialFailure(error)) failedProviders.add(message.provider);
+    // A spent balance keeps the saved key connected: the participant adds
+    // credits and sends the same message again without reconnecting.
+    const billing = billingFailure(error);
+    const credential = credentialFailure(error);
+    if (credential) failedProviders.add(message.provider);
     emit("error", agentFailure(error), {
       provider: message.provider,
       requestId: message.id,
-      credentialFailure: credentialFailure(error),
+      credentialFailure: credential,
+      billingFailure: billing,
     });
   } finally {
     if (cancellation.signal.aborted) outcome = "stopped";

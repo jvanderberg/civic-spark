@@ -68,6 +68,9 @@ export function relayAgentBackend(pool: RelayPool): AgentBackend {
           if (prompt) busy = true;
           worker.send({ type: "agent.input", session, line: JSON.stringify(message), prompt });
         },
+        interrupt: () => worker.send({ type: "agent.interrupt", session }),
+        queue: (prompt) => worker.send({ type: "agent.queue", session, prompt }),
+        unqueue: () => worker.send({ type: "agent.unqueue", session }),
         stop: () => worker.send({ type: "agent.stop", session }),
         kill: () => worker.send({ type: "agent.kill", session }),
       };

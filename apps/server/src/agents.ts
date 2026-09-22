@@ -3,7 +3,11 @@ import { fileURLToPath } from "node:url";
 import type { WebSocket } from "ws";
 import { z } from "zod";
 import { agentWireByteLimit } from "../../../packages/agents/src/images.ts";
-import { type AgentInput, agentInputSchema } from "../../../packages/agents/src/protocol.ts";
+import {
+  type AgentInput,
+  type AgentPrompt,
+  agentInputSchema,
+} from "../../../packages/agents/src/protocol.ts";
 import { count, diagnostic, spriteWorkspaceId } from "../../../packages/diagnostics/src/index.ts";
 import { SpriteClient } from "../../../packages/sprites/src/client.ts";
 import { AgentRunner } from "./relay/agent-runner.ts";
@@ -29,6 +33,11 @@ export interface AgentHandle {
    */
   replay(deliver: (frames: string[]) => void): void;
   send(message: AgentInput): void;
+  /** Acknowledge a participant stop at once, then forward it to the runner. */
+  interrupt(): void;
+  /** Hold one prompt for the running turn and deliver it exactly once. */
+  queue(prompt: AgentPrompt): void;
+  unqueue(): void;
   /** Stop the turn and end the runner. */
   stop(): void;
   kill(): void;
@@ -46,6 +55,9 @@ export const localAgentBackend: AgentBackend = {
       },
       replay: (deliver) => deliver(runner.replayFrames()),
       send: (message) => runner.send(JSON.stringify(message), message.type === "prompt"),
+      interrupt: () => runner.interrupt(),
+      queue: (prompt) => runner.queue(prompt),
+      unqueue: () => runner.unqueue(),
       stop: () => runner.stop(),
       kill: () => runner.kill(),
     };
@@ -293,6 +305,17 @@ export class AgentSessions {
               );
               return;
             }
+            // A message sent during a turn waits for it instead of being lost.
+            // The queue lives with the runner, so it survives a reload and is
+            // delivered once even with several browsers attached.
+            if (message.type === "prompt" && message.queue) {
+              active.handle.queue(message);
+              return;
+            }
+            if (message.type === "unqueue") {
+              active.handle.unqueue();
+              return;
+            }
             if (message.type === "prompt" && active.handle.busy) {
               socket.send(
                 JSON.stringify({
@@ -302,6 +325,10 @@ export class AgentSessions {
                   text: "A turn is already running. Wait or stop it before sending another message.",
                 }),
               );
+              return;
+            }
+            if (message.type === "stop") {
+              active.handle.interrupt();
               return;
             }
             active.handle.send(message);

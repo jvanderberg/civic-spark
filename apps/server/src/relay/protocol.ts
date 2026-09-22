@@ -1,3 +1,4 @@
+import type { AgentPrompt } from "../../../../packages/agents/src/protocol.ts";
 import type {
   HelperReply,
   HelperSessionEnd,
@@ -20,6 +21,9 @@ export type ToWorker =
   | { type: "agent.start"; session: string; workspaceId: string; sprite: string }
   | { type: "agent.attach"; session: string; client: number }
   | { type: "agent.input"; session: string; line: string; prompt: boolean }
+  | { type: "agent.interrupt"; session: string }
+  | { type: "agent.queue"; session: string; prompt: AgentPrompt }
+  | { type: "agent.unqueue"; session: string }
   | { type: "agent.stop"; session: string }
   | { type: "agent.kill"; session: string }
   | { type: "terminal.start"; session: string; workspaceId: string; sprite: string }

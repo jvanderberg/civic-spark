@@ -233,6 +233,46 @@ it("batches agent frames per session per tick in order with busy and activity si
   expect(c.sent.at(-1)).toEqual({ type: "agent.ended", session: "a" });
 });
 
+it("relays a stop acknowledgement and a waiting message to the same runner child", async () => {
+  const c = channel();
+  c.to({ type: "agent.start", session: "a", workspaceId: "w", sprite: "civic-spark-x" });
+  const child = spawned[0]?.child as FakeChild;
+  const stdin = lines(child.stdin);
+  const first = '{"type":"prompt","provider":"opencode","text":"first"}';
+  c.to({ type: "agent.input", session: "a", line: first, prompt: true });
+  child.stdout.write(`${JSON.stringify({ type: "status", id: "s1", text: "Working" })}\n`);
+  await c.tick();
+  await c.tick();
+  const waiting = {
+    type: "prompt" as const,
+    provider: "opencode" as const,
+    text: "next",
+    id: "44444444-4444-4444-8444-444444444444",
+    queue: true,
+  };
+  c.to({ type: "agent.queue", session: "a", prompt: waiting });
+  c.to({ type: "agent.interrupt", session: "a" });
+  await c.tick();
+  await c.tick();
+  const states = c.sent
+    .filter((message) => message.type === "agent.frames")
+    .flatMap((message) => (message as { frames: string[] }).frames)
+    .map((frame) => JSON.parse(frame) as { type: string })
+    .filter((event) => event.type === "state");
+  expect(states.at(-1)).toMatchObject({ stopping: true, queued: { text: "next" } });
+  // The stop reaches the runner; the waiting message does not until it ends.
+  expect(stdin).toEqual([first, '{"type":"stop"}']);
+  child.stdout.write(
+    `${JSON.stringify({ type: "done", id: "d1", text: "Ready", outcome: "stopped" })}\n`,
+  );
+  await c.tick();
+  await c.tick();
+  expect(stdin).toEqual([first, '{"type":"stop"}', JSON.stringify(waiting)]);
+  c.to({ type: "agent.unqueue", session: "a" });
+  await c.tick();
+  expect(stdin).toHaveLength(3);
+});
+
 it("relays terminal history and coalesced output, and merges output while the channel is congested without unbounded growth", async () => {
   const c = channel();
   c.to({ type: "terminal.start", session: "t", workspaceId: "w", sprite: "civic-spark-x" });

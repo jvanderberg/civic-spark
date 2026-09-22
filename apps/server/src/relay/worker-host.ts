@@ -151,6 +151,12 @@ export class RelayWorkerHost {
       }
       case "agent.input":
         return this.agents.get(message.session)?.send(message.line, message.prompt);
+      case "agent.interrupt":
+        return this.agents.get(message.session)?.interrupt();
+      case "agent.queue":
+        return this.agents.get(message.session)?.queue(message.prompt);
+      case "agent.unqueue":
+        return this.agents.get(message.session)?.unqueue();
       case "agent.stop":
         return this.agents.get(message.session)?.stop();
       case "agent.kill":

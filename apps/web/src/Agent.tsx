@@ -11,6 +11,7 @@ import {
   type AgentEvent,
   type AgentInput,
   agentModels,
+  type QueuedPrompt,
 } from "../../../packages/agents/src/protocol.ts";
 import { AgentImages, readAgentImage } from "./AgentImages.tsx";
 import { AgentTimeline } from "./AgentTimeline.tsx";
@@ -147,16 +148,16 @@ export function Agent({
   const fileInput = useRef<HTMLInputElement>(null);
   const [readingImages, setReadingImages] = useState(false);
   const readingImagesRef = useRef(false);
-  const submittedImages = useRef<{
+  // The composer is cleared when a message is handed to the agent. Its images
+  // are kept here until the turn accepts them, so a failed send returns the
+  // attachments instead of losing them.
+  const submitted = useRef<{
     id: string;
-    text: string;
     images: AgentImage[];
-    failed: boolean;
     acknowledged: boolean;
   } | null>(null);
-  const [imageSending, setImageSending] = useState(false);
   async function addImages(files: File[]) {
-    if (readingImagesRef.current || imageSending) return;
+    if (readingImagesRef.current) return;
     if (imagesRef.current.length + files.length > imageCountLimit) {
       setError("Attach up to 4 images per message.");
       return;
@@ -180,18 +181,23 @@ export function Agent({
       if (mounted.current) setReadingImages(false);
     }
   }
-  function finishImages(success: boolean) {
-    const sent = submittedImages.current;
+  /** Finish tracking the sent message, returning its images if the send failed. */
+  function finishSubmission(restore: boolean) {
+    const sent = submitted.current;
     if (!sent) return;
-    if (success && !sent.failed) {
-      setPrompt((draft) => (draft === sent.text ? "" : draft));
-      setImages((draft) =>
-        draft.filter((image) => !sent.images.some((old) => old.id === image.id)),
-      );
-    }
-    submittedImages.current = null;
-    setImageSending(false);
+    submitted.current = null;
+    if (restore && sent.images.length) setImages((draft) => (draft.length ? draft : sent.images));
   }
+  // One message can wait for the running turn. The runner holds it, so it
+  // survives a reload and is delivered exactly once.
+  const [queued, setQueued] = useState<QueuedPrompt | null>(null);
+  const queuedRef = useRef<QueuedPrompt | null>(null);
+  queuedRef.current = queued;
+  // "requested" until the server acknowledges the stop, then "acknowledged"
+  // while the turn winds down and the composer is usable again.
+  const [stopping, setStopping] = useState<"requested" | "acknowledged" | null>(null);
+  const stoppingRef = useRef<"requested" | "acknowledged" | null>(null);
+  stoppingRef.current = stopping;
   const [pendingRequest, setPendingRequest] = useState<{
     id: string;
     prompt: string;
@@ -414,6 +420,8 @@ export function Agent({
       setEvents([]);
       setResolved([]);
       setWorking(false);
+      setStopping(null);
+      setQueued(null);
       readyTimeout.current = setTimeout(() => {
         if (socket.current !== connection || !mounted.current) return;
         connection.onclose = null;
@@ -428,21 +436,24 @@ export function Agent({
       connection.onmessage = (message) => {
         if (socket.current !== connection || !mounted.current) return;
         const event = JSON.parse(message.data) as AgentEvent;
-        if (event.type === "user" && event.id === submittedImages.current?.id)
-          submittedImages.current.acknowledged = true;
+        if (event.type === "user" && event.id === submitted.current?.id)
+          submitted.current.acknowledged = true;
         if (
           event.type === "error" &&
-          submittedImages.current &&
-          ((!replaying && !event.replayed) || event.requestId === submittedImages.current.id)
-        ) {
-          submittedImages.current.failed = true;
-          finishImages(false);
-        }
-        if (event.type === "done" && submittedImages.current?.acknowledged)
-          finishImages(event.outcome === undefined || event.outcome === "success");
+          submitted.current &&
+          ((!replaying && !event.replayed) || event.requestId === submitted.current.id)
+        )
+          finishSubmission(true);
+        if (event.type === "done" && submitted.current?.acknowledged) finishSubmission(false);
         if (event.type === "state") {
-          if (event.runtimeReady && !event.working && submittedImages.current) finishImages(false);
+          if (event.runtimeReady && !event.working && submitted.current) finishSubmission(false);
           replaying = false;
+          // Server snapshots own the queue and the accepted stop; runner state
+          // events leave both fields out and must not clear them.
+          if (event.queued !== undefined) setQueued(event.queued);
+          if (event.stopping !== undefined)
+            setStopping(event.stopping && event.working ? "acknowledged" : null);
+          else if (!event.working) setStopping(null);
           if (event.currentError !== undefined) setError(event.currentError ?? "");
           if (event.runtimeReady && event.working === false) finishRequest();
           setConnected(event.runtimeReady ?? false);
@@ -509,23 +520,33 @@ export function Agent({
         if (live && event.type === "error") {
           finishRequest();
           setError(event.text);
-          const failed = event.provider ?? configuringProvider.current;
+          // A spent balance is not a rejected key: keep the provider connected
+          // so the same message can be sent again after adding credits.
+          const failed = event.billingFailure
+            ? null
+            : (event.provider ?? configuringProvider.current);
           if (failed && (event.credentialFailure || configuringProvider.current))
             setFailedProviders((previous) => [...new Set([...previous, failed])]);
           configuringProvider.current = null;
           setChecking(false);
           setWorking(false);
+          setStopping(null);
           setWorkingStartedAt(undefined);
         }
         if (live && event.type === "status" && event.text === "Working") {
           setWorking(true);
+          setStopping(null);
           setWorkingStartedAt((previous) => event.workingStartedAt ?? previous);
         }
         if (live && event.type === "done") {
           finishRequest();
           setWorking(false);
+          setStopping(null);
           updatedCallback.current();
         }
+        // An accepted stop ends the visible turn; the server drops the same
+        // output from its retained transcript.
+        if (live && stoppingRef.current && (event.type === "text" || event.type === "tool")) return;
         if (event.type === "resolved") setResolved((ids) => [...ids, event.id]);
         setEvents((previous) => {
           const next = [...previous];
@@ -541,7 +562,7 @@ export function Agent({
         setConnected(false);
         setPreparing(false);
         setWorking(false);
-        setImageSending(false);
+        setStopping(null);
         if (readySince.current && Date.now() - readySince.current > 30000) retryCount.current = 0;
         readySince.current = 0;
         const canRetry =
@@ -608,29 +629,35 @@ export function Agent({
             ? "Checking connection"
             : approval
               ? "Waiting for your answer"
-              : working
-                ? "Working"
-                : ready
-                  ? "Ready"
-                  : connected
-                    ? hasSavedKey
-                      ? "Saved key needs connection"
-                      : "Add API key"
-                    : credentialsKnown && !hasSavedKey
-                      ? "Add API key"
-                      : "Not connected";
+              : stopping
+                ? "Stopping"
+                : working
+                  ? "Working"
+                  : ready
+                    ? "Ready"
+                    : connected
+                      ? hasSavedKey
+                        ? "Saved key needs connection"
+                        : "Add API key"
+                      : credentialsKnown && !hasSavedKey
+                        ? "Add API key"
+                        : "Not connected";
   const submitLatest = useRef<
     (text: string, requestId?: string, previousDraft?: string) => boolean
   >(() => false);
   function submitText(text: string, requestId?: string, previousDraft = "") {
     const attached = requestId ? [] : imagesRef.current;
+    // Typing during a turn queues the message instead of losing it. An external
+    // request is never queued: it waits in the composer for an explicit send.
+    const queueing = !requestId && (working || stopping !== null);
     if (
       (!text.trim() && !attached.length) ||
       readingImagesRef.current ||
       !mounted.current ||
       !activity.current.available ||
       !ready ||
-      working ||
+      (working && !queueing) ||
+      (queueing && Boolean(queued)) ||
       checking ||
       preparing ||
       dirty ||
@@ -640,8 +667,10 @@ export function Agent({
       return false;
     stickToBottom.current = true;
     setAtBottom(true);
-    setWorking(true);
-    setWorkingStartedAt(new Date().toISOString());
+    if (!queueing) {
+      setWorking(true);
+      setWorkingStartedAt(new Date().toISOString());
+    }
     setError("");
     if (requestId) activeRequest.current = { id: requestId, prompt: text, started: false };
     const id = crypto.randomUUID();
@@ -651,25 +680,43 @@ export function Agent({
           type: "prompt",
           provider,
           text,
-          ...(attached.length ? { id } : {}),
+          ...(queueing || attached.length ? { id } : {}),
           ...(attached.length ? { images: attached } : {}),
+          ...(queueing ? { queue: true } : {}),
         }),
       );
     } catch {
-      setWorking(false);
+      if (!queueing) setWorking(false);
       setError("The message was not sent. Reconnect and try again.");
       return false;
     }
-    if (attached.length) {
-      submittedImages.current = { id, text, images: attached, failed: false, acknowledged: false };
-      setImageSending(true);
-    } else setPrompt(previousDraft);
+    // The composer empties at the moment the message is handed over, text and
+    // images together. A failure puts both back.
+    setPrompt(previousDraft);
+    if (attached.length) setImages([]);
+    if (queueing) setQueued({ id, text, ...(attached.length ? { images: attached } : {}) });
+    else submitted.current = { id, images: attached, acknowledged: false };
     if (requestId) {
       setPendingRequest(null);
       requestCallbacks.current.onRequestSent?.(requestId);
     }
     if (composer.current) composer.current.style.height = "auto";
     return true;
+  }
+  /** Take back the queued message; its text and images return to the composer. */
+  function cancelQueued() {
+    const waiting = queuedRef.current;
+    if (!waiting) return;
+    send({ type: "unqueue" });
+    setQueued(null);
+    setPrompt((draft) => (draft.trim() ? draft : waiting.text));
+    const images = waiting.images ?? [];
+    if (images.length) setImages((draft) => (draft.length ? draft : images));
+  }
+  function interrupt() {
+    if (stopping) return;
+    setStopping("requested");
+    send({ type: "stop" });
   }
   submitLatest.current = submitText;
   useEffect(() => {
@@ -764,7 +811,8 @@ export function Agent({
               settings ||
               (!ready && available) ||
               approval ||
-              pendingRequest) && (
+              pendingRequest ||
+              queued) && (
               <ComposerBanner.Attachment>
                 <ComposerBanner.Root variant={error ? "error" : "default"}>
                   {pendingRequest && (
@@ -796,6 +844,20 @@ export function Agent({
                       )}
                       <Button size="xs" variant="ghost" onClick={cancelRequest}>
                         Cancel request
+                      </Button>
+                    </section>
+                  )}
+                  {queued && (
+                    <section
+                      className="chat-feedback flex-wrap items-center gap-2"
+                      aria-label="Queued message"
+                    >
+                      <span className="min-w-0 flex-1">
+                        Queued, sends when the current turn finishes
+                        <span className="block truncate opacity-70">{queued.text}</span>
+                      </span>
+                      <Button size="xs" variant="ghost" onClick={cancelQueued}>
+                        Cancel queued message
                       </Button>
                     </section>
                   )}
@@ -991,14 +1053,13 @@ export function Agent({
                   {images.length > 0 && (
                     <AgentImages
                       images={images}
-                      disabled={imageSending || readingImages}
+                      disabled={readingImages}
                       onRemove={(id) =>
                         setImages((previous) => previous.filter((image) => image.id !== id))
                       }
                     />
                   )}
                   <textarea
-                    disabled={imageSending}
                     onPaste={(event) => {
                       const files = [...event.clipboardData.items]
                         .filter((item) => item.kind === "file")
@@ -1054,7 +1115,7 @@ export function Agent({
                       type="button"
                       aria-label="Attach images"
                       title="Attach images"
-                      disabled={imageSending || readingImages}
+                      disabled={readingImages}
                       onClick={() => fileInput.current?.click()}
                     >
                       <Paperclip size={18} />
@@ -1074,17 +1135,28 @@ export function Agent({
                       <option value="claude">Opus 5</option>
                     </select>
                   </div>
-                  <span className={ready || working ? "sr-only" : "chat-readiness"} role="status">
+                  <span
+                    className={!stopping && (ready || working) ? "sr-only" : "chat-readiness"}
+                    role="status"
+                  >
                     {stateLabel}
                   </span>
                   <ComposerPrimaryActions
-                    isRunning={working}
+                    isRunning={working && !stopping}
+                    isStopping={stopping === "requested"}
+                    isQueueing={working || stopping !== null}
                     hasSendableContent={!!prompt.trim() || images.length > 0}
                     isConnecting={preparing || checking}
                     isSendBusy={readingImages}
                     isEnvironmentUnavailable={!ready}
-                    sendDisabledReason={dirty ? "Save file edits first" : null}
-                    onInterrupt={() => send({ type: "stop" })}
+                    sendDisabledReason={
+                      dirty
+                        ? "Save file edits first"
+                        : queued
+                          ? "A message is already waiting for this turn"
+                          : null
+                    }
+                    onInterrupt={interrupt}
                   />
                 </div>
               </form>

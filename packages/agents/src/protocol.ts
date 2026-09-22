@@ -51,7 +51,7 @@ export function agentFailure(error: unknown): string {
   if (status === 401 || /API key|authentication|unauthorized/i.test(message))
     return "The API key was rejected. Check the selected model’s key and reconnect.";
   if (status === 402 || /credits|balance|payment/i.test(message))
-    return "This account has insufficient credits. Add credits or use another API key.";
+    return "This account has insufficient credits. Add credits to this account, then send again.";
   if (status === 429 || /rate.limit/i.test(message))
     return "The provider is rate limiting requests. Wait a moment, then retry.";
   if (/postinstall|ENOENT|server exited|server to start/i.test(message))
@@ -67,8 +67,18 @@ export function agentFailure(error: unknown): string {
   if (/abort/i.test(message)) return "Stopped. You can send another request.";
   return "The provider request failed. Retry, or reconnect to check the runtime and API key.";
 }
+/**
+ * A spent balance or exhausted quota, not a rejected key. Anthropic reports
+ * "credit balance is too low" and OpenRouter answers 402 "Insufficient
+ * credits"; both keep working once the account is topped up, so the saved
+ * credential must stay connected.
+ */
+export function billingFailure(error: unknown): boolean {
+  return /insufficient credits/.test(agentFailure(error));
+}
 export function credentialFailure(error: unknown): boolean {
-  return /API key was rejected|does not have permission|insufficient credits|Anthropic workspace|workspace ID|key requires a workspace/.test(
+  if (billingFailure(error)) return false;
+  return /API key was rejected|does not have permission|Anthropic workspace|workspace ID|key requires a workspace/.test(
     agentFailure(error),
   );
 }
@@ -92,9 +102,15 @@ export const agentInputSchema = z.discriminatedUnion("type", [
       id: z.uuid().optional(),
       images: agentImagesSchema.optional(),
       model: z.string().max(160).optional(),
+      // Send when the running turn finishes instead of being refused. The
+      // server holds exactly one queued prompt and delivers it once.
+      queue: z.boolean().optional(),
     })
     .refine((input) => input.text.length > 0 || Boolean(input.images?.length), {
       message: "Write a message or attach an image.",
+    })
+    .refine((input) => !input.queue || Boolean(input.id), {
+      message: "A queued message needs a request ID.",
     }),
   z.strictObject({
     type: z.literal("approval"),
@@ -104,8 +120,12 @@ export const agentInputSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({ type: z.literal("reconnect"), provider: z.enum(["claude", "opencode"]) }),
   z.strictObject({ type: z.literal("stop") }),
+  z.strictObject({ type: z.literal("unqueue") }),
 ]);
 export type AgentInput = z.infer<typeof agentInputSchema>;
+export type AgentPrompt = Extract<AgentInput, { type: "prompt" }>;
+/** The one message waiting for the running turn to finish, as clients see it. */
+export type QueuedPrompt = { id: string; text: string; images?: AgentImage[] };
 export type AgentEvent = {
   type:
     | "state"
@@ -136,9 +156,15 @@ export type AgentEvent = {
   failedProviders?: ("claude" | "opencode")[];
   provider?: "claude" | "opencode";
   credentialFailure?: boolean;
+  // A spent balance, not a rejected key: the provider stays connected.
+  billingFailure?: boolean;
   // Wire-only provenance: saved transcript events are not new runtime failures.
   replayed?: boolean;
   // A server snapshot explicitly restores an unresolved current error. Undefined
   // means this is a runner snapshot that does not own the server's error state.
   currentError?: string | null;
+  // Server snapshots only, with the same convention: the stop was accepted and
+  // the turn is winding down, and the message waiting for it, or null for none.
+  stopping?: boolean;
+  queued?: QueuedPrompt | null;
 };

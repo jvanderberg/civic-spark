@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { AgentReplay } from "../../../../packages/agents/src/history.ts";
 import { agentImagesSchema, agentWireByteLimit } from "../../../../packages/agents/src/images.ts";
+import type { AgentPrompt } from "../../../../packages/agents/src/protocol.ts";
 import { count, diagnostic } from "../../../../packages/diagnostics/src/index.ts";
 
 const eventSchema = z.object({
@@ -35,6 +36,7 @@ const eventSchema = z.object({
   failedProviders: z.array(z.enum(["claude", "opencode"])).optional(),
   provider: z.enum(["claude", "opencode"]).optional(),
   credentialFailure: z.boolean().optional(),
+  billingFailure: z.boolean().optional(),
   replayed: z.boolean().optional(),
 });
 type Event = z.infer<typeof eventSchema>;
@@ -77,6 +79,9 @@ export class AgentRunner {
   private lastBusy = false;
   private stopped = false;
   private finished = false;
+  /** A participant stop was acknowledged; the turn has not reported back yet. */
+  private interrupting = false;
+  private queued: AgentPrompt | undefined;
   constructor(
     workspaceId: string,
     sprite: string,
@@ -133,6 +138,10 @@ export class AgentRunner {
     let pendingTimer: NodeJS.Timeout | undefined;
     let lastActivity = 0;
     const deliver = (event: Event) => {
+      // An acknowledged stop ends the visible turn immediately. Output the
+      // stopping turn still produces is dropped from the transcript and from
+      // live fan-out together, so reattaching clients see the same thing.
+      if (this.interrupting && !event.replayed && ["text", "tool"].includes(event.type)) return;
       this.replay.accept(event);
       if (
         !event.replayed &&
@@ -146,8 +155,10 @@ export class AgentRunner {
         event.type === "done" ||
         event.type === "error" ||
         (event.type === "status" && event.text === "Working")
-      )
+      ) {
         this.pendingPrompt = false;
+        this.interrupting = false;
+      }
       this.events.frame(JSON.stringify(event));
       // Tool steps usually write files; announce them at most every 5 s. A
       // finished turn may also have committed, so team status is stale too.
@@ -158,6 +169,10 @@ export class AgentRunner {
         this.events.changed?.("team");
       }
       this.publishBusy();
+      if (!this.busy) {
+        this.interrupting = false;
+        this.flushQueued();
+      }
     };
     const flushText = () => {
       if (pendingTimer) clearTimeout(pendingTimer);
@@ -227,6 +242,45 @@ export class AgentRunner {
     const stdin = this.child.stdin;
     if (stdin.destroyed || !stdin.writable) return;
     stdin.write(`${line}\n`);
+  }
+  private publishState() {
+    this.events.frame(JSON.stringify(this.replay.snapshot()));
+  }
+  /**
+   * Acknowledge a participant stop at once and forward it. The runner can take
+   * a moment to abandon provider work; clients must not wait for that to see
+   * the turn end, and every later client attach must see the same state.
+   */
+  interrupt() {
+    if (this.stopped) return;
+    if (this.busy) {
+      this.interrupting = true;
+      this.replay.requestStop();
+      this.publishState();
+    }
+    this.write('{"type":"stop"}');
+  }
+  /** Hold one prompt until the running turn finishes; deliver it exactly once. */
+  queue(prompt: AgentPrompt) {
+    if (this.stopped) return;
+    this.queued = prompt;
+    this.replay.setQueued({ id: prompt.id ?? "", text: prompt.text, images: prompt.images });
+    if (!this.busy) this.flushQueued();
+    else this.publishState();
+  }
+  unqueue() {
+    if (!this.queued) return;
+    this.queued = undefined;
+    this.replay.setQueued(null);
+    this.publishState();
+  }
+  private flushQueued() {
+    const prompt = this.queued;
+    if (!prompt || this.stopped || this.busy) return;
+    this.queued = undefined;
+    this.replay.setQueued(null);
+    this.send(JSON.stringify(prompt), true);
+    this.publishState();
   }
   /** Ask the runner to stop its turn and end the process; later output is dropped. */
   stop() {

@@ -1,4 +1,4 @@
-import type { AgentEvent } from "./protocol.ts";
+import type { AgentEvent, QueuedPrompt } from "./protocol.ts";
 
 export const historyLimit = 500;
 export const historyByteLimit = 10 * 1024 * 1024;
@@ -60,6 +60,15 @@ export class AgentReplay {
   private providers = new Set<"claude" | "opencode">();
   private savedProviders: AgentEvent["savedProviders"];
   private failedProviders = new Set<"claude" | "opencode">();
+  private stopping = false;
+  private queued: QueuedPrompt | null = null;
+  /** The participant asked to stop; the turn is winding down but not finished. */
+  requestStop() {
+    this.stopping = true;
+  }
+  setQueued(queued: QueuedPrompt | null) {
+    this.queued = queued;
+  }
   accept(event: AgentEvent) {
     retainEvent(this.events, event);
     if (event.replayed) return;
@@ -70,6 +79,7 @@ export class AgentReplay {
     if (event.type === "state") {
       this.runtimeReady = event.runtimeReady ?? false;
       this.working = event.working ?? false;
+      if (!this.working) this.stopping = false;
       this.workingStartedAt = this.working ? event.workingStartedAt : undefined;
       this.providers = new Set(event.configuredProviders ?? []);
       if (event.savedProviders !== undefined) this.savedProviders = event.savedProviders;
@@ -84,9 +94,11 @@ export class AgentReplay {
       this.failedProviders.delete(event.id);
     } else if (event.type === "status" && event.text === "Working") {
       this.working = true;
+      this.stopping = false;
       this.workingStartedAt = event.workingStartedAt;
     } else if (event.type === "done" || event.type === "error") {
       this.working = false;
+      this.stopping = false;
       this.workingStartedAt = undefined;
     }
   }
@@ -102,6 +114,8 @@ export class AgentReplay {
       savedProviders: this.savedProviders,
       failedProviders: [...this.failedProviders],
       currentError: this.currentError,
+      stopping: this.stopping,
+      queued: this.queued,
     };
   }
 }
