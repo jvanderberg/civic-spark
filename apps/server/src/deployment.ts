@@ -106,14 +106,17 @@ export function validateDeployment(
 
 // Only the explicitly trusted immediate peer can supply Fly's overwritten IP header.
 // Forwarded host/proto/XFF never determine identity, cookie security or canonical origin.
+export function trustedPeer(peer: string, settings: ReturnType<typeof deploymentSettings>) {
+  const address = peer.replace(/^::ffff:/, "");
+  const family = isIP(address);
+  return Boolean(family && settings.peers.check(address, family === 4 ? "ipv4" : "ipv6"));
+}
 export function clientAddress(
   peer: string,
   headers: IncomingHttpHeaders,
   settings: ReturnType<typeof deploymentSettings>,
 ) {
-  const address = peer.replace(/^::ffff:/, "");
-  const family = isIP(address);
-  const trusted = family && settings.peers.check(address, family === 4 ? "ipv4" : "ipv6");
+  const trusted = trustedPeer(peer, settings);
   const value = headers["fly-client-ip"];
   return settings.proxy === "fly" && trusted && typeof value === "string" && isIP(value)
     ? value

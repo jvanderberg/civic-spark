@@ -172,9 +172,25 @@ it("enforces canonical production origin, verified sessions, secure cookies, hea
         })
       ).statusCode,
     ).toBe(200);
+    // Health tells setup whether Fly's proxy may supply client addresses.
     expect(
-      (await app.inject({ url: "/api/health", headers: { host: "event.example.test" } })).json(),
-    ).toEqual({ ok: true });
+      (
+        await app.inject({
+          url: "/api/health",
+          remoteAddress: "172.19.0.5",
+          headers: { host: "event.example.test" },
+        })
+      ).json(),
+    ).toEqual({ ok: true, proxyTrusted: true });
+    expect(
+      (
+        await app.inject({
+          url: "/api/health",
+          remoteAddress: "10.9.8.7",
+          headers: { host: "event.example.test" },
+        })
+      ).json(),
+    ).toEqual({ ok: true, proxyTrusted: false, proxyPeer: "10.9.8.7" });
     const health = vi.spyOn(service, "checkHealth").mockImplementation(() => {
       throw new Error("private storage diagnostic");
     });

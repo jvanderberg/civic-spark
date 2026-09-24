@@ -44,6 +44,7 @@ import {
   createStorageReadiness,
   installationOwners,
   storageHeadroom,
+  trustedPeer,
   validateDeployment,
 } from "./deployment.ts";
 import { installDiagnostics } from "./diagnostics.ts";
@@ -452,12 +453,18 @@ export async function createApp(
       return { signedIn: true };
     });
   const checkStorageReadiness = createStorageReadiness(root);
-  app.get("/api/health", async (_request, reply) => {
+  app.get("/api/health", async (request, reply) => {
     try {
       service.checkHealth();
       authentication.checkHealth();
       await checkStorageReadiness();
-      return { ok: true };
+      if (deployment.proxy !== "fly") return { ok: true };
+      // Setup verifies that Fly's proxy may supply client addresses; an untrusted
+      // proxy makes every visitor share one address and one sign-in limit.
+      const peer = request.socket.remoteAddress ?? "";
+      return trustedPeer(peer, deployment)
+        ? { ok: true, proxyTrusted: true }
+        : { ok: true, proxyTrusted: false, proxyPeer: peer.replace(/^::ffff:/, "") };
     } catch {
       return reply.code(503).send({ ok: false });
     }

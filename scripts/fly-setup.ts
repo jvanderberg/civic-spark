@@ -1,12 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import { createEmailSender } from "../apps/server/src/email.ts";
 import { validateSpriteToken } from "../packages/sprites/src/credentials.ts";
 
-class SetupError extends Error {}
+export class SetupError extends Error {}
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const slug = z.string().regex(/^[a-z0-9][a-z0-9-]{0,61}$/);
 export const setupSchema = z
@@ -378,6 +378,87 @@ export function secretInput(input: Setup, secrets: Record<string, string>) {
     throw new SetupError("Managed credentials exceed the supported secret import size");
   return `CIVIC_SPARK_SECRETS_B64=${envelope}\n`;
 }
+/** The receipt sits beside a site's own setup file, or under `<app>/` in a shared directory. */
+export function receiptPathFor(setupPath: string, app: string) {
+  const directory = dirname(resolve(setupPath));
+  return basename(directory) === app
+    ? join(directory, "receipt.json")
+    : join(directory, app, "receipt.json");
+}
+export function writeFlyConfig(input: Setup) {
+  const directory = resolve(repositoryRoot, ".data/fly", input.app);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const config = resolve(directory, "fly.toml");
+  writeFileSync(config, flyConfig(input), { mode: 0o600 });
+  chmodSync(config, 0o600);
+  return config;
+}
+export function stageSecrets(
+  input: Setup,
+  receiptPath: string,
+  secrets: Record<string, string>,
+  run: Runner = runFly,
+) {
+  authorizeExisting(input, receiptPath, run);
+  run(["secrets", "import", "--app", input.app, "--stage"], secretInput(input, secrets));
+}
+type Sender = {
+  send: (message: { email: string; subject: string; text: string }) => Promise<void>;
+};
+export async function sendTestEmail(
+  input: Setup,
+  secrets: Record<string, string>,
+  recipient: string,
+  createSender: (env: NodeJS.ProcessEnv) => Sender = createEmailSender,
+) {
+  const sender = createSender({ ...flyEnv(input), ...emailSecrets(input, secrets) });
+  try {
+    await sender.send({
+      email: recipient,
+      subject: "Civic Spark email test",
+      text: `This message confirms that ${input.origin} can send sign-in email. No action is needed.\n\nCheck that it arrived in the inbox, not spam.`,
+    });
+  } catch {
+    throw new SetupError(
+      "The email provider rejected the test message. Check emailFrom and the credentials.",
+    );
+  }
+}
+export async function verifySpriteToken(secret: string | undefined, org: string, request = fetch) {
+  const token = validateSpriteToken(secret, org);
+  const response = await request("https://api.sprites.dev/v1/sprites?max_results=1", {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) throw new SetupError("Sprite token API authentication failed");
+  // Deliberately discard the response: names and workspace metadata stay private.
+  await response.body?.cancel();
+}
+export function deploy(input: Setup, receiptPath: string, run: Runner = runFly) {
+  const config = writeFlyConfig(input);
+  if (!existsSync(receiptPath))
+    throw new SetupError("Run provision with the original setup receipt before deploying");
+  const { volumes } = authorizeExisting(input, receiptPath, run);
+  if (volumes.length !== 1) throw new SetupError("Exactly one persistent volume is required");
+  run([
+    "deploy",
+    repositoryRoot,
+    "--dockerfile",
+    resolve(repositoryRoot, "deploy/fly/Dockerfile"),
+    "--app",
+    input.app,
+    "--config",
+    config,
+    "--remote-only",
+    "--ha=false",
+    "--strategy",
+    "immediate",
+    "--yes",
+  ]);
+  authorizeExisting(input, receiptPath, run);
+}
+const readSecrets = () =>
+  z.record(z.string(), z.string()).parse(JSON.parse(readFileSync(0, "utf8")));
 async function main() {
   const [action, path, ...rest] = process.argv.slice(2);
   const recipient = action === "test-email" ? rest.shift() : undefined;
@@ -392,12 +473,9 @@ async function main() {
       "Usage: npx tsx scripts/fly-setup.ts plan|auth|provision|secrets|verify-sprites|deploy <public-config.json> [--ambient]\n       npx tsx scripts/fly-setup.ts test-email <public-config.json> <recipient> < private-secrets.json",
     );
   const input = setupSchema.parse(JSON.parse(readFileSync(path, "utf8")));
-  const directory = resolve(repositoryRoot, ".data/fly", input.app);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const config = resolve(directory, "fly.toml");
-  writeFileSync(config, flyConfig(input), { mode: 0o600 });
-  chmodSync(config, 0o600);
+  const receipt = receiptPathFor(path, input.app);
   if (action === "plan") {
+    const config = writeFlyConfig(input);
     console.log(`Configuration written: ${config}\nNo cloud resources changed.`);
     console.log(
       `Persistent volume: ${input.volumeGb} GB initially. Auto-extension: ${input.volumeAutoExtend.enabled ? `${input.volumeAutoExtend.thresholdPercent}% used, +${input.volumeAutoExtend.incrementGb} GB, ceiling ${input.volumeAutoExtend.ceilingGb} GB` : "disabled"}. Management: ${input.managementCpus} ${input.managementCpuKind} CPUs / ${input.managementMemoryMb} MB.`,
@@ -427,73 +505,35 @@ async function main() {
     return;
   }
   if (action === "provision") {
-    provision(input, resolve(directory, "receipt.json"));
+    writeFlyConfig(input);
+    provision(input, receipt);
     console.log("App and single volume are ready; no deployment performed.");
     return;
   }
   if (action === "secrets") {
-    authorizeExisting(input, resolve(directory, "receipt.json"));
     // JSON arrives on stdin from a password manager or private file outside this repository.
-    const secrets = z.record(z.string(), z.string()).parse(JSON.parse(readFileSync(0, "utf8")));
-    runFly(["secrets", "import", "--app", input.app, "--stage"], secretInput(input, secrets));
+    stageSecrets(input, receipt, readSecrets());
     console.log("Secrets staged; deploy to activate. No secret values logged.");
     return;
   }
   if (action === "test-email") {
     // Same private secrets file as `secrets`; only the email credentials are used.
-    const secrets = z.record(z.string(), z.string()).parse(JSON.parse(readFileSync(0, "utf8")));
-    const sender = createEmailSender({ ...flyEnv(input), ...emailSecrets(input, secrets) });
-    try {
-      await sender.send({
-        email: recipient ?? "",
-        subject: "Civic Spark email test",
-        text: `This message confirms that ${input.origin} can send sign-in email. No action is needed.\n\nCheck that it arrived in the inbox, not spam.`,
-      });
-    } catch {
-      throw new SetupError(
-        "The email provider rejected the test message. Check emailFrom and the credentials.",
-      );
-    }
+    await sendTestEmail(input, readSecrets(), recipient ?? "");
     console.log("Provider accepted the test message. Check the inbox and spam folder.");
     return;
   }
   if (action === "verify-sprites") {
-    const secret =
+    await verifySpriteToken(
       process.env.SPRITE_TOKEN ??
-      z.object({ SPRITE_TOKEN: z.string() }).parse(JSON.parse(readFileSync(0, "utf8")))
-        .SPRITE_TOKEN;
-    const token = validateSpriteToken(secret, input.spriteOrg);
-    const response = await fetch("https://api.sprites.dev/v1/sprites?max_results=1", {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!response.ok) throw new SetupError("Sprite token API authentication failed");
-    // Deliberately discard the response: names and workspace metadata stay private.
-    await response.body?.cancel();
+        z.object({ SPRITE_TOKEN: z.string() }).parse(JSON.parse(readFileSync(0, "utf8")))
+          .SPRITE_TOKEN,
+      input.spriteOrg,
+    );
     console.log("Sprite API accepted the credential; no resources changed.");
     return;
   }
   if (action === "deploy") {
-    if (!existsSync(resolve(directory, "receipt.json")))
-      throw new SetupError("Run provision with the original setup receipt before deploying");
-    const { volumes } = authorizeExisting(input, resolve(directory, "receipt.json"));
-    if (volumes.length !== 1) throw new SetupError("Exactly one persistent volume is required");
-    runFly([
-      "deploy",
-      repositoryRoot,
-      "--dockerfile",
-      resolve(repositoryRoot, "deploy/fly/Dockerfile"),
-      "--app",
-      input.app,
-      "--config",
-      config,
-      "--remote-only",
-      "--ha=false",
-      "--strategy",
-      "immediate",
-      "--yes",
-    ]);
-    authorizeExisting(input, resolve(directory, "receipt.json"));
+    deploy(input, receipt);
     console.log(
       "Deployment complete. Run the documented live verification before inviting participants.",
     );
