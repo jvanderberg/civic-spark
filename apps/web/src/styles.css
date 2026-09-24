@@ -1714,6 +1714,14 @@ h2 {
   font-size: 20px;
   margin-top: 0;
 }
+.email-sent .login-actions {
+  margin: 16px 0 12px;
+}
+.email-sent input[name="code"] {
+  font-size: 20px;
+  letter-spacing: 4px;
+  font-variant-numeric: tabular-nums;
+}
 .email-sent p {
   font-size: 13px;
   line-height: 1.7;

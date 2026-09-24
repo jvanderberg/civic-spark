@@ -52,6 +52,16 @@ export function deploymentSettings(env: NodeJS.ProcessEnv = process.env) {
   return { hosted, host, port, proxy, peers };
 }
 
+/** Emails allowed to create events. Empty only outside hosted deployments. */
+export function installationOwners(env: NodeJS.ProcessEnv = process.env) {
+  const owners = (env.CIVIC_SPARK_OWNERS ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  if (owners.some((owner) => !z.email().safeParse(owner).success))
+    throw new Error("CIVIC_SPARK_OWNERS must be comma-separated email addresses");
+  return owners;
+}
 export function validateDeployment(
   root: string,
   baseURL: string,
@@ -80,8 +90,11 @@ export function validateDeployment(
   if (!isAbsolute(root)) throw new Error("Hosted data directory must be absolute");
   if (!env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32)
     throw new Error("Hosted deployment requires BETTER_AUTH_SECRET (at least 32 characters)");
-  if (authMode !== "demo" && !["smtp", "resend"].includes(env.CIVIC_SPARK_EMAIL_PROVIDER ?? ""))
+  // Owners sign in with an emailed code in every mode, including demo.
+  if (!["smtp", "resend"].includes(env.CIVIC_SPARK_EMAIL_PROVIDER ?? ""))
     throw new Error("Hosted deployment requires configured SMTP or Resend email");
+  if (!installationOwners(env).length)
+    throw new Error("Hosted deployment requires CIVIC_SPARK_OWNERS");
   if (env.FLY_API_TOKEN || env.FLY_ACCESS_TOKEN)
     throw new Error("Do not install Fly administration credentials in the control plane");
   if (env.CIVIC_SPARK_ENABLE_SPRITES === "1") {
@@ -93,14 +106,17 @@ export function validateDeployment(
 
 // Only the explicitly trusted immediate peer can supply Fly's overwritten IP header.
 // Forwarded host/proto/XFF never determine identity, cookie security or canonical origin.
+export function trustedPeer(peer: string, settings: ReturnType<typeof deploymentSettings>) {
+  const address = peer.replace(/^::ffff:/, "");
+  const family = isIP(address);
+  return Boolean(family && settings.peers.check(address, family === 4 ? "ipv4" : "ipv6"));
+}
 export function clientAddress(
   peer: string,
   headers: IncomingHttpHeaders,
   settings: ReturnType<typeof deploymentSettings>,
 ) {
-  const address = peer.replace(/^::ffff:/, "");
-  const family = isIP(address);
-  const trusted = family && settings.peers.check(address, family === 4 ? "ipv4" : "ipv6");
+  const trusted = trustedPeer(peer, settings);
   const value = headers["fly-client-ip"];
   return settings.proxy === "fly" && trusted && typeof value === "string" && isIP(value)
     ? value

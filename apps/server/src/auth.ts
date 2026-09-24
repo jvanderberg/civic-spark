@@ -2,8 +2,9 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
-import { magicLink } from "better-auth/plugins";
+import { emailOTP, magicLink } from "better-auth/plugins";
 import Database from "better-sqlite3";
 import { z } from "zod";
 import { createEmailDelivery, type EmailDelivery } from "./email.ts";
@@ -26,8 +27,12 @@ export async function createAuthentication(
     writeFileSync(secretPath, randomBytes(48).toString("base64url"), { mode: 0o600, flag: "wx" });
   const secret = process.env.BETTER_AUTH_SECRET ?? readFileSync(secretPath, "utf8");
   const database = new Database(join(root, "auth.sqlite"));
+  // One email carries both credentials: the link, and a code for when a phone
+  // opens the link in a different browser from the one that asked for it.
+  const codeIdentifier = (email: string) => `sign-in-otp-${email.toLowerCase()}`;
+  let createCode: ((email: string) => Promise<string>) | undefined;
   database.pragma("journal_mode = WAL");
-  const config: BetterAuthOptions = {
+  const config = {
     appName: "Civic Spark",
     baseURL,
     secret,
@@ -48,6 +53,13 @@ export async function createAuthentication(
       disableCSRFCheck: false,
       ipAddress: { ipAddressHeaders: ["x-civic-spark-client-ip"] },
     },
+    hooks: {
+      after: createAuthMiddleware(async (ctx) => {
+        const email = ctx.context.newSession?.user.email;
+        if (ctx.path === "/magic-link/verify" && email)
+          await ctx.context.internalAdapter.deleteVerificationByIdentifier(codeIdentifier(email));
+      }),
+    },
     databaseHooks: {
       user: {
         create: {
@@ -62,13 +74,29 @@ export async function createAuthentication(
         expiresIn: 600,
         storeToken: "hashed",
         rateLimit: { window: 60, max: requestsPerMinute },
-        sendMagicLink: async ({ email, url }) => delivery.send({ email, url }),
+        sendMagicLink: async ({ email, url }, ctx) => {
+          if (!createCode || !ctx) throw new Error("Authentication is not ready");
+          await ctx.context.internalAdapter.deleteVerificationByIdentifier(codeIdentifier(email));
+          await delivery.send({ email, url, code: await createCode(email) });
+        },
+      }),
+      emailOTP({
+        otpLength: 6,
+        expiresIn: 600,
+        allowedAttempts: 5,
+        storeOTP: "hashed",
+        rateLimit: { window: 60, max: requestsPerMinute },
+        // Codes are only issued inside the sign-in link email above.
+        sendVerificationOTP: async () => {
+          throw new Error("Standalone email codes are not supported");
+        },
       }),
     ],
-  };
+  } satisfies BetterAuthOptions;
   const migration = await getMigrations(config);
   await migration.runMigrations();
   const auth = betterAuth(config);
+  createCode = (email) => auth.api.createVerificationOTP({ body: { email, type: "sign-in" } });
   return {
     auth,
     emailSignIn: delivery.configured,

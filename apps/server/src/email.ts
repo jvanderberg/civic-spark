@@ -1,19 +1,31 @@
 import nodemailer from "nodemailer";
 import { z } from "zod";
 
-export type LoginEmail = { email: string; url: string };
+export type LoginEmail = { email: string; url: string; code: string };
 export type EmailDelivery = { configured: boolean; send: (message: LoginEmail) => Promise<void> };
+type Message = { email: string; subject: string; text: string };
+
+export const loginEmail = ({ email, url, code }: LoginEmail): Message => ({
+  email,
+  subject: `Civic Spark sign-in code: ${code}`,
+  text: `Your Civic Spark sign-in code is ${code}\n\nEnter it where you requested it, or open this link to sign in:\n\n${url}\n\nThe code and link expire in 10 minutes. Each works once.\n\nIf you did not request this email, you can ignore it.`,
+});
 
 // Provider boundary: identity and event code depend only on EmailDelivery.
-// Never log messages: sign-in URLs are credentials.
+// Never log messages: sign-in codes and URLs are credentials.
 export function createEmailDelivery(env: NodeJS.ProcessEnv = process.env): EmailDelivery {
+  const sender = createEmailSender(env);
+  return { configured: sender.configured, send: (input) => sender.send(loginEmail(input)) };
+}
+
+export function createEmailSender(env: NodeJS.ProcessEnv = process.env) {
   const provider = z
     .enum(["disabled", "resend", "smtp"])
     .parse(env.CIVIC_SPARK_EMAIL_PROVIDER ?? "disabled");
   if (provider === "disabled")
     return {
       configured: false,
-      async send() {
+      async send(_message: Message): Promise<void> {
         throw new Error("Email delivery is not configured");
       },
     };
@@ -23,12 +35,7 @@ export function createEmailDelivery(env: NodeJS.ProcessEnv = process.env): Email
     return value;
   };
   const from = required("CIVIC_SPARK_EMAIL_FROM");
-  const message = ({ email, url }: LoginEmail) => ({
-    from,
-    to: [email],
-    subject: "Your Civic Spark sign-in link",
-    text: `Sign in to Civic Spark:\n\n${url}\n\nThis link verifies your email and signs you in. It expires in 10 minutes and can be used once.\n\nIf you did not request this email, you can ignore it.`,
-  });
+  const message = ({ email, subject, text }: Message) => ({ from, to: [email], subject, text });
   if (provider === "smtp") {
     const port = z.coerce
       .number()
@@ -52,7 +59,7 @@ export function createEmailDelivery(env: NodeJS.ProcessEnv = process.env): Email
     });
     return {
       configured: true,
-      async send(input) {
+      async send(input: Message): Promise<void> {
         try {
           const result = await transport.sendMail(message(input));
           if (!result.accepted.length) throw new Error("Recipient rejected");
@@ -66,7 +73,7 @@ export function createEmailDelivery(env: NodeJS.ProcessEnv = process.env): Email
   const key = required("RESEND_API_KEY");
   return {
     configured: true,
-    async send(input) {
+    async send(input: Message): Promise<void> {
       try {
         const response = await fetch("https://api.resend.com/emails", {
           method: "POST",

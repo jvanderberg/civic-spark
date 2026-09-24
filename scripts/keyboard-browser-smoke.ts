@@ -140,7 +140,7 @@ export async function verifyKeyboardViewport(engine: "chromium" | "webkit" = "ch
     await page.goto(origin);
     await page.getByLabel("Email address").fill("keyboard@example.test");
     await page.getByRole("button", { name: "Enter prototype" }).tap();
-    await page.getByRole("button", { name: "Create your first event" }).tap();
+    await page.getByRole("button", { name: "Create your event" }).tap();
     await page.getByLabel("Event name").fill("Mobile typing fixture");
     await page.getByLabel("Date", { exact: true }).fill("2026-10-03");
     await page.getByLabel("Location").fill("Library");

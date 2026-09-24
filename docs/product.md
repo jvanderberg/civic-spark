@@ -10,7 +10,7 @@ A **user** normally has a verified email and stable internal identity. The expli
 
 ```mermaid
 flowchart TD
-  Login[Email link sign-in] --> User[User account]
+  Login[Email code or link sign-in] --> User[User account]
   User --> Create[Create event: become admin]
   User --> Discover[Explore open events, projects and teams]
   Discover --> Join[Join a team or create one]
@@ -60,7 +60,7 @@ Repository reads require team membership or event-admin access. Copy, deletion, 
 An installation can pin its portal to one existing event with `CIVIC_SPARK_SITE_EVENT_ID` (Fly setup: `siteEventId`). Sign-in, navigation and document title use that event's name; the portal opens its projects directly without cross-event selection or event-creation controls. Admin project/team management remains available. Invalid configuration fails explicitly, and inaccessible draft/closed events do not expose their names to visitors. The underlying multi-event model remains reusable when no event is configured. See [installation configuration](fly-deployment.md).
 
 1. Configure the installation’s email sender and sign-in origin and workspace provider.
-2. Sign in and create an event from a blank or DIOD template. The creator becomes its first admin.
+2. Sign in as a site owner and create the event from a blank or DIOD template. The creator becomes its first admin. Each site hosts one event: only owners listed in the installation's setup can create it, and the site then shows that event under its name.
 3. Add another admin by the verified email of an account that has signed in, or promote an event member. At least one admin must remain.
 4. In Admin → Projects, create or edit projects with a name and Markdown brief, including data links. Open registration. Signed-in newcomers see project briefs and teams.
 5. Signed-in participants can create a listed project from Projects before joining a team. In the team form, New project opens project creation and returns to the preserved team draft with that project selected; saving the project does not create the team. Creating the team joins its creator and checks the chosen brief into `PROJECT.md`.
@@ -94,7 +94,7 @@ Both browser coding providers and native terminal launchers receive the canonica
 
 | Stage | Participant | Admin |
 | --- | --- | --- |
-| Arrival | Open an email sign-in link and choose the event | Monitor people and teams |
+| Arrival | Enter the emailed sign-in code or open its link, then choose the event | Monitor people and teams |
 | Find a project | Browse briefs and existing teams; join or create one | Help people find teams; correct mistakes |
 | Work | Open My teams, then the workspace for a team | Check event-wide progress and shared changes |
 | First workspace visit | Sprite is prepared from that team’s committed repository; subsequent visits resume it | Help with failed provisioning |

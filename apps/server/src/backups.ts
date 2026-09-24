@@ -136,7 +136,7 @@ export class BackupManager {
         directory: this.directory,
         installation: this.installation(),
         configuration: {
-          siteEventId: this.env.CIVIC_SPARK_SITE_EVENT_ID ?? null,
+          siteEventId: this.options.service.siteEventId(),
           spritesEnabled: this.env.CIVIC_SPARK_ENABLE_SPRITES === "1",
           ...this.options.configuration,
         },

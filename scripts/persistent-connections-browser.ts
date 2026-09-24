@@ -155,7 +155,7 @@ try {
   await page.goto(address);
   await page.getByLabel("Email address").fill("connections@example.test");
   await view("Enter prototype");
-  await view("Create your first event");
+  await view("Create your event");
   await page.getByLabel("Event name").fill("Connection fixture");
   await page.getByLabel("Date", { exact: true }).fill("2026-10-03");
   await page.getByLabel("Location").fill("Test");

@@ -4,6 +4,19 @@ This package deploys signup, administration, static UI, authenticated APIs, SQLi
 
 The explicit demo has passed live Linux startup, idle volume restart, public demo sign-in and dedicated Sprite workspace checks; see the live record below. This is not production certification: sender delivery, token rotation, full backup/restore and resource lifecycle recovery remain unverified. Public previews now use each existing Sprite's native HTTPS URL and HTTP service. No preview ingress app, Machine, domain, origin pool, extra port or authentication gateway is required. Dedicated native-provider acceptance passed HTTP/assets/Vite HMR, Stop/Launch and warm-sleep subsequent access; cold restart remains unverified. Earlier private gateway evidence applies only to the retired design.
 
+## Set up a new site with one command
+
+Log in to Fly (`fly auth login`), create a Gmail account with an app password ([Gmail](authentication.md#gmail-recommended-without-a-domain)) and a Sprite token in the Sprites dashboard, then run from the repository root:
+
+```sh
+npm ci
+npm run site:bootstrap
+```
+
+It asks for the site name, Fly organization and region, sign-in mode (email or demo), owner emails, the Gmail address, and, with hidden input, the Sprite token and Gmail app password. It generates the auth secret. Answers and secrets are saved in `~/.local/state/civic-spark/sites/<name>/` (directory 0700, files 0600; override the root with `CIVIC_SPARK_STATE_DIR`), never in the repository, argv or logs. After a summary and confirmation it checks the Sprite token, sends a test email to the first owner and asks whether it reached the inbox, then creates the app and volume, stages secrets, deploys and waits for health. If Fly's proxy reaches the app from an unexpected address, it trusts exactly that address and redeploys once.
+
+Rerun `npm run site:bootstrap <name>` to apply code or settings changes: it asks only for what is missing, keeps the auth secret, and skips the email test unless the sender or first owner changed. Edit `setup.json` there to change sizing or limits. Sign in as an owner with the emailed code and create the event. The individual actions below remain for manual operation and for installations set up before this command.
+
 ## Requirements and inputs
 
 Use Node **22.23.2**, npm with the committed lockfile, Fly CLI **0.4.104** and Sprite CLI **2026-09-02 (6390abf)**. Fly's CLI runs only on the operator/CI host, not in the image. Sprite CLI in the image is downloaded from the committed release manifest and checked against its SHA-256. The Node image uses a multiarchitecture digest; Debian packages resolve from a fixed September 15, 2026 snapshot. Native dependencies build from source during `npm ci`. Python, Git and Sprite are trusted control-plane tools; this does not permit executing participant code on the Machine.
@@ -12,13 +25,13 @@ Choose app name, Fly organization, region, exact public HTTPS origin, Sprite org
 
 `proxyCidrs` specifies the immediate peers allowed to supply `Fly-Client-IP`. The example uses the Fly Machine proxy network; verify it in the selected deployment before inviting users. The generated app has a dedicated Fly network and listens on IPv4 `0.0.0.0`, not its IPv6 private-network address. Do not broaden trust to every address or add unrelated workloads to that network. `X-Forwarded-For`, host and proto do not establish identity or the canonical origin. TLS cookies derive from `BETTER_AUTH_URL`; application and WebSocket origins are exact. An untrusted peer's IP headers are ignored. On another provider use `CIVIC_SPARK_PROXY=none` or implement that provider's explicit peer boundary. No Git or Sprite operation depends on Fly private networking.
 
-Production defaults to `email` authentication and requires complete Resend or SMTP settings. SMTP permits port 587 with required STARTTLS or 465 with immediate TLS. Verify the sender domain externally. Local prototype sign-in remains unavailable publicly: a public bind, production environment or hosted deployment rejects prototype mode at startup.
+Production defaults to `email` authentication and requires complete Gmail, Resend or SMTP settings. SMTP permits port 587 with required STARTTLS or 465 with immediate TLS. Verify the sender domain externally. Local prototype sign-in remains unavailable publicly: a public bind, production environment or hosted deployment rejects prototype mode at startup.
 
 ## Explicit hosted demo
 
-For a fresh, intentionally unverified demonstration, set `authMode: "demo"` in setup JSON (`CIVIC_SPARK_AUTH_MODE=demo` at runtime). Omit `emailProvider`, `emailFrom` and email credentials; only `SPRITE_TOKEN` and `BETTER_AUTH_SECRET` are required. The UI warns that anyone entering the same email can access that demo account. Use demo data and disposable model credentials only. Demo users retain `emailVerified: false` with an explicit demo identity marker; they are never promoted or migrated to verified users.
+For a fresh, intentionally unverified demonstration, set `authMode: "demo"` in setup JSON (`CIVIC_SPARK_AUTH_MODE=demo` at runtime). Participants then sign in by typing an email, and the UI warns that anyone entering the same email can access that demo account. Every site, demo included, lists `owners` and configures a sender: owners and event admins always sign in with an emailed code, and only owners create events. See [owners](authentication.md#owners). Use demo data and disposable model credentials only. Demo participants retain `emailVerified: false` with an explicit demo identity marker; they are never promoted or migrated to verified-email production accounts.
 
-For a site dedicated to one hackathon, set optional `siteEventId` in setup JSON to the existing event UUID. Setup emits `CIVIC_SPARK_SITE_EVENT_ID`; this runtime setting needs no frontend rebuild. Create the event in the appropriate auth-mode data store before enabling it. Startup rejects malformed IDs or an event missing from that store instead of choosing another event. The session response supplies the event name for sign-in, navigation and the document title; anonymous visitors only receive names of registration/live events. Draft/closed names remain limited to authorized event members. A configured event unavailable to a signed-in visitor shows an explicit not-open message.
+Each site hosts one event. After deployment, an owner signs in and creates it; that event becomes the site's event, saved with the site's data, and no second event can be created. Optional `siteEventId` in setup JSON (`CIVIC_SPARK_SITE_EVENT_ID`) only adopts an existing event for installations that predate this, and only while no event has been adopted. Startup rejects malformed IDs or an event missing from that store instead of choosing another event. The session response supplies the event name for sign-in, navigation and the document title; anonymous visitors only receive names of registration/live events. Draft/closed names remain limited to authorized event members. A configured event unavailable to a signed-in visitor shows an explicit not-open message.
 
 The pinned portal shows only that event's projects, teams and workspaces, with no event switcher or create-event UI. An old workspace URL from another event cannot switch the portal. Event admins retain project/team management. This is installation navigation scope, not a replacement for API membership/role authorization; the domain and authenticated multi-event management APIs remain reusable. Omit the setting to retain the multi-event portal. Never copy an ID between isolated demo/prototype/production data stores or migrate identities to make it resolve.
 
@@ -57,9 +70,9 @@ npm run check
 npm run test:deploy-context
 ```
 
-For SMTP set `emailProvider` to `smtp` and add `smtpHost` and `smtpPort` (465 or 587) in the public JSON. `emailFrom` is the verified sending address, optionally with a display name. A custom origin also requires its DNS and Fly certificate before sign-in; the default `app.fly.dev` certificate is managed by Fly.
+Without a domain of your own, set `emailProvider` to `gmail` and `emailFrom` to `Civic Spark <account@gmail.com>`; the helper fills in Google's SMTP host and port. See [Gmail](authentication.md#gmail-recommended-without-a-domain) for the account and app password. For another SMTP service set `emailProvider` to `smtp` and add `smtpHost` and `smtpPort` (465 or 587) in the public JSON. `emailFrom` is the verified sending address, optionally with a display name. A custom origin also requires its DNS and Fly certificate before sign-in; the default `app.fly.dev` certificate is managed by Fly.
 
-The generated `.data/fly/<app>/fly.toml` and ownership receipt are private operator state, excluded from Git and the image. Preserve the receipt when moving operator hosts. A preexisting app without its receipt is refused. If creation succeeded but the operator crashed before the receipt was written, inspect the app/org/network/volumes/Machines manually, then recover a receipt containing only its verified `app`, `org`, and `region`. Do not blindly adopt an existing app. The helper refuses extra Machines, unexpected volume names/regions/sizes, and changed organization/receipt inputs. Volume extension, recovery and region migration are separate coordinated operations.
+The generated `.data/fly/<app>/fly.toml` and ownership receipt are private operator state, excluded from Git and the image. The receipt lives beside the setup file when that file's directory is named after the app (the bootstrap layout), otherwise in an `<app>/` subdirectory next to it, as with `.data/fly/setup.json`. Preserve the receipt when moving operator hosts. A preexisting app without its receipt is refused. If creation succeeded but the operator crashed before the receipt was written, inspect the app/org/network/volumes/Machines manually, then recover a receipt containing only its verified `app`, `org`, and `region`. Do not blindly adopt an existing app. The helper refuses extra Machines, unexpected volume names/regions/sizes, and changed organization/receipt inputs. Volume extension, recovery and region migration are separate coordinated operations.
 
 ## Authenticate explicitly
 
@@ -74,7 +87,15 @@ CI may supply its Fly app/org provisioning token through Fly's supported environ
 
 Create a dedicated **Sprites token** in the selected organization using the Sprites account/token interface. Its documented CLI format is `org-slug/org-id/token-id/token-value`; the helper checks that contract and selected slug. That syntactic check does not prove authorization. The separate `verify-sprites` action performs an authenticated, read-only API list probe and discards all names/metadata. A Sprites organization token can manage that organization's Sprites; do not claim it is event-scoped or limited to a name prefix. Use a dedicated organization if unrelated resources require isolation. It is not a general Fly admin token.
 
-Save all managed credentials as a JSON object in a password manager or a mode-0600 file **outside the repository**. The required keys are `SPRITE_TOKEN`, `BETTER_AUTH_SECRET` (at least 32 random characters), and `RESEND_API_KEY`; for SMTP replace the Resend key with `SMTP_USER` and `SMTP_PASSWORD`. In explicit demo mode omit the email credentials. No real credentials belong in examples, shell history, command arguments or tickets. Keep the auth secret stable across repeat setup and Sprite token rotation.
+Save all managed credentials as a JSON object in a password manager or a mode-0600 file **outside the repository**. The required keys are `SPRITE_TOKEN`, `BETTER_AUTH_SECRET` (at least 32 random characters), and `RESEND_API_KEY`; for Gmail or SMTP replace the Resend key with `SMTP_USER` and `SMTP_PASSWORD`. For Gmail, `SMTP_USER` must be the `emailFrom` address and `SMTP_PASSWORD` its 16-letter app password.
+
+Before staging secrets, send a real message with the same settings and check that it reaches the inbox, not spam:
+
+```sh
+npx tsx scripts/fly-setup.ts test-email "$CIVIC_SPARK_SETUP" you@example.org < "$CIVIC_SPARK_SECRETS_FILE"
+```
+
+It reads only the email credentials, changes no cloud resources and logs no secret values. Demo mode needs the same email credentials. No real credentials belong in examples, shell history, command arguments or tickets. Keep the auth secret stable across repeat setup and Sprite token rotation.
 
 ```sh
 # Set this to an existing private JSON file outside this checkout; values are not argv.

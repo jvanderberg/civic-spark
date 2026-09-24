@@ -168,6 +168,9 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 ## Authenticated event and participant foundation
 
 - [x] Email-link signup/sign-in using Better Auth; verified database sessions
+- [x] Six-digit code in the same email for phones whose mail app opens links elsewhere; one-time, hashed, 10-minute, five attempts, cancelled by the link
+- [x] Gmail SMTP setup preset (no domain needed) and a `test-email` setup action; mocked transports only
+- [x] `npm run site:bootstrap`: one interactive command that asks for settings and secrets (hidden), generates the auth secret, keeps everything in a private per-site directory, tests the Sprite token and email, provisions, stages secrets, deploys, and verifies Fly's proxy address through health. Fake Fly CLI tests only; not yet run against a new real app
 - [x] Configurable SMTP and Resend adapters; single-use, expiring, hashed login tokens
 - [x] Creator becomes event admin; promote members or add known accounts by verified email; retain last admin
 - [x] Server-enforced event roles and owner-only workspace access
@@ -200,7 +203,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 - [x] Waiting messages follow the copied T3 Code queue UI: dashed queued rows at the end of the conversation with Queued, Send now and Cancel, up to five in order, no composer banner and no stopping control. Send now stops the running turn and the server sends that message as the next prompt, because each turn is one harness request; Stop cancels the queue back into the composer.
 - [x] Auth/session/domain tests and separate-browser participant/admin workflow
 - [x] Live Sprite file API verification; remote temporary edit restored
-- [ ] Configure email sender and verify actual inbox delivery on the deployed origin
+- [ ] Configure email sender and verify actual inbox delivery on the deployed origin (Gmail account and app password pending; then `test-email`, deploy in email mode, phone sign-in)
 
 ## Required workspace experience
 
@@ -217,6 +220,8 @@ See [workspace modes and acceptance requirements](docs/product.md#required-works
 
 - [x] Local email-identity prototype mode with isolated cookies/data and loopback-only access
 - [x] Explicit hosted demo opt-in with unverified identities, isolated cookies/data, shared-email warning and bounded sign-in throttling; verified-email production remains the default
+- [x] One event per site: with owners, the first event an owner creates becomes the saved site event and a second is refused; `CIVIC_SPARK_SITE_EVENT_ID` only adopts an existing event for older installations
+- [x] Installation owners (`CIVIC_SPARK_OWNERS`, required when hosted) are the only event creators; owners and event admins sign in with an emailed code even in demo mode, ending earlier typed-email sessions
 - [x] Full-screen compact workspace with fixed Opus 5/GLM choices and runtime/key readiness
 - [x] Hierarchical file explorer with collapsible, resizable sidebar and saved layout preferences
 - [x] System-following light/dark themes and syntax-highlighted Monaco editing

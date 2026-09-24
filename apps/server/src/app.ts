@@ -7,8 +7,8 @@ import { fromNodeHeaders } from "better-auth/node";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
-  demoIdentitySchema,
   type Identity,
+  identitySchema,
   teamInputSchema,
   verifiedIdentitySchema,
 } from "../../../packages/domain/src/access-types.ts";
@@ -42,7 +42,9 @@ import { BackupManager, registerBackupRoutes } from "./backups.ts";
 import {
   clientAddress,
   createStorageReadiness,
+  installationOwners,
   storageHeadroom,
+  trustedPeer,
   validateDeployment,
 } from "./deployment.ts";
 import { installDiagnostics } from "./diagnostics.ts";
@@ -82,6 +84,7 @@ export async function createApp(
   restart?: () => void,
 ) {
   const deployment = validateDeployment(root, baseURL, authMode);
+  const owners = new Set(installationOwners());
   const prototype = authMode === "prototype";
   const demo = authMode === "demo";
   const unverifiedSignIn = prototype || demo;
@@ -94,8 +97,10 @@ export async function createApp(
     root = join(root, "prototype");
   }
   const service = new EventService(root);
+  // A site hosts one event. CIVIC_SPARK_SITE_EVENT_ID only adopts an existing event for
+  // installations that predate this; new sites adopt the first event an owner creates.
   if (siteEventId) {
-    const site = service.siteEvent(siteEventId, null);
+    const site = service.adoptSiteEvent(siteEventId);
     if (!site.ok) {
       service.close();
       throw new Error(site.error);
@@ -221,7 +226,7 @@ export async function createApp(
   const authentication = await createAuthentication(
     root,
     baseURL,
-    unverifiedSignIn
+    prototype
       ? {
           configured: false,
           async send() {
@@ -232,6 +237,20 @@ export async function createApp(
     demo ? "demo" : prototype,
   );
   const { auth } = authentication;
+  // With owners configured (always when hosted), owners and event admins prove their
+  // email even where demo sign-in skips it, so typing their address grants nothing.
+  // Without owners (local development only) the installation stays open.
+  const mustVerifyUser = (userId: string, email: string) =>
+    owners.size > 0 && (owners.has(email.toLowerCase()) || service.holdsAdminRole(userId));
+  const mustVerify = async (email: string) => {
+    if (owners.size === 0) return false;
+    if (owners.has(email.toLowerCase())) return true;
+    const user = await (await auth.$context).internalAdapter.findUserByEmail(email.toLowerCase());
+    return user ? service.holdsAdminRole(user.user.id) : false;
+  };
+  // Without configured owners (local development only) anyone may act as an owner.
+  const siteOwner = (actor: Identity) =>
+    owners.size === 0 || (actor.emailVerified && owners.has(actor.email.toLowerCase()));
   app.decorateRequest("actor", null);
   app.addHook("onRequest", async (request) => {
     // Replace, never trust, a caller-supplied IP hint. Deployment proxy trust must be configured explicitly.
@@ -280,14 +299,18 @@ export async function createApp(
     if (request.url.split("?")[0] === "/api/health") return;
     if (unverifiedSignIn && request.url === `/api/${authMode}/sign-in`) return;
     const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-    const parsed = (demo ? demoIdentitySchema : verifiedIdentitySchema).safeParse(
+    const parsed = (demo ? identitySchema : verifiedIdentitySchema).safeParse(
       session?.user && prototype
         ? { ...session.user, id: session.user.email.toLowerCase() }
         : session?.user && demo
           ? { ...session.user, authMode: "demo" }
           : session?.user,
     );
-    request.actor = parsed.success ? parsed.data : null;
+    request.actor =
+      parsed.success &&
+      !(demo && !parsed.data.emailVerified && mustVerifyUser(parsed.data.id, parsed.data.email))
+        ? parsed.data
+        : null;
     if (request.url.split("?")[0] !== "/api/session" && !request.actor)
       return reply.code(401).send({ error: "Verify your email to sign in and continue" });
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
@@ -335,11 +358,24 @@ export async function createApp(
     method: ["GET", "POST"],
     url: "/api/auth/*",
     handler: async (request, reply) => {
-      if (
-        request.url.split("?")[0] === "/api/auth/sign-in/magic-link" &&
-        !authentication.emailSignIn
-      )
+      const path = (request.url.split("?")[0] ?? "")
+        .replace(/\/{2,}/g, "/")
+        .replace(/\/$/, "")
+        .toLowerCase();
+      // Codes are only issued with a sign-in link; other code routes stay unreachable.
+      if (path.startsWith("/api/auth/email-otp/") || path === "/api/auth/forget-password/email-otp")
+        return reply.code(404).send({ error: "Not found" });
+      const signInRoute = ["/api/auth/sign-in/magic-link", "/api/auth/sign-in/email-otp"].includes(
+        path,
+      );
+      if (signInRoute && !authentication.emailSignIn)
         return reply.code(503).send({ error: "Email sign-in is not configured yet" });
+      // Demo participants use demo sign-in; only accounts that must verify get codes.
+      if (demo && signInRoute) {
+        const body = z.object({ email: z.email() }).safeParse(request.body);
+        if (!body.success || !(await mustVerify(body.data.email)))
+          return reply.code(403).send({ error: "Use demo sign-in for this email" });
+      }
       reply.header("Cache-Control", "no-store");
       reply.header("Referrer-Policy", "no-referrer");
       const headers = fromNodeHeaders(request.headers);
@@ -392,6 +428,20 @@ export async function createApp(
         })
         .parse(r.body);
       reply.header("Cache-Control", "no-store");
+      if (demo && (await mustVerify(input.email))) {
+        if (!authentication.emailSignIn)
+          return reply.code(503).send({ error: "Email sign-in is not configured yet" });
+        await auth.api.signInMagicLink({
+          body: {
+            email: input.email,
+            name: input.name,
+            callbackURL: baseURL,
+            errorCallbackURL: baseURL,
+          },
+          headers: fromNodeHeaders(r.headers),
+        });
+        return { codeSent: true };
+      }
       reply.header(
         "set-cookie",
         await prototypeSignIn(
@@ -405,24 +455,32 @@ export async function createApp(
       return { signedIn: true };
     });
   const checkStorageReadiness = createStorageReadiness(root);
-  app.get("/api/health", async (_request, reply) => {
+  app.get("/api/health", async (request, reply) => {
     try {
       service.checkHealth();
       authentication.checkHealth();
       await checkStorageReadiness();
-      return { ok: true };
+      if (deployment.proxy !== "fly") return { ok: true };
+      // Setup verifies that Fly's proxy may supply client addresses; an untrusted
+      // proxy makes every visitor share one address and one sign-in limit.
+      const peer = request.socket.remoteAddress ?? "";
+      return trustedPeer(peer, deployment)
+        ? { ok: true, proxyTrusted: true }
+        : { ok: true, proxyTrusted: false, proxyPeer: peer.replace(/^::ffff:/, "") };
     } catch {
       return reply.code(503).send({ ok: false });
     }
   });
   app.get("/api/session", async (r, reply) => {
-    const site = siteEventId ? service.siteEvent(siteEventId, r.actor) : null;
+    const pinned = service.siteEventId();
+    const site = pinned ? service.siteEvent(pinned, r.actor) : null;
     if (site && !site.ok) return send(reply, site);
     return {
       user: r.actor,
       emailSignIn: authentication.emailSignIn,
       authMode,
       siteEvent: site?.value ?? null,
+      siteOwner: r.actor ? siteOwner(r.actor) : false,
     };
   });
   // Authentication hook guarantees actor for all routes below; no user IDs from
@@ -579,13 +637,22 @@ export async function createApp(
     origin: baseURL,
     service,
     restart,
-    configuration: { spritesEnabled, siteEventId: siteEventId ?? null },
+    configuration: { spritesEnabled },
   });
   registerBackupRoutes(app, backups);
-  app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled, siteEventId));
-  app.post("/api/events", async (r, reply) =>
-    send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body))),
+  app.get("/api/state", async (r) =>
+    service.portal(actor(r.actor), spritesEnabled, service.siteEventId() ?? undefined),
   );
+  app.post("/api/events", async (r, reply) => {
+    if (!siteOwner(actor(r.actor)))
+      return reply.code(403).send({ error: "Only site owners can create events" });
+    // Sites with owners (every hosted site) host exactly one event.
+    if (owners.size > 0 && (service.siteEventId() || service.hasEvents()))
+      return reply.code(409).send({ error: "This site already has its event" });
+    const created = service.createEvent(actor(r.actor), createEventSchema.parse(r.body));
+    if (created.ok && owners.size > 0) service.adoptSiteEvent(created.value.id);
+    return send(reply, created);
+  });
   app.get<{ Params: { id: string; projectId: string } }>(
     "/api/events/:id/projects/:projectId",
     async (r, reply) =>

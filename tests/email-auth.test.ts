@@ -113,10 +113,137 @@ it("fails explicitly when delivery is disabled or fails; never creates a session
       });
       expect(sent.statusCode).toBe(configured ? 500 : 503);
       expect(sent.cookies).toHaveLength(0);
+      const code = await app.inject({
+        method: "POST",
+        url: "/api/auth/sign-in/email-otp",
+        headers,
+        payload: { email: "person@example.test", otp: "123456" },
+      });
+      expect(code.statusCode).toBe(configured ? 400 : 503);
+      expect(code.cookies).toHaveLength(0);
       expect((await app.inject({ url: "/api/session", headers })).json().user).toBeNull();
     } finally {
       await app.close();
       rmSync(root, { recursive: true, force: true });
     }
+  }
+});
+
+it("signs in with the emailed code in the requesting browser, once, with bounded attempts", async () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-email-code-"));
+  const outbox: LoginEmail[] = [];
+  const { app } = await createApp(root, false, origin, {
+    configured: true,
+    async send(message) {
+      outbox.push(message);
+    },
+  });
+  const database = new Database(join(root, "auth.sqlite"));
+  const email = "coder@example.test";
+  const request = async () => {
+    await app.inject({
+      method: "POST",
+      url: "/api/auth/sign-in/magic-link",
+      headers,
+      payload: { email, callbackURL: origin, errorCallbackURL: origin },
+    });
+    const message = outbox.at(-1);
+    if (!message) throw new Error("Missing test mail");
+    return message;
+  };
+  const enter = (otp: string, name?: string) =>
+    app.inject({
+      method: "POST",
+      url: "/api/auth/sign-in/email-otp",
+      headers,
+      payload: { email: "Coder@Example.test", otp, name },
+    });
+  const signedInAs = async (response: Awaited<ReturnType<typeof enter>>) => {
+    const cookie = response.cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    return (await app.inject({ url: "/api/session", headers: { ...headers, cookie } })).json().user;
+  };
+  try {
+    const first = await request();
+    expect(first.code).toMatch(/^\d{6}$/);
+    const stored = database.prepare("SELECT value FROM verification").all() as {
+      value: string;
+    }[];
+    expect(stored.some((row) => row.value.includes(first.code))).toBe(false);
+    const wrong = first.code === "000000" ? "111111" : "000000";
+    expect((await enter(wrong)).statusCode).toBe(400);
+    const accepted = await enter(first.code, "Casey Coder");
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.headers["cache-control"]).toBe("no-store");
+    expect(await signedInAs(accepted)).toMatchObject({
+      email,
+      emailVerified: true,
+      name: "Casey Coder",
+    });
+    const replay = await enter(first.code);
+    expect(replay.statusCode).toBe(400);
+    expect(replay.cookies).toHaveLength(0);
+
+    // A newer email replaces the older code.
+    const older = await request();
+    const newer = await request();
+    if (older.code !== newer.code) expect((await enter(older.code)).statusCode).toBe(400);
+    expect((await enter(newer.code)).statusCode).toBe(200);
+
+    // Following the link cancels the code sent with it.
+    const linked = await request();
+    const url = new URL(linked.url);
+    expect((await app.inject({ url: url.pathname + url.search, headers })).statusCode).toBe(302);
+    expect((await enter(linked.code)).statusCode).toBe(400);
+
+    // Five wrong guesses discard the code.
+    const guarded = await request();
+    const guess = guarded.code === "999999" ? "888888" : "999999";
+    for (let attempt = 0; attempt < 5; attempt++) expect((await enter(guess)).statusCode).toBe(400);
+    expect((await enter(guarded.code)).statusCode).toBe(403);
+
+    const expiring = await request();
+    database.prepare("UPDATE verification SET expiresAt = ?").run(Date.now() - 1000);
+    expect((await enter(expiring.code)).statusCode).toBe(400);
+    expect(database.prepare('SELECT count(*) AS n FROM "user"').get()).toEqual({ n: 1 });
+  } finally {
+    database.close();
+    await app.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("keeps standalone code, password and email-change routes unreachable", async () => {
+  const root = mkdtempSync(join(tmpdir(), "civic-spark-email-routes-"));
+  const outbox: LoginEmail[] = [];
+  const { app } = await createApp(root, false, origin, {
+    configured: true,
+    async send(message) {
+      outbox.push(message);
+    },
+  });
+  try {
+    for (const url of [
+      "/api/auth/email-otp/send-verification-otp",
+      "/api/auth/email-otp/check-verification-otp",
+      "/api/auth/email-otp/verify-email",
+      "/api/auth/email-otp/request-password-reset",
+      "/api/auth/email-otp/reset-password",
+      "/api/auth/email-otp/request-email-change",
+      "/api/auth/email-otp/change-email",
+      "/api/auth/forget-password/email-otp",
+      "/api/auth//Email-OTP/send-verification-otp/",
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url,
+        headers,
+        payload: { email: "person@example.test", type: "sign-in", otp: "123456" },
+      });
+      expect(response.statusCode, url).toBe(404);
+    }
+    expect(outbox).toHaveLength(0);
+  } finally {
+    await app.close();
+    rmSync(root, { recursive: true, force: true });
   }
 });
