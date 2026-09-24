@@ -1,7 +1,9 @@
-import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
+import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { accessStateSchema } from "../../domain/src/access-types.ts";
 import { stateSchema } from "../../domain/src/types.ts";
@@ -120,9 +122,11 @@ export function stateInventory(root: string, mode: "email" | "demo" | "prototype
   }
 }
 
+const git = promisify(execFile);
 // Run Git only against a constructed inert object store. Never read backed-up config,
 // hooks, attributes, filters, external alternates or commands from participant files.
-function verifyRepository(path: string) {
+// Copies and Git run asynchronously so a live server keeps answering during backups.
+async function verifyRepository(path: string) {
   const paths = inventory(path, "repo");
   if (
     paths.some((p) => p.kind === "symlink" || p.path.endsWith(".promisor")) ||
@@ -130,11 +134,11 @@ function verifyRepository(path: string) {
     existsSync(join(path, "objects/info/http-alternates"))
   )
     throw new Error("Linked Git storage requires a self-contained backup before proceeding");
-  const temp = mkdtempSync(join(tmpdir(), "civic-spark-git-verify-"));
+  const temp = await mkdtemp(join(tmpdir(), "civic-spark-git-verify-"));
   try {
     for (const name of ["objects", "refs", "HEAD", "packed-refs", "shallow"])
       if (existsSync(join(path, name)))
-        cpSync(join(path, name), join(temp, name), { recursive: true });
+        await cp(join(path, name), join(temp, name), { recursive: true });
     const env = {
       PATH: process.env.PATH,
       HOME: temp,
@@ -144,26 +148,27 @@ function verifyRepository(path: string) {
       GIT_OPTIONAL_LOCKS: "0",
       GIT_TERMINAL_PROMPT: "0",
     };
-    const run = (args: string[]) =>
-      execFileSync("git", ["--git-dir", temp, "-c", "core.hooksPath=/dev/null", ...args], {
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-        maxBuffer: 32 * 1024 * 1024,
-      }).toString();
+    const run = async (args: string[]) =>
+      (
+        await git("git", ["--git-dir", temp, "-c", "core.hooksPath=/dev/null", ...args], {
+          env,
+          maxBuffer: 32 * 1024 * 1024,
+        })
+      ).stdout;
     try {
-      run(["fsck", "--full", "--strict", "--no-reflogs"]);
+      await run(["fsck", "--full", "--strict", "--no-reflogs"]);
       return {
         head: readFileSync(join(temp, "HEAD"), "utf8"),
-        refs: run(["for-each-ref", "--format=%(refname) %(objectname)"]),
+        refs: await run(["for-each-ref", "--format=%(refname) %(objectname)"]),
       };
     } catch {
       throw new Error("Git object/ref integrity check failed");
     }
   } finally {
-    rmSync(temp, { recursive: true, force: true });
+    await rm(temp, { recursive: true, force: true });
   }
 }
-export function verifyTree(root: string, mode: "email" | "demo" | "prototype") {
+export async function verifyTree(root: string, mode: "email" | "demo" | "prototype") {
   const entries = inventory(root, "data");
   // Reject authoritative links before opening any SQLite file or resolving repository paths.
   for (const entry of entries) {
@@ -193,9 +198,10 @@ export function verifyTree(root: string, mode: "email" | "demo" | "prototype") {
     )
       repos.add(dirname(path));
   }
-  const repositories = [...repos]
-    .sort()
-    .map((path) => ({ path: relative(root, path), ...verifyRepository(path) }));
+  // One repository at a time: each fsck already uses the management host's CPU.
+  const repositories = [];
+  for (const path of [...repos].sort())
+    repositories.push({ path: relative(root, path), ...(await verifyRepository(path)) });
   // Never open a DB, config or repository through a symlink.
   for (const entry of entries) {
     if (

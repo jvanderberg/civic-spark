@@ -221,7 +221,7 @@ it.each(["email", "demo", "prototype"] as const)(
   "round trips complete %s state, Git refs/objects, credentials and lifecycle; revokes sessions; fences restart",
   async (mode) => {
     const f = await fixture(mode);
-    const before = verifyTree(f.root, mode);
+    const before = await verifyTree(f.root, mode);
     const result = await createBackup(f.options);
     expect(result).toMatchObject({
       users: 2,
@@ -237,7 +237,7 @@ it.each(["email", "demo", "prototype"] as const)(
     await restoreBackup(f.restore);
     const restoredRoot = join(f.restore.target, "data");
     const restored = mode === "email" ? restoredRoot : join(restoredRoot, mode);
-    expect(verifyTree(restoredRoot, mode)).toEqual(before);
+    expect(await verifyTree(restoredRoot, mode)).toEqual(before);
     for (const name of [
       "access.sqlite",
       "state.sqlite",
@@ -277,7 +277,7 @@ it.each(["email", "demo", "prototype"] as const)(
     ).rejects.toThrow("fenced");
     const secondTarget = join(f.base, "restore-again");
     await restoreBackup({ ...f.restore, target: secondTarget });
-    expect(verifyTree(join(secondTarget, "data"), mode)).toEqual(before);
+    expect(await verifyTree(join(secondTarget, "data"), mode)).toEqual(before);
   },
   30000,
 );

@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -14,7 +14,9 @@ import {
   rmSync,
   symlinkSync,
 } from "node:fs";
+import { copyFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { z } from "zod";
 import { acquireWriter, storageHeadroom } from "../../../apps/server/src/deployment.ts";
@@ -97,6 +99,7 @@ export function currentRelease(env: NodeJS.ProcessEnv = process.env, cwd = proce
   return /^[a-f0-9]{40}$/.test(sha) ? sha : "0".repeat(40);
 }
 
+const execFileAsync = promisify(execFile);
 const gitEnvironment = {
   PATH: process.env.PATH,
   GIT_CONFIG_NOSYSTEM: "1",
@@ -116,10 +119,11 @@ function isRepository(path: string) {
 // A mirror clone reads refs and objects through Git's own locking, so concurrent pushes
 // cannot produce a torn object store. Metadata files are then overlaid from the source so
 // the captured layout matches the offline archive format (config, hooks, logs, index).
-function captureRepository(source: string, destination: string) {
+// Clones and copies run asynchronously so the live server keeps answering meanwhile.
+async function captureRepository(source: string, destination: string) {
   if (existsSync(join(source, "objects", "info", "alternates")))
     throw new Error("Linked Git storage requires a self-contained backup before proceeding");
-  execFileSync(
+  await execFileAsync(
     "git",
     [
       "-c",
@@ -131,7 +135,7 @@ function captureRepository(source: string, destination: string) {
       source,
       destination,
     ],
-    { env: gitEnvironment, stdio: ["ignore", "ignore", "pipe"], timeout: 300000 },
+    { env: gitEnvironment, timeout: 300000 },
   );
   chmodSync(destination, 0o700);
   const overlay = (path: string, rel: string) => {
@@ -213,7 +217,7 @@ async function captureTree(source: string, destination: string) {
   }
   if (info.isDirectory()) {
     if (isRepository(source)) {
-      captureRepository(source, destination);
+      await captureRepository(source, destination);
       return;
     }
     mkdirSync(destination, { mode: 0o700 });
@@ -225,7 +229,7 @@ async function captureTree(source: string, destination: string) {
   if (excludedFile(basename(source))) return;
   if (source.endsWith(".sqlite")) await captureDatabase(source, destination);
   else {
-    copyFileSync(source, destination);
+    await copyFile(source, destination);
     chmodSync(destination, 0o600 | (info.mode & 0o100));
   }
 }
@@ -367,7 +371,7 @@ export async function createLiveBackup(options: LiveCaptureOptions) {
     await captureTree(base, data);
     // Archives are plaintext: never carry usable session or login tokens in them.
     invalidateAuthentication(data);
-    const summary = verifyTree(data, options.installation.authMode);
+    const summary = await verifyTree(data, options.installation.authMode);
     removeSidecars(data);
     const operator = join(stage, "operator");
     makeDirectory(operator);
@@ -421,7 +425,7 @@ export async function exportBackup(directory: string, backupId: string) {
   const scratch = mkdtempSync(join(directory, ".civic-spark-export-partial-"));
   chmodSync(scratch, 0o700);
   try {
-    const { manifest } = await unpackArchive(archive, null, scratch, () => {});
+    const { manifest } = await unpackArchive(archive, null, scratch, () => {}, false);
     const name = `civic-spark-backup-${stamp(new Date(manifest.createdAt))}`;
     const stream = zipDirectory(scratch, name);
     const cleanup = () => rmSync(scratch, { recursive: true, force: true });
@@ -474,7 +478,7 @@ export async function importBackupTree(
     rmSync(join(data, mode, authSecretFile), { force: true });
   removeSidecars(data);
   invalidateAuthentication(data);
-  const summary = verifyTree(data, installation.authMode);
+  const summary = await verifyTree(data, installation.authMode);
   const operator = join(tree, "operator");
   if (
     !existsSync(join(operator, "configuration.json")) ||
@@ -623,6 +627,7 @@ export async function stageRestore(options: StageRestoreOptions) {
       rmSync(ledgerPath, { force: true });
       writePrivate(ledgerPath, JSON.stringify(restored));
     }
+    if (!verified) throw new Error("Restores require a fully verified backup");
     const backedUp = new Set(verified.reservations.map((r) => r.spriteName));
     const liveNames = new Set(options.liveReservations.map((r) => r.spriteName));
     const untrackedSprites = [...liveNames].filter((name) => !backedUp.has(name)).sort();

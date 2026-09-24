@@ -133,7 +133,7 @@ export async function createBackup(input: CreateOptions) {
   try {
     if (existsSync(join(root, fenceName)))
       throw new Error("Cannot back up an unreconciled restore as a live installation");
-    const summary = verifyTree(root, options.installation.authMode);
+    const summary = await verifyTree(root, options.installation.authMode);
     if (summary.reservations.length && !options.installation.spriteOrg)
       throw new Error("Reserved Sprites require recorded provider ownership");
     const before = [...snapshot(root, "data"), ...snapshot(operator, "operator")];
@@ -275,6 +275,9 @@ export async function unpackArchive(
   key: Buffer | null,
   stage: string,
   check: (manifest: Manifest) => void,
+  // Downloads skip the full Git/SQLite check: every file still matches its manifest
+  // checksum, and the tree was fully verified when the backup was sealed.
+  verify = true,
 ) {
   archive = resolve(archive);
   checkArchiveShape(archive);
@@ -306,7 +309,8 @@ export async function unpackArchive(
     // Links are inert metadata until all verification and database writes have completed.
   }
   requireOperatorFiles(join(stage, "operator"), manifest.operatorFiles);
-  const verified = verifyTree(join(stage, "data"), manifest.installation.authMode);
+  if (!verify) return { manifest, verified: null };
+  const verified = await verifyTree(join(stage, "data"), manifest.installation.authMode);
   if (JSON.stringify(verified) !== JSON.stringify(manifest.inventory))
     throw new Error("Restored inventory mismatch");
   return { manifest, verified };
