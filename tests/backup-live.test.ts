@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -32,6 +32,15 @@ import type { PortalState, SessionView } from "../packages/domain/src/access-typ
 import type { Result } from "../packages/domain/src/types.ts";
 
 const origin = "http://127.0.0.1:4310";
+// Wrap (not replace) the blocking calls so tests can prove backups never use them for Git.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    execFileSync: vi.fn(actual.execFileSync),
+    spawnSync: vi.fn(actual.spawnSync),
+  };
+});
 const release = "b".repeat(40);
 const roots: string[] = [];
 const apps: { close: () => Promise<unknown> }[] = [];
@@ -592,3 +601,33 @@ it("round-trips directories through ZIP, strips a shared top folder and rejects 
   writeFileSync(truncated, whole.subarray(0, Math.floor(whole.length / 2)));
   await expect(unzipFile(truncated, join(base, "nowhere"))).rejects.toThrow(/ZIP/);
 });
+
+it("never runs Git synchronously while backups of many repositories are created and downloaded", async () => {
+  const base = privateBase();
+  const f = await seed(join(base, "data"));
+  for (let index = 0; index < 12; index++) {
+    const team = await f.app.inject({
+      method: "POST",
+      url: "/api/teams",
+      headers: headers(f.member),
+      payload: { eventId: f.eventId, name: `Extra team ${index}`, projectId: f.projectId },
+    });
+    expect(team.statusCode).toBe(200);
+  }
+  // Synchronous Git blocked the whole server once per repository (41 s on the live site).
+  vi.mocked(execFileSync).mockClear();
+  vi.mocked(spawnSync).mockClear();
+  const created = await createBackup(f.app, f.eventId, f.admin);
+  expect(created.teams).toBe(13);
+  const download = await f.app.inject({
+    url: `/api/events/${f.eventId}/backups/${created.backupId}/download`,
+    headers: headers(f.admin),
+  });
+  expect(download.statusCode).toBe(200);
+  expect(download.headers["content-disposition"]).toMatch(/civic-spark-backup-.*\.zip/);
+  const blockingGit = [
+    ...vi.mocked(execFileSync).mock.calls,
+    ...vi.mocked(spawnSync).mock.calls,
+  ].filter(([command]) => command === "git");
+  expect(blockingGit).toEqual([]);
+}, 120000);

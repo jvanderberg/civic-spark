@@ -1,6 +1,7 @@
 ## Admin console backups — local, pending integration
 
 - [x] Live in-process capture (SQLite online backup, Git mirror clones, verified and sealed in the archive layout as plain checksummed files; sessions/auth secret excluded) from Admin → Backups without stopping the application.
+- [x] Keep the live server answering during backups: repository clones, copies and Git/SQLite verification run asynchronously one repository at a time, and downloads rely on per-file manifest checksums instead of re-running full verification (the live download froze the server for 41 s and failed)
 - [x] Backup list, download as an ordinary ZIP of the real files, upload of such a ZIP with tree verification, delete; optional `CIVIC_SPARK_BACKUP_OPERATORS` allowlist on top of event admin access.
 - [x] Restore of any same-mode backup with cross-installation warnings: staged recovered root, session revocation, preserved newer preview origins, Sprite reservation report, restart-and-swap with startup completion, retained replaced root, discard while pending.
 - [x] Integration tests with a real demo-mode application and the browser Backups check at phone/desktop/short widths in both themes.
