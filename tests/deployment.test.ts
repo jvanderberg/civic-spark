@@ -39,6 +39,7 @@ const env = {
   CIVIC_SPARK_DEPLOYMENT: "hosted",
   BETTER_AUTH_SECRET: "test-only-".repeat(6),
   CIVIC_SPARK_EMAIL_PROVIDER: "resend",
+  CIVIC_SPARK_OWNERS: "hosted.owner@example.test",
 };
 const settings = setupSchema.parse({
   app: "civic-spark-test",
@@ -46,6 +47,7 @@ const settings = setupSchema.parse({
   region: "ord",
   origin,
   spriteOrg: "test-sprites",
+  owners: ["Owner@Example.test"],
   emailProvider: "resend",
   emailFrom: "Test <signin@example.test>",
   proxyCidrs: ["172.19.0.0/16"],
@@ -66,6 +68,16 @@ it("rejects public prototype binding, insecure hosted settings and general Fly c
       CIVIC_SPARK_EMAIL_PROVIDER: "disabled",
     }),
   ).toThrow("SMTP or Resend");
+  // Demo sites need email too: owners always sign in with a code.
+  expect(() =>
+    validateDeployment("/data", origin, "demo", { ...env, CIVIC_SPARK_EMAIL_PROVIDER: "" }),
+  ).toThrow("SMTP or Resend");
+  expect(() =>
+    validateDeployment("/data", origin, "email", { ...env, CIVIC_SPARK_OWNERS: " , " }),
+  ).toThrow("CIVIC_SPARK_OWNERS");
+  expect(() =>
+    validateDeployment("/data", origin, "email", { ...env, CIVIC_SPARK_OWNERS: "not-an-email" }),
+  ).toThrow("email addresses");
   expect(() =>
     validateDeployment("/data", origin, "email", { ...env, FLY_API_TOKEN: "test-only" }),
   ).toThrow("administration");
@@ -329,8 +341,14 @@ it("configures Gmail SMTP from the account address and a normalized app password
       auth: { user: "CivicSpark.Signin@gmail.com", pass: "abcdefghijklmnop" },
     }),
   );
-  const demo = setupSchema.parse({ ...settings, authMode: "demo", emailProvider: undefined });
-  expect(flyEnv(demo)).not.toHaveProperty("CIVIC_SPARK_EMAIL_PROVIDER");
+  // Demo sites still send owners their codes.
+  expect(() =>
+    setupSchema.parse({ ...settings, authMode: "demo", emailProvider: undefined }),
+  ).toThrow("emailProvider");
+  expect(flyEnv(setupSchema.parse({ ...gmail, authMode: "demo" }))).toMatchObject({
+    CIVIC_SPARK_AUTH_MODE: "demo",
+    SMTP_HOST: "smtp.gmail.com",
+  });
 });
 it("provisions idempotently, validates ownership and refuses extra Machines or unexpected volumes", () => {
   const root = mkdtempSync(join(tmpdir(), "civic-spark-setup-"));

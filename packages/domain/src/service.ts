@@ -382,6 +382,10 @@ export class EventService {
       this.save();
     }
   }
+  /** Whether this user administers any event; such accounts must prove their email. */
+  holdsAdminRole(userId: string) {
+    return this.state.eventMembers.some((m) => m.userId === userId && m.role === "admin");
+  }
   isAdmin(actor: Identity, eventId: string) {
     return this.state.eventMembers.some(
       (m) => m.eventId === eventId && m.userId === actor.id && m.role === "admin",

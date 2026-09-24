@@ -7,8 +7,8 @@ import { fromNodeHeaders } from "better-auth/node";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
-  demoIdentitySchema,
   type Identity,
+  identitySchema,
   teamInputSchema,
   verifiedIdentitySchema,
 } from "../../../packages/domain/src/access-types.ts";
@@ -42,6 +42,7 @@ import { BackupManager, registerBackupRoutes } from "./backups.ts";
 import {
   clientAddress,
   createStorageReadiness,
+  installationOwners,
   storageHeadroom,
   validateDeployment,
 } from "./deployment.ts";
@@ -82,6 +83,7 @@ export async function createApp(
   restart?: () => void,
 ) {
   const deployment = validateDeployment(root, baseURL, authMode);
+  const owners = new Set(installationOwners());
   const prototype = authMode === "prototype";
   const demo = authMode === "demo";
   const unverifiedSignIn = prototype || demo;
@@ -221,7 +223,7 @@ export async function createApp(
   const authentication = await createAuthentication(
     root,
     baseURL,
-    unverifiedSignIn
+    prototype
       ? {
           configured: false,
           async send() {
@@ -232,6 +234,20 @@ export async function createApp(
     demo ? "demo" : prototype,
   );
   const { auth } = authentication;
+  // With owners configured (always when hosted), owners and event admins prove their
+  // email even where demo sign-in skips it, so typing their address grants nothing.
+  // Without owners (local development only) the installation stays open.
+  const mustVerifyUser = (userId: string, email: string) =>
+    owners.size > 0 && (owners.has(email.toLowerCase()) || service.holdsAdminRole(userId));
+  const mustVerify = async (email: string) => {
+    if (owners.size === 0) return false;
+    if (owners.has(email.toLowerCase())) return true;
+    const user = await (await auth.$context).internalAdapter.findUserByEmail(email.toLowerCase());
+    return user ? service.holdsAdminRole(user.user.id) : false;
+  };
+  // Without configured owners (local development only) anyone may create events.
+  const canCreateEvents = (actor: Identity) =>
+    owners.size === 0 || (actor.emailVerified && owners.has(actor.email.toLowerCase()));
   app.decorateRequest("actor", null);
   app.addHook("onRequest", async (request) => {
     // Replace, never trust, a caller-supplied IP hint. Deployment proxy trust must be configured explicitly.
@@ -280,14 +296,18 @@ export async function createApp(
     if (request.url.split("?")[0] === "/api/health") return;
     if (unverifiedSignIn && request.url === `/api/${authMode}/sign-in`) return;
     const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-    const parsed = (demo ? demoIdentitySchema : verifiedIdentitySchema).safeParse(
+    const parsed = (demo ? identitySchema : verifiedIdentitySchema).safeParse(
       session?.user && prototype
         ? { ...session.user, id: session.user.email.toLowerCase() }
         : session?.user && demo
           ? { ...session.user, authMode: "demo" }
           : session?.user,
     );
-    request.actor = parsed.success ? parsed.data : null;
+    request.actor =
+      parsed.success &&
+      !(demo && !parsed.data.emailVerified && mustVerifyUser(parsed.data.id, parsed.data.email))
+        ? parsed.data
+        : null;
     if (request.url.split("?")[0] !== "/api/session" && !request.actor)
       return reply.code(401).send({ error: "Verify your email to sign in and continue" });
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
@@ -342,11 +362,17 @@ export async function createApp(
       // Codes are only issued with a sign-in link; other code routes stay unreachable.
       if (path.startsWith("/api/auth/email-otp/") || path === "/api/auth/forget-password/email-otp")
         return reply.code(404).send({ error: "Not found" });
-      if (
-        ["/api/auth/sign-in/magic-link", "/api/auth/sign-in/email-otp"].includes(path) &&
-        !authentication.emailSignIn
-      )
+      const signInRoute = ["/api/auth/sign-in/magic-link", "/api/auth/sign-in/email-otp"].includes(
+        path,
+      );
+      if (signInRoute && !authentication.emailSignIn)
         return reply.code(503).send({ error: "Email sign-in is not configured yet" });
+      // Demo participants use demo sign-in; only accounts that must verify get codes.
+      if (demo && signInRoute) {
+        const body = z.object({ email: z.email() }).safeParse(request.body);
+        if (!body.success || !(await mustVerify(body.data.email)))
+          return reply.code(403).send({ error: "Use demo sign-in for this email" });
+      }
       reply.header("Cache-Control", "no-store");
       reply.header("Referrer-Policy", "no-referrer");
       const headers = fromNodeHeaders(request.headers);
@@ -399,6 +425,20 @@ export async function createApp(
         })
         .parse(r.body);
       reply.header("Cache-Control", "no-store");
+      if (demo && (await mustVerify(input.email))) {
+        if (!authentication.emailSignIn)
+          return reply.code(503).send({ error: "Email sign-in is not configured yet" });
+        await auth.api.signInMagicLink({
+          body: {
+            email: input.email,
+            name: input.name,
+            callbackURL: baseURL,
+            errorCallbackURL: baseURL,
+          },
+          headers: fromNodeHeaders(r.headers),
+        });
+        return { codeSent: true };
+      }
       reply.header(
         "set-cookie",
         await prototypeSignIn(
@@ -430,6 +470,7 @@ export async function createApp(
       emailSignIn: authentication.emailSignIn,
       authMode,
       siteEvent: site?.value ?? null,
+      canCreateEvents: r.actor ? canCreateEvents(r.actor) : false,
     };
   });
   // Authentication hook guarantees actor for all routes below; no user IDs from
@@ -590,9 +631,11 @@ export async function createApp(
   });
   registerBackupRoutes(app, backups);
   app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled, siteEventId));
-  app.post("/api/events", async (r, reply) =>
-    send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body))),
-  );
+  app.post("/api/events", async (r, reply) => {
+    if (!canCreateEvents(actor(r.actor)))
+      return reply.code(403).send({ error: "Only site owners can create events" });
+    return send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body)));
+  });
   app.get<{ Params: { id: string; projectId: string } }>(
     "/api/events/:id/projects/:projectId",
     async (r, reply) =>

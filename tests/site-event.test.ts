@@ -115,6 +115,9 @@ it("validates optional setup event IDs and emits the runtime pin", () => {
     origin: "https://event.example.test",
     spriteOrg: "test-sprites",
     authMode: "demo",
+    owners: ["owner@example.test"],
+    emailProvider: "gmail",
+    emailFrom: "Civic Spark <signin@gmail.com>",
     proxyCidrs: ["172.19.0.0/16"],
   };
   expect(flyConfig(setupSchema.parse(input))).not.toContain("CIVIC_SPARK_SITE_EVENT_ID");

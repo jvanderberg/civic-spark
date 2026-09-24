@@ -24,6 +24,11 @@ export const setupSchema = z
     }, "Use an exact public HTTPS origin"),
     spriteOrg: slug,
     authMode: z.enum(["email", "demo"]).default("email"),
+    // Only owners create events; they always sign in with an emailed code.
+    owners: z
+      .array(z.email().transform((value) => value.toLowerCase()))
+      .min(1)
+      .max(20),
     siteEventId: z.uuid().optional(),
     // gmail: a Google account's SMTP with an app password; no domain setup needed.
     emailProvider: z.enum(["gmail", "smtp", "resend"]).optional(),
@@ -72,8 +77,11 @@ export const setupSchema = z
         path: ["volumeAutoExtend"],
         message: "The ceiling must allow at least one increment above the initial volume size",
       });
-    if (value.authMode === "email" && (!value.emailProvider || !value.emailFrom))
-      ctx.addIssue({ code: "custom", message: "Email mode requires emailProvider and emailFrom" });
+    if (!value.emailProvider || !value.emailFrom)
+      ctx.addIssue({
+        code: "custom",
+        message: "Sign-in email requires emailProvider and emailFrom",
+      });
     if (value.emailProvider === "smtp" && (!value.smtpHost || !value.smtpPort))
       ctx.addIssue({ code: "custom", message: "SMTP requires smtpHost and smtpPort" });
     if (value.emailProvider === "gmail" && (value.smtpHost || value.smtpPort))
@@ -94,6 +102,7 @@ export function flyEnv(input: Setup) {
     NODE_ENV: "production",
     CIVIC_SPARK_DEPLOYMENT: "hosted",
     CIVIC_SPARK_AUTH_MODE: input.authMode,
+    CIVIC_SPARK_OWNERS: input.owners.join(","),
     CIVIC_SPARK_HOST: "0.0.0.0",
     CIVIC_SPARK_PORT: "4311",
     CIVIC_SPARK_DATA_DIR: "/data/civic-spark",
@@ -107,11 +116,10 @@ export function flyEnv(input: Setup) {
   };
   if (input.diagnostics) env.CIVIC_SPARK_DIAGNOSTICS = "1";
   if (input.siteEventId) env.CIVIC_SPARK_SITE_EVENT_ID = input.siteEventId;
-  if (input.authMode === "email")
-    Object.assign(env, {
-      CIVIC_SPARK_EMAIL_PROVIDER: input.emailProvider === "resend" ? "resend" : "smtp",
-      CIVIC_SPARK_EMAIL_FROM: input.emailFrom,
-    });
+  Object.assign(env, {
+    CIVIC_SPARK_EMAIL_PROVIDER: input.emailProvider === "resend" ? "resend" : "smtp",
+    CIVIC_SPARK_EMAIL_FROM: input.emailFrom,
+  });
   if (input.emailProvider === "smtp")
     Object.assign(env, {
       SMTP_HOST: input.smtpHost,
@@ -319,7 +327,6 @@ export function provision(input: Setup, receiptPath: string, run: Runner = runFl
 }
 // Email credentials, normalized. Gmail shows app passwords in groups of four.
 export function emailSecrets(input: Setup, secrets: Record<string, string>) {
-  if (input.authMode === "demo") return {};
   const names =
     input.emailProvider === "resend" ? ["RESEND_API_KEY"] : ["SMTP_USER", "SMTP_PASSWORD"];
   const values: Record<string, string> = {};
@@ -345,11 +352,7 @@ export function secretInput(input: Setup, secrets: Record<string, string>) {
     ...(secrets.CIVIC_SPARK_PREVIEW_RELAY_SECRET === undefined
       ? []
       : ["CIVIC_SPARK_PREVIEW_RELAY_SECRET"]),
-    ...(input.authMode === "demo"
-      ? []
-      : input.emailProvider === "resend"
-        ? ["RESEND_API_KEY"]
-        : ["SMTP_USER", "SMTP_PASSWORD"]),
+    ...(input.emailProvider === "resend" ? ["RESEND_API_KEY"] : ["SMTP_USER", "SMTP_PASSWORD"]),
   ]);
   if (Object.keys(secrets).some((k) => !allowed.has(k)))
     throw new SetupError(
@@ -437,7 +440,6 @@ async function main() {
     return;
   }
   if (action === "test-email") {
-    if (input.authMode !== "email") throw new SetupError("Demo mode sends no email");
     // Same private secrets file as `secrets`; only the email credentials are used.
     const secrets = z.record(z.string(), z.string()).parse(JSON.parse(readFileSync(0, "utf8")));
     const sender = createEmailSender({ ...flyEnv(input), ...emailSecrets(input, secrets) });

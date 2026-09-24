@@ -16,7 +16,7 @@ Production defaults to `email` authentication and requires complete Gmail, Resen
 
 ## Explicit hosted demo
 
-For a fresh, intentionally unverified demonstration, set `authMode: "demo"` in setup JSON (`CIVIC_SPARK_AUTH_MODE=demo` at runtime). Omit `emailProvider`, `emailFrom` and email credentials; only `SPRITE_TOKEN` and `BETTER_AUTH_SECRET` are required. The UI warns that anyone entering the same email can access that demo account. Use demo data and disposable model credentials only. Demo users retain `emailVerified: false` with an explicit demo identity marker; they are never promoted or migrated to verified users.
+For a fresh, intentionally unverified demonstration, set `authMode: "demo"` in setup JSON (`CIVIC_SPARK_AUTH_MODE=demo` at runtime). Participants then sign in by typing an email, and the UI warns that anyone entering the same email can access that demo account. Every site, demo included, lists `owners` and configures a sender: owners and event admins always sign in with an emailed code, and only owners create events. See [owners](authentication.md#owners). Use demo data and disposable model credentials only. Demo participants retain `emailVerified: false` with an explicit demo identity marker; they are never promoted or migrated to verified-email production accounts.
 
 For a site dedicated to one hackathon, set optional `siteEventId` in setup JSON to the existing event UUID. Setup emits `CIVIC_SPARK_SITE_EVENT_ID`; this runtime setting needs no frontend rebuild. Create the event in the appropriate auth-mode data store before enabling it. Startup rejects malformed IDs or an event missing from that store instead of choosing another event. The session response supplies the event name for sign-in, navigation and the document title; anonymous visitors only receive names of registration/live events. Draft/closed names remain limited to authorized event members. A configured event unavailable to a signed-in visitor shows an explicit not-open message.
 
@@ -82,7 +82,7 @@ Before staging secrets, send a real message with the same settings and check tha
 npx tsx scripts/fly-setup.ts test-email "$CIVIC_SPARK_SETUP" you@example.org < "$CIVIC_SPARK_SECRETS_FILE"
 ```
 
-It reads only the email credentials, changes no cloud resources and logs no secret values. In explicit demo mode omit the email credentials. No real credentials belong in examples, shell history, command arguments or tickets. Keep the auth secret stable across repeat setup and Sprite token rotation.
+It reads only the email credentials, changes no cloud resources and logs no secret values. Demo mode needs the same email credentials. No real credentials belong in examples, shell history, command arguments or tickets. Keep the auth secret stable across repeat setup and Sprite token rotation.
 
 ```sh
 # Set this to an existing private JSON file outside this checkout; values are not argv.

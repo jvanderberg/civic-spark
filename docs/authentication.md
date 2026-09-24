@@ -86,6 +86,10 @@ Delivery errors are sanitized before reaching auth logs or browser responses. Do
 - Link requests, link verification and code entry are limited per IP/path, default 120 requests per minute, to accommodate attendees sharing Wi-Fi. Set `CIVIC_SPARK_AUTH_REQUESTS_PER_MINUTE` to tune that limit. These request limits do not enforce a daily email budget.
 - The server replaces any caller-supplied IP hint. A deployed proxy needs explicit trusted-proxy configuration to identify the real client IP; the local Vite proxy sees loopback.
 
+## Owners
+
+`CIVIC_SPARK_OWNERS` lists the email addresses allowed to create events, comma-separated. Hosted installations must set it; the setup's `owners` array writes it. Other signed-in people can join events but see no Create event action, and `POST /api/events` returns 403 for them. Owners always sign in with an emailed code, including in demo mode. Without owners, which is allowed only outside hosted deployments, anyone signed in can create events, as before.
+
 Event creators become admins. Admins can promote members or add an already signed-in account by verified email without team membership. Adding an admin never creates an account or sends an invitation. Each user/team membership owns a separate checkout/Sprite. Admins cannot browse others' private files. Membership removal revokes access and preserves files; rejoining while registration is open restores the workspace.
 
 ## Verification status
@@ -102,6 +106,8 @@ This mode is loopback-only, uses a separate `civic-spark-prototype` cookie prefi
 
 ## Explicit hosted demo mode
 
-`CIVIC_SPARK_AUTH_MODE=demo` enables visibly unverified email entry on a fresh demo installation, including HTTPS hosting without SMTP/Resend. Anyone entering the same email can access that demo account. Demo identities remain `emailVerified: false`, explicitly marked as demo, with a separate `demo/` data directory and `civic-spark-demo` cookie prefix. They never authorize verified-email production mode or migrate automatically. Local prototype restrictions remain unchanged.
+`CIVIC_SPARK_AUTH_MODE=demo` enables visibly unverified email entry for participants on a demo installation. Anyone entering the same email can access that participant's demo account. Demo identities remain `emailVerified: false`, explicitly marked as demo, with a separate `demo/` data directory and `civic-spark-demo` cookie prefix. They never authorize verified-email production mode or migrate automatically. Local prototype restrictions remain unchanged.
+
+Owners and event admins are the exception once owners are configured, which hosted sites require. Entering their email in demo sign-in sends a code instead of signing in, so hosted demo sites need a sender too. Their unverified demo sessions stop authorizing requests, including sessions opened by anyone who typed their address earlier. Code sign-in marks that account verified within the demo store only, keeping its ID, roles and workspaces, and ends every earlier session. Someone promoted to admin must enter a code on their next request. Demo sign-in accepts link and code requests only for these accounts. Verification inside the demo store never moves an account into the verified-email production store.
 
 `/api/demo/sign-in` checks a per-client limiter before writing users or sessions, using the server's normalized client IP. The default budget is 20 requests/minute, configurable via `CIVIC_SPARK_AUTH_REQUESTS_PER_MINUTE`. Fixed-window entries expire after a minute; the process-local map is capped at 10,000 clients and resets on restart. This throttles requests; it is not a lifetime data quota. Use only demo data and remove disposable model credentials after rehearsals. See [demo deployment](fly-deployment.md#explicit-hosted-demo).

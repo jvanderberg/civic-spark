@@ -192,14 +192,19 @@ export function App() {
     const form = new FormData(e.currentTarget);
     const email = String(form.get("email")).trim().toLowerCase();
     void run(async () => {
+      const name = String(form.get("name") ?? "").trim();
       if (session && session.authMode !== "email") {
-        await api(`/${session.authMode}/sign-in`, "POST", {
+        const result = await api<{ codeSent?: boolean }>(`/${session.authMode}/sign-in`, "POST", {
           email,
-          name: String(form.get("name") ?? "").trim(),
+          name,
         });
+        // Owners and event admins receive a code even in demo mode.
+        if (result.codeSent) {
+          setSentName(name);
+          setSentTo(email);
+        }
         return;
       }
-      const name = String(form.get("name") ?? "").trim();
       await api("/auth/sign-in/magic-link", "POST", {
         email,
         name,
@@ -469,7 +474,7 @@ export function App() {
               </button>
               <p className="small-text muted">
                 {session.authMode === "demo"
-                  ? "Unverified demo: anyone entering the same email can access that demo account. No verification email is sent."
+                  ? "Unverified demo: anyone entering the same email can access that demo account. Organizers receive an emailed code."
                   : session.authMode === "prototype"
                     ? "Local prototype: enter any email. No verification email is sent. Use the same email to return to your account."
                     : "New here? Signing in with your email also creates your account."}
@@ -546,9 +551,11 @@ export function App() {
                 </select>
                 <ChevronDown size={14} />
               </div>
-              <button type="button" className="new-event-link" onClick={() => setModal("event")}>
-                <Plus size={14} /> Create an event
-              </button>
+              {session.canCreateEvents && (
+                <button type="button" className="new-event-link" onClick={() => setModal("event")}>
+                  <Plus size={14} /> Create an event
+                </button>
+              )}
             </div>
           )}
           <nav className="main-nav" aria-label="Event navigation">
@@ -700,10 +707,22 @@ export function App() {
                   <Leaf size={34} />
                 </span>
                 <h1>Welcome, {session.user.name.split(" ")[0]}.</h1>
-                <p>There are no open events yet. Create one to bring your community together.</p>
-                <button type="button" className="button primary" onClick={() => setModal("event")}>
-                  <Plus size={17} /> Create your first event
-                </button>
+                {session.canCreateEvents ? (
+                  <>
+                    <p>
+                      There are no open events yet. Create one to bring your community together.
+                    </p>
+                    <button
+                      type="button"
+                      className="button primary"
+                      onClick={() => setModal("event")}
+                    >
+                      <Plus size={17} /> Create your first event
+                    </button>
+                  </>
+                ) : (
+                  <p>There are no open events yet. Please check back with your event organizer.</p>
+                )}
               </section>
             )
           ) : (

@@ -10,6 +10,7 @@ import type { PortalState } from "../packages/domain/src/access-types.ts";
 import { verifyAdminBackups } from "./admin-backups-browser-smoke.ts";
 import { verifyAdminEventDetails } from "./admin-event-browser-smoke.ts";
 import { verifyAdminProjects } from "./admin-projects-browser-smoke.ts";
+import { verifyDemoOwnerSignIn } from "./browser-demo-owner.ts";
 import { readEditor, waitEditorText, writeEditor } from "./browser-editor.ts";
 import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
 import {
@@ -457,6 +458,8 @@ try {
 }
 
 await verifySiteEventPortal();
+
+await verifyDemoOwnerSignIn();
 
 await verifyKeyboardViewport();
 
