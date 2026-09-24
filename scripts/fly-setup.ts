@@ -145,14 +145,7 @@ export function flyConfig(input: Setup) {
     )}\n\n[deploy]\n  strategy = "immediate"\n\n[[mounts]]\n  source = "${volumeName}"\n  destination = "/data"\n${autoExtend}\n[http_service]\n  internal_port = 4311\n  force_https = true\n  auto_stop_machines = "off"\n  auto_start_machines = true\n  min_machines_running = 1\n\n[[http_service.checks]]\n  grace_period = "30s"\n  interval = "15s"\n  timeout = "5s"\n  method = "GET"\n  path = "/api/health"\n  [http_service.checks.headers]\n    Host = ${quote(new URL(input.origin).host)}\n\n[[vm]]\n  cpu_kind = "${input.managementCpuKind}"\n  cpus = ${input.managementCpus}\n  memory = "${input.managementMemoryMb}mb"\n`;
 }
 export type Runner = (args: string[], input?: string) => string;
-let checkedFlyVersion = false;
 export const runFly: Runner = (args, input) => {
-  if (!checkedFlyVersion) {
-    const version = spawnSync("fly", ["version"], { encoding: "utf8", timeout: 30000 });
-    if (version.status !== 0 || !/^fly v0\.4\.104(?: |$)/.test(version.stdout))
-      throw new SetupError("Install the reviewed Fly CLI version 0.4.104 before setup");
-    checkedFlyVersion = true;
-  }
   const result = spawnSync("fly", args, {
     input,
     cwd: repositoryRoot,

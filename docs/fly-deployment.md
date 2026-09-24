@@ -19,7 +19,7 @@ Rerun `npm run site:bootstrap <name>` to apply code or settings changes: it asks
 
 ## Requirements and inputs
 
-Use Node **22.23.2**, npm with the committed lockfile, Fly CLI **0.4.104** and Sprite CLI **2026-09-02 (6390abf)**. Fly's CLI runs only on the operator/CI host, not in the image. Sprite CLI in the image is downloaded from the committed release manifest and checked against its SHA-256. The Node image uses a multiarchitecture digest; Debian packages resolve from a fixed September 15, 2026 snapshot. Native dependencies build from source during `npm ci`. Python, Git and Sprite are trusted control-plane tools; this does not permit executing participant code on the Machine.
+Use Node **22.23.2**, npm with the committed lockfile, a current Fly CLI and Sprite CLI **2026-09-02 (6390abf)**. Fly's CLI runs only on the operator/CI host, not in the image. Sprite CLI in the image is downloaded from the committed release manifest and checked against its SHA-256. The Node image uses a multiarchitecture digest; Debian packages resolve from a fixed September 15, 2026 snapshot. Native dependencies build from source during `npm ci`. Python, Git and Sprite are trusted control-plane tools; this does not permit executing participant code on the Machine.
 
 Choose app name, Fly organization, region, exact public HTTPS origin, Sprite organization, sender and limits. No account name is a product default. `org` and `spriteOrg` can differ; Fly's personal-organization selector is not necessarily the Sprite token's organization slug. Read the selectors from the authenticated CLIs; do not infer one from the other.
 

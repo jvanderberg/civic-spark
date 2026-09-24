@@ -74,7 +74,6 @@ export async function bootstrap(stateRoot: string, siteName: string | undefined,
       .object({ email: z.email() })
       .parse(JSON.parse(run(["auth", "whoami", "--json"]))).email;
   } catch (error) {
-    if (error instanceof SetupError && error.message.includes("0.4.104")) throw error;
     throw new SetupError("Log in to Fly first with `fly auth login`, then run this again.");
   }
   io.log(`Fly account: ${operator}`);
