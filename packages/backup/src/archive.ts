@@ -11,6 +11,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  readSync,
   realpathSync,
   statSync,
   writeFileSync,
@@ -167,6 +168,52 @@ export async function decryptFile(
   return { sha256: hash.digest("hex"), size: plainSize };
 }
 
+/**
+ * Stream one stored plain-format file, checking its framing tag, size and SHA-256 as it
+ * flows. A mismatch fails the stream, so a damaged backup aborts its download.
+ */
+export function readArchiveFile(
+  source: string,
+  aad: string,
+  expected: { size: number; sha256?: string | undefined },
+): Readable {
+  const size = statSync(source).size;
+  if (size < 36) throw new Error("Truncated backup file");
+  const header = Buffer.alloc(20);
+  const tag = Buffer.alloc(16);
+  const fd = openSync(source, "r");
+  try {
+    readSync(fd, header, 0, 20, 0);
+    readSync(fd, tag, 0, 16, size - 16);
+  } finally {
+    closeSync(fd);
+  }
+  if (header.subarray(0, 8).equals(magic))
+    throw new Error("Encrypted backups can only be restored with the CLI key");
+  if (!header.subarray(0, 8).equals(plainMagic)) throw new Error("Unknown backup archive format");
+  const hash = createHash("sha256");
+  const content = createHash("sha256");
+  let plainSize = 0;
+  const check = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      hash.update(chunk);
+      content.update(chunk);
+      plainSize += chunk.length;
+      done(null, chunk);
+    },
+    flush(done) {
+      const intact =
+        plainSize === expected.size &&
+        (!expected.sha256 || hash.digest("hex") === expected.sha256) &&
+        plainTag(aad, content).equals(tag);
+      done(intact ? null : new Error("Backup file checksum mismatch"));
+    },
+  });
+  const body =
+    size === 36 ? Readable.from([]) : createReadStream(source, { start: 20, end: size - 17 });
+  body.on("error", (error: Error) => check.destroy(error));
+  return body.pipe(check);
+}
 export function inventory(root: string, prefix: string): Entry[] {
   const entries: Entry[] = [];
   function visit(path: string, name: string) {

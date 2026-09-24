@@ -59,6 +59,8 @@ export class BackupManager {
   readonly directory: string;
   private readonly env: NodeJS.ProcessEnv;
   private busy = false;
+  // Downloads only read their archive, so they skip the lock; Delete waits for them.
+  private readonly downloading = new Map<string, number>();
   private cached: Installation | null = null;
   constructor(private readonly options: BackupManagerOptions) {
     this.env = options.env ?? process.env;
@@ -142,14 +144,32 @@ export class BackupManager {
       });
     });
   }
-  remove(backupId: string) {
+  async remove(backupId: string): Promise<Result<{ deleted: boolean }>> {
+    if (this.downloading.get(backupId))
+      return fail("This backup is being downloaded. Delete it after the download finishes.", 409);
     return this.run(async () => {
       deleteBackup(this.directory, backupId);
       return { deleted: true };
     });
   }
-  download(backupId: string) {
-    return this.run(async () => exportBackup(this.directory, backupId));
+  async download(backupId: string) {
+    try {
+      const exported = await exportBackup(this.directory, backupId);
+      this.downloading.set(backupId, (this.downloading.get(backupId) ?? 0) + 1);
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        const left = (this.downloading.get(backupId) ?? 1) - 1;
+        if (left > 0) this.downloading.set(backupId, left);
+        else this.downloading.delete(backupId);
+      };
+      exported.stream.once("close", finish);
+      exported.stream.once("error", finish);
+      return ok(exported);
+    } catch (error) {
+      return fail(message(error, "The backup could not be downloaded."), 400);
+    }
   }
   upload(source: Readable, declaredBytes: number, actor: Identity) {
     return this.run(async () => {

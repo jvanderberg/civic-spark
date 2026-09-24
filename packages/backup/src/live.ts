@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import { copyFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { z } from "zod";
@@ -25,6 +26,7 @@ import {
   inventory,
   makeDirectory,
   privateDirectory,
+  readArchiveFile,
   syncPath,
   writePrivate,
 } from "./archive.ts";
@@ -38,7 +40,7 @@ import {
   unpackArchive,
 } from "./backup.ts";
 import { invalidateAuthentication, modeRoot, verifyTree } from "./verify.ts";
-import { zipDirectory } from "./zip.ts";
+import { type ZipItem, zipItems } from "./zip.ts";
 
 export type Installation = z.infer<typeof installationSchema>;
 export type AuthMode = Installation["authMode"];
@@ -417,25 +419,57 @@ export function deleteBackup(directory: string, backupId: string) {
   syncPath(directory);
 }
 
-/** Unpack a stored backup and stream it as a readable ZIP of the real files. */
+/**
+ * Stream a stored backup as a ZIP of its real files, straight from the archive: nothing is
+ * unpacked first, so the download starts at once. Each file is checked against its manifest
+ * checksum as it streams; a mismatch aborts the download. Links are not exported.
+ */
 export async function exportBackup(directory: string, backupId: string) {
   directory = resolve(directory);
   const archive = findArchive(directory, backupId);
-  storageHeadroom(directory, archiveSize(archive).bytes);
   const scratch = mkdtempSync(join(directory, ".civic-spark-export-partial-"));
   chmodSync(scratch, 0o700);
+  let manifest: Manifest;
   try {
-    const { manifest } = await unpackArchive(archive, null, scratch, () => {}, false);
-    const name = `civic-spark-backup-${stamp(new Date(manifest.createdAt))}`;
-    const stream = zipDirectory(scratch, name);
-    const cleanup = () => rmSync(scratch, { recursive: true, force: true });
-    stream.once("close", cleanup);
-    stream.once("error", cleanup);
-    return { stream, filename: `${name}.zip` };
-  } catch (error) {
+    manifest = await readManifest(archive, null, scratch);
+  } finally {
     rmSync(scratch, { recursive: true, force: true });
-    throw error;
   }
+  const blobs = new Set(["manifest.enc", "FINALIZED"]);
+  for (const entry of manifest.entries) if (entry.blob) blobs.add(entry.blob);
+  const stored = readdirSync(archive);
+  if (stored.length !== blobs.size || stored.some((name) => !blobs.has(name)))
+    throw new Error("Backup has missing or unexpected files");
+  const name = `civic-spark-backup-${stamp(new Date(manifest.createdAt))}`;
+  const mtime = new Date(manifest.createdAt);
+  // Upload reads manifest.json beside data/ and operator/, as an unpacked backup has it.
+  const plainManifest = Buffer.from(JSON.stringify(manifest));
+  const items: ZipItem[] = [
+    {
+      name: `${name}/manifest.json`,
+      size: plainManifest.length,
+      mtime,
+      mode: 0o600,
+      directory: false,
+      open: () => Readable.from([plainManifest]),
+    },
+  ];
+  for (const entry of manifest.entries) {
+    if (entry.kind === "directory")
+      items.push({ name: `${name}/${entry.path}/`, size: 0, mtime, mode: 0o700, directory: true });
+    if (entry.kind === "file" && entry.blob) {
+      const blob = join(archive, entry.blob);
+      items.push({
+        name: `${name}/${entry.path}`,
+        size: entry.size,
+        mtime,
+        mode: 0o600 | (entry.mode & 0o100),
+        directory: false,
+        open: () => readArchiveFile(blob, entry.path, entry),
+      });
+    }
+  }
+  return { stream: zipItems(items), filename: `${name}.zip` };
 }
 
 /**
@@ -627,7 +661,6 @@ export async function stageRestore(options: StageRestoreOptions) {
       rmSync(ledgerPath, { force: true });
       writePrivate(ledgerPath, JSON.stringify(restored));
     }
-    if (!verified) throw new Error("Restores require a fully verified backup");
     const backedUp = new Set(verified.reservations.map((r) => r.spriteName));
     const liveNames = new Set(options.liveReservations.map((r) => r.spriteName));
     const untrackedSprites = [...liveNames].filter((name) => !backedUp.has(name)).sort();

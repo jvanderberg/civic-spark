@@ -34,23 +34,23 @@ function dosTime(date: Date) {
     (((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate()) & 0xffff;
   return { time, day };
 }
-type Item = {
-  path: string;
+export type ZipItem = {
   name: string;
   size: number;
   mtime: Date;
   mode: number;
   directory: boolean;
+  /** File content; its length must equal `size`. */
+  open?: () => Readable;
 };
 // Directory entries are written too: Git needs empty directories such as `refs/`.
-function walk(root: string, prefix: string, out: Item[]) {
+function walk(root: string, prefix: string, out: ZipItem[]) {
   for (const child of readdirSync(root).sort()) {
     const path = join(root, child);
     const info = lstatSync(path);
     const name = prefix ? `${prefix}/${child}` : child;
     if (info.isDirectory()) {
       out.push({
-        path,
         name: `${name}/`,
         size: 0,
         mtime: info.mtime,
@@ -60,8 +60,8 @@ function walk(root: string, prefix: string, out: Item[]) {
       walk(path, name, out);
     } else if (info.isFile())
       out.push({
-        path,
         name,
+        open: () => createReadStream(path),
         size: info.size,
         mtime: info.mtime,
         mode: info.mode,
@@ -82,8 +82,12 @@ class Counter extends Transform {
 }
 /** Stream a directory as a ZIP whose entries live under `prefix/`. */
 export function zipDirectory(root: string, prefix: string): Readable {
-  const files: Item[] = [];
+  const files: ZipItem[] = [];
   walk(root, prefix, files);
+  return zipItems(files);
+}
+/** Stream entries as a ZIP in the given order; directory names end with `/`. */
+export function zipItems(files: ZipItem[]): Readable {
   async function* entries() {
     const central: Buffer[] = [];
     let offset = 0;
@@ -107,7 +111,9 @@ export function zipDirectory(root: string, prefix: string): Readable {
       let compressed = 0;
       if (!file.directory) {
         const deflate = createDeflateRaw({ level: 6 });
-        const source = createReadStream(file.path);
+        const source = file.open?.() ?? Readable.from([]);
+        // pipe() does not forward errors; a failed source must fail the ZIP, not stall it.
+        source.once("error", (error) => deflate.destroy(error));
         const raw = source.pipe(counter).pipe(deflate);
         for await (const chunk of raw as AsyncIterable<Buffer>) {
           compressed += chunk.length;
