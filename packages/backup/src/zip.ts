@@ -16,12 +16,15 @@ import { crc32, createDeflateRaw, createInflateRaw } from "node:zlib";
 import { safeRelative } from "./archive.ts";
 
 // Dependency-free ZIP (deflate, data descriptors, UTF-8 names) so downloads open with any
-// archive tool. ZIP64 is not produced or accepted: backups over 4 GB need the CLI path.
+// archive tool. ZIP64 end records carry entry counts above 65,535 (Git object stores reach
+// that quickly); per-entry ZIP64 sizes are not produced, so backups over 4 GB need the CLI.
 const limit = 0xffffffff;
 const localSignature = 0x04034b50;
 const descriptorSignature = 0x08074b50;
 const centralSignature = 0x02014b50;
 const endSignature = 0x06054b50;
+const zip64EndSignature = 0x06064b50;
+const zip64LocatorSignature = 0x07064b50;
 const flags = 0x0808; // data descriptor + UTF-8 names
 
 function dosTime(date: Date) {
@@ -81,7 +84,6 @@ class Counter extends Transform {
 export function zipDirectory(root: string, prefix: string): Readable {
   const files: Item[] = [];
   walk(root, prefix, files);
-  if (files.length >= 0xffff) throw new Error("Backup has too many files for a ZIP download");
   async function* entries() {
     const central: Buffer[] = [];
     let offset = 0;
@@ -149,10 +151,29 @@ export function zipDirectory(root: string, prefix: string): Readable {
       directorySize += part.length;
       yield part;
     }
+    // 0xffff in the classic record tells readers to use the ZIP64 record for the count.
+    const many = files.length >= 0xffff;
+    if (many) {
+      const record = Buffer.alloc(56);
+      record.writeUInt32LE(zip64EndSignature, 0);
+      record.writeBigUInt64LE(44n, 4);
+      record.writeUInt16LE(45, 12);
+      record.writeUInt16LE(45, 14);
+      record.writeBigUInt64LE(BigInt(files.length), 24);
+      record.writeBigUInt64LE(BigInt(files.length), 32);
+      record.writeBigUInt64LE(BigInt(directorySize), 40);
+      record.writeBigUInt64LE(BigInt(directoryStart), 48);
+      const locator = Buffer.alloc(20);
+      locator.writeUInt32LE(zip64LocatorSignature, 0);
+      locator.writeBigUInt64LE(BigInt(directoryStart + directorySize), 8);
+      locator.writeUInt32LE(1, 16);
+      yield record;
+      yield locator;
+    }
     const end = Buffer.alloc(22);
     end.writeUInt32LE(endSignature, 0);
-    end.writeUInt16LE(files.length, 8);
-    end.writeUInt16LE(files.length, 10);
+    end.writeUInt16LE(many ? 0xffff : files.length, 8);
+    end.writeUInt16LE(many ? 0xffff : files.length, 10);
     end.writeUInt32LE(directorySize, 12);
     end.writeUInt32LE(directoryStart, 16);
     yield end;
@@ -189,12 +210,26 @@ function centralDirectory(fd: number, size: number): Entry[] {
       break;
     }
   if (end < 0) throw new Error("Upload is not a ZIP archive");
-  const count = tail.readUInt16LE(end + 10);
-  const directorySize = tail.readUInt32LE(end + 12);
-  const directoryOffset = tail.readUInt32LE(end + 16);
-  if (count === 0xffff || directorySize === limit || directoryOffset === limit)
+  let count = tail.readUInt16LE(end + 10);
+  let directorySize = tail.readUInt32LE(end + 12);
+  let directoryOffset = tail.readUInt32LE(end + 16);
+  if (count === 0xffff) {
+    // More entries than the classic record holds: follow the ZIP64 locator to its record.
+    if (end < 20 || tail.readUInt32LE(end - 20) !== zip64LocatorSignature)
+      throw new Error("Upload is not a valid ZIP archive");
+    const recordOffset = Number(tail.readBigUInt64LE(end - 20 + 8));
+    if (recordOffset + 56 > size) throw new Error("Upload is not a valid ZIP archive");
+    const record = readAt(fd, recordOffset, 56);
+    if (record.readUInt32LE(0) !== zip64EndSignature)
+      throw new Error("Upload is not a valid ZIP archive");
+    count = Number(record.readBigUInt64LE(32));
+    directorySize = Number(record.readBigUInt64LE(40));
+    directoryOffset = Number(record.readBigUInt64LE(48));
+    if (count > 5_000_000) throw new Error("Upload has too many ZIP entries");
+  }
+  if (directorySize >= limit || directoryOffset >= limit)
     throw new Error("ZIP64 archives are not supported; use the CLI for backups over 4 GB");
-  if (directorySize > 64 * 1024 * 1024 || directoryOffset + directorySize > size)
+  if (directorySize > 512 * 1024 * 1024 || directoryOffset + directorySize > size)
     throw new Error("Upload is not a valid ZIP archive");
   const directory = readAt(fd, directoryOffset, directorySize);
   const entries: Entry[] = [];
