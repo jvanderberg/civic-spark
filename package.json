@@ -32,6 +32,7 @@
     "test:workspace-live": "tsx scripts/workspace-live-smoke.ts",
     "setup:sprite": "tsx scripts/setup-sprite-runtime.ts",
     "site:bootstrap": "tsx scripts/site-bootstrap.ts",
+    "site:import-projects": "tsx scripts/import-project-ideas.ts",
     "test:agent-images": "tsx scripts/agent-images-smoke.ts",
     "test:connections-browser": "tsx scripts/persistent-connections-browser.ts",
     "test:agent-browser": "tsx scripts/agent-browser-smoke.ts",

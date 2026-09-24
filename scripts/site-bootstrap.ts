@@ -73,7 +73,7 @@ export async function bootstrap(stateRoot: string, siteName: string | undefined,
     operator = z
       .object({ email: z.email() })
       .parse(JSON.parse(run(["auth", "whoami", "--json"]))).email;
-  } catch (error) {
+  } catch {
     throw new SetupError("Log in to Fly first with `fly auth login`, then run this again.");
   }
   io.log(`Fly account: ${operator}`);

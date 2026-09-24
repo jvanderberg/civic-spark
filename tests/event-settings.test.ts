@@ -64,7 +64,7 @@ it("authorizes event settings, rejects stale/invalid writes, preserves unrelated
       service.createTeam(member.actor, {
         eventId: event.id,
         name: "Retained team",
-        projectId: "business",
+        projectId: "where-is-business-activity-changing",
       }),
     );
     value(service.joinTeam(admin.actor, team.team.id));
@@ -82,7 +82,7 @@ it("authorizes event settings, rejects stale/invalid writes, preserves unrelated
       service.createTeam(member.actor, {
         eventId: event.id,
         name: "Second membership, same person",
-        projectId: "business",
+        projectId: "where-is-business-activity-changing",
       }),
     );
     const before = service.portal(admin.actor, false);

@@ -170,6 +170,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 - [x] Email-link signup/sign-in using Better Auth; verified database sessions
 - [x] Six-digit code in the same email for phones whose mail app opens links elsewhere; one-time, hashed, 10-minute, five attempts, independent of the link
 - [x] Gmail SMTP setup preset (no domain needed) and a `test-email` setup action; mocked transports only
+- [x] Day in Our Data template and `npm run site:import-projects`: 15 starter briefs plus 7 remaining challenges from oak-park-cisc/Oak_Park_Day_in_our_Data, relative links rewritten to GitHub and raw data downloads; importing into an existing event signs in as an owner by emailed code and skips existing names
 - [x] `npm run site:bootstrap`: one interactive command that asks for settings and secrets (hidden), generates the auth secret, keeps everything in a private per-site directory, tests the Sprite token and email, provisions, stages secrets, deploys, and verifies Fly's proxy address through health. Fake Fly CLI tests only; not yet run against a new real app
 - [x] Configurable SMTP and Resend adapters; single-use, expiring, hashed login tokens
 - [x] Creator becomes event admin; promote members or add known accounts by verified email; retain last admin
