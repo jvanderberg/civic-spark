@@ -551,7 +551,7 @@ export function App() {
                 </select>
                 <ChevronDown size={14} />
               </div>
-              {session.canCreateEvents && (
+              {session.siteOwner && (
                 <button type="button" className="new-event-link" onClick={() => setModal("event")}>
                   <Plus size={14} /> Create an event
                 </button>
@@ -707,21 +707,19 @@ export function App() {
                   <Leaf size={34} />
                 </span>
                 <h1>Welcome, {session.user.name.split(" ")[0]}.</h1>
-                {session.canCreateEvents ? (
+                {session.siteOwner ? (
                   <>
-                    <p>
-                      There are no open events yet. Create one to bring your community together.
-                    </p>
+                    <p>This site has no event yet. Create it to bring your community together.</p>
                     <button
                       type="button"
                       className="button primary"
                       onClick={() => setModal("event")}
                     >
-                      <Plus size={17} /> Create your first event
+                      <Plus size={17} /> Create your event
                     </button>
                   </>
                 ) : (
-                  <p>There are no open events yet. Please check back with your event organizer.</p>
+                  <p>The event is not open yet. Please check back with your event organizer.</p>
                 )}
               </section>
             )

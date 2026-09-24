@@ -217,6 +217,7 @@ See [workspace modes and acceptance requirements](docs/product.md#required-works
 
 - [x] Local email-identity prototype mode with isolated cookies/data and loopback-only access
 - [x] Explicit hosted demo opt-in with unverified identities, isolated cookies/data, shared-email warning and bounded sign-in throttling; verified-email production remains the default
+- [x] One event per site: with owners, the first event an owner creates becomes the saved site event and a second is refused; `CIVIC_SPARK_SITE_EVENT_ID` only adopts an existing event for older installations
 - [x] Installation owners (`CIVIC_SPARK_OWNERS`, required when hosted) are the only event creators; owners and event admins sign in with an emailed code even in demo mode, ending earlier typed-email sessions
 - [x] Full-screen compact workspace with fixed Opus 5/GLM choices and runtime/key readiness
 - [x] Hierarchical file explorer with collapsible, resizable sidebar and saved layout preferences

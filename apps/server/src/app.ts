@@ -97,8 +97,10 @@ export async function createApp(
     root = join(root, "prototype");
   }
   const service = new EventService(root);
+  // A site hosts one event. CIVIC_SPARK_SITE_EVENT_ID only adopts an existing event for
+  // installations that predate this; new sites adopt the first event an owner creates.
   if (siteEventId) {
-    const site = service.siteEvent(siteEventId, null);
+    const site = service.adoptSiteEvent(siteEventId);
     if (!site.ok) {
       service.close();
       throw new Error(site.error);
@@ -246,8 +248,8 @@ export async function createApp(
     const user = await (await auth.$context).internalAdapter.findUserByEmail(email.toLowerCase());
     return user ? service.holdsAdminRole(user.user.id) : false;
   };
-  // Without configured owners (local development only) anyone may create events.
-  const canCreateEvents = (actor: Identity) =>
+  // Without configured owners (local development only) anyone may act as an owner.
+  const siteOwner = (actor: Identity) =>
     owners.size === 0 || (actor.emailVerified && owners.has(actor.email.toLowerCase()));
   app.decorateRequest("actor", null);
   app.addHook("onRequest", async (request) => {
@@ -470,14 +472,15 @@ export async function createApp(
     }
   });
   app.get("/api/session", async (r, reply) => {
-    const site = siteEventId ? service.siteEvent(siteEventId, r.actor) : null;
+    const pinned = service.siteEventId();
+    const site = pinned ? service.siteEvent(pinned, r.actor) : null;
     if (site && !site.ok) return send(reply, site);
     return {
       user: r.actor,
       emailSignIn: authentication.emailSignIn,
       authMode,
       siteEvent: site?.value ?? null,
-      canCreateEvents: r.actor ? canCreateEvents(r.actor) : false,
+      siteOwner: r.actor ? siteOwner(r.actor) : false,
     };
   });
   // Authentication hook guarantees actor for all routes below; no user IDs from
@@ -634,14 +637,21 @@ export async function createApp(
     origin: baseURL,
     service,
     restart,
-    configuration: { spritesEnabled, siteEventId: siteEventId ?? null },
+    configuration: { spritesEnabled },
   });
   registerBackupRoutes(app, backups);
-  app.get("/api/state", async (r) => service.portal(actor(r.actor), spritesEnabled, siteEventId));
+  app.get("/api/state", async (r) =>
+    service.portal(actor(r.actor), spritesEnabled, service.siteEventId() ?? undefined),
+  );
   app.post("/api/events", async (r, reply) => {
-    if (!canCreateEvents(actor(r.actor)))
+    if (!siteOwner(actor(r.actor)))
       return reply.code(403).send({ error: "Only site owners can create events" });
-    return send(reply, service.createEvent(actor(r.actor), createEventSchema.parse(r.body)));
+    // Sites with owners (every hosted site) host exactly one event.
+    if (owners.size > 0 && (service.siteEventId() || service.hasEvents()))
+      return reply.code(409).send({ error: "This site already has its event" });
+    const created = service.createEvent(actor(r.actor), createEventSchema.parse(r.body));
+    if (created.ok && owners.size > 0) service.adoptSiteEvent(created.value.id);
+    return send(reply, created);
   });
   app.get<{ Params: { id: string; projectId: string } }>(
     "/api/events/:id/projects/:projectId",

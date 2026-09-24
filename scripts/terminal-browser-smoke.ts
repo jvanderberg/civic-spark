@@ -90,7 +90,7 @@ try {
   await page.goto(address);
   await page.getByLabel("Email address").fill("terminal-layout@example.test");
   await page.getByRole("button", { name: "Enter prototype" }).click();
-  await page.getByRole("button", { name: "Create your first event" }).click();
+  await page.getByRole("button", { name: "Create your event" }).click();
   await page.getByLabel("Event name").fill("Terminal layout test");
   await page.getByLabel("Date", { exact: true }).fill("2026-10-03");
   await page.getByLabel("Location").fill("Oak Park");

@@ -78,7 +78,7 @@ try {
     await openPortalMenu(target);
     await target.getByRole("button", { name: "Sign out", exact: true }).waitFor();
   }
-  await adminPage.getByRole("button", { name: "Create your first event" }).click();
+  await adminPage.getByRole("button", { name: "Create your event" }).click();
   await adminPage.getByLabel("Starting point").selectOption("diod");
   await adminPage.getByLabel("Event name").fill("Day in Our Data");
   await adminPage.getByLabel("Date", { exact: true }).fill("2026-10-03");

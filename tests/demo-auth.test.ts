@@ -180,7 +180,8 @@ it("makes demo owners and event admins prove their email while participants skip
     const owner = cookieOf(await enterCode("owner@example.test"));
     const ownerSession = (await call("GET", "/api/session", owner)).json();
     expect(ownerSession.user).toMatchObject({ id: earlier.id, emailVerified: true });
-    expect(ownerSession.canCreateEvents).toBe(true);
+    expect(ownerSession.siteOwner).toBe(true);
+    expect(ownerSession.siteEvent).toBeNull();
     // Proving the email ended every session opened by typing it.
     expect((await call("GET", "/api/state", cookieOf(impostor))).statusCode).toBe(401);
     const created = await call("POST", "/api/events", owner, {
@@ -194,6 +195,23 @@ it("makes demo owners and event admins prove their email while participants skip
     });
     expect(created.statusCode).toBe(200);
     const eventId = created.json().id;
+    // The first event becomes the site's one event; a second is refused.
+    expect((await call("GET", "/api/session", owner)).json().siteEvent).toMatchObject({
+      id: eventId,
+    });
+    expect(
+      (
+        await call("POST", "/api/events", owner, {
+          name: "Second event",
+          date: "2026-10-04",
+          timezone: "America/Chicago",
+          location: "Library",
+          capacity: 10,
+          budget: 10,
+          templateId: "blank",
+        })
+      ).statusCode,
+    ).toBe(409);
 
     const participantLogin = await demoSignIn("helper@example.test");
     const participant = cookieOf(participantLogin);
@@ -201,7 +219,7 @@ it("makes demo owners and event admins prove their email while participants skip
     const participantSession = (await call("GET", "/api/session", participant)).json();
     expect(participantSession).toMatchObject({
       user: { emailVerified: false },
-      canCreateEvents: false,
+      siteOwner: false,
     });
     expect((await call("GET", "/api/state", participant)).statusCode).toBe(200);
     const denied = await call("POST", "/api/events", participant, {

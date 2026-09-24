@@ -215,7 +215,7 @@ try {
   await page.goto(address);
   await page.getByLabel("Email address").fill("chat-test@example.test");
   await page.getByRole("button", { name: "Enter prototype" }).click();
-  await page.getByRole("button", { name: "Create your first event" }).click();
+  await page.getByRole("button", { name: "Create your event" }).click();
   await page.getByLabel("Event name").fill("Data ideas open day");
   await page.getByLabel("Date", { exact: true }).fill("2026-10-03");
   await page.getByLabel("Location").fill("Oak Park");

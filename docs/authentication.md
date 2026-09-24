@@ -88,7 +88,7 @@ Delivery errors are sanitized before reaching auth logs or browser responses. Do
 
 ## Owners
 
-`CIVIC_SPARK_OWNERS` lists the email addresses allowed to create events, comma-separated. Hosted installations must set it; the setup's `owners` array writes it. Other signed-in people can join events but see no Create event action, and `POST /api/events` returns 403 for them. Owners always sign in with an emailed code, including in demo mode. Without owners, which is allowed only outside hosted deployments, anyone signed in can create events, as before.
+`CIVIC_SPARK_OWNERS` lists the email addresses allowed to create the site's event, comma-separated. Hosted installations must set it; the setup's `owners` array writes it. A site with owners hosts exactly one event: the first event an owner creates becomes the site's event, and creating another returns 409. Other signed-in people see no Create event action, and `POST /api/events` returns 403 for them. Owners always sign in with an emailed code, including in demo mode. Without owners, which is allowed only outside hosted deployments, anyone signed in can create events, as before.
 
 Event creators become admins. Admins can promote members or add an already signed-in account by verified email without team membership. Adding an admin never creates an account or sends an invitation. Each user/team membership owns a separate checkout/Sprite. Admins cannot browse others' private files. Membership removal revokes access and preserves files; rejoining while registration is open restores the workspace.
 

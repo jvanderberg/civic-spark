@@ -32,6 +32,8 @@ export const accessStateSchema = z.object({
   users: z.array(identitySchema),
   eventMembers: z.array(eventMemberSchema),
   memberships: z.array(membershipSchema),
+  // The site's one event: the first an owner creates, or the configured legacy pin.
+  siteEventId: z.string().nullable().default(null),
 });
 export type AccessState = z.infer<typeof accessStateSchema>;
 export type Membership = z.infer<typeof membershipSchema>;
@@ -68,7 +70,8 @@ export type SessionView = {
   emailSignIn: boolean;
   authMode: "email" | "prototype" | "demo";
   siteEvent: { id: string; name: string | null } | null;
-  canCreateEvents: boolean;
+  // Owners create the site's event and always sign in with a code.
+  siteOwner: boolean;
 };
 export type PortalState = {
   user: Identity;

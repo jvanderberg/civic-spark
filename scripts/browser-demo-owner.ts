@@ -66,6 +66,29 @@ export async function verifyDemoOwnerSignIn() {
   };
   let page: Page | undefined;
   try {
+    // A participant who arrives before the event exists waits for the organizer.
+    page = await open();
+    await page.getByLabel("Email address").fill("participant@example.test");
+    await page.getByRole("button", { name: "Enter demo" }).tap();
+    await page.getByText("The event is not open yet.").waitFor();
+    assert.equal(await page.getByRole("button", { name: /Create (an|your) event/ }).count(), 0);
+    for (const colorScheme of ["light", "dark"] as const) {
+      for (const [width, height] of [
+        [360, 780],
+        [390, 844],
+        [1440, 900],
+        [900, 390],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        await page.emulateMedia({ colorScheme });
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        await page.screenshot({
+          path: join(artifacts, `participant-${width}-${height}-${colorScheme}.png`),
+        });
+      }
+    }
+    const participant = page;
+
     page = await open();
     await page.getByLabel("Email address").fill("Owner@example.test");
     await page.getByRole("button", { name: "Enter demo" }).tap();
@@ -84,35 +107,25 @@ export async function verifyDemoOwnerSignIn() {
     assert(message, "The owner should receive a code");
     await page.getByLabel("Sign-in code").fill(message.code);
     await page.getByRole("button", { name: "Sign in", exact: true }).tap();
-    await page.getByRole("button", { name: "Create your first event" }).waitFor();
-    await page.context().close();
-
-    page = await open();
-    await page.getByLabel("Email address").fill("participant@example.test");
-    await page.getByRole("button", { name: "Enter demo" }).tap();
-    await page.getByText("Please check back with your event organizer.").waitFor();
-    assert.equal(
-      await page.getByRole("button", { name: /Create (an|your first) event/ }).count(),
-      0,
-    );
+    // The owner's first event becomes the site's one event.
+    await page.getByRole("button", { name: "Create your event" }).tap();
+    await page.getByLabel("Event name").fill("Harbor Data Day");
+    await page.getByLabel("Date", { exact: true }).fill("2026-10-03");
+    await page.getByLabel("Location").fill("Community library");
+    await page.getByRole("button", { name: "Create event", exact: true }).tap();
+    await page.getByRole("button", { name: "Open registration" }).tap();
+    await page.locator(".brand.site-brand", { hasText: "Harbor Data Day" }).waitFor();
+    assert.equal(await page.getByRole("button", { name: /Create (an|your) event/ }).count(), 0);
     for (const colorScheme of ["light", "dark"] as const) {
-      for (const [width, height] of [
-        [360, 780],
-        [390, 844],
-        [1440, 900],
-        [900, 390],
-      ] as const) {
-        await page.setViewportSize({ width, height });
-        await page.emulateMedia({ colorScheme });
-        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-        await page.screenshot({
-          path: join(artifacts, `participant-${width}-${height}-${colorScheme}.png`),
-        });
-      }
+      await page.emulateMedia({ colorScheme });
+      await page.screenshot({ path: join(artifacts, `owner-event-360-${colorScheme}.png`) });
     }
+    await participant.reload();
+    await participant.locator(".brand.site-brand", { hasText: "Harbor Data Day" }).waitFor();
+    assert.equal(await participant.title(), "Harbor Data Day");
     assert.deepEqual(errors, []);
     console.log(
-      "PASS: demo owner gets an emailed code (no session from typing the email), code sign-in shows event creation; demo participant signs in directly without Create event; 360/390/desktop/short in both themes; clean console.",
+      "PASS: demo participant signs in directly and waits without Create event; owner gets an emailed code (no session from typing the email), creates the site's one event and the site takes its name for everyone; 360/390/desktop/short in both themes; clean console.",
     );
   } catch (error) {
     await page?.screenshot({ path: join(artifacts, "failure.png"), fullPage: true });

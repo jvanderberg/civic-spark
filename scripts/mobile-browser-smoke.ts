@@ -171,7 +171,7 @@ try {
   await page
     .getByRole("button", { name: authMode === "demo" ? "Enter demo" : "Enter prototype" })
     .tap();
-  await page.getByRole("button", { name: "Create your first event" }).tap();
+  await page.getByRole("button", { name: "Create your event" }).tap();
   assert(
     (await context.cookies()).some(
       (cookie) => cookie.name === `civic-spark-${authMode}.session_token`,

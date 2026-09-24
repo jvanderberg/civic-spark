@@ -80,7 +80,7 @@ export class EventService {
     const row = this.db.prepare("SELECT body FROM access_state WHERE id=1").get();
     this.state = row
       ? accessStateSchema.parse(JSON.parse(String(row.body)))
-      : { version: 1, users: [], eventMembers: [], memberships: [] };
+      : { version: 1, users: [], eventMembers: [], memberships: [], siteEventId: null };
     this.persistedState = JSON.stringify(this.state);
   }
   checkHealth() {
@@ -420,6 +420,21 @@ export class EventService {
     return ok(event);
   }
   // Public installation context exposes only a discoverable title, never event data.
+  siteEventId() {
+    return this.state.siteEventId;
+  }
+  hasEvents() {
+    return this.engine.peek().events.length > 0;
+  }
+  /** Make this the site's one event, unless the site already has one. */
+  adoptSiteEvent(eventId: string) {
+    if (this.state.siteEventId !== null) return ok({ siteEventId: this.state.siteEventId });
+    const site = this.siteEvent(eventId, null);
+    if (!site.ok) return site;
+    this.state.siteEventId = eventId;
+    this.save();
+    return ok({ siteEventId: eventId });
+  }
   siteEvent(eventId: string, actor: Identity | null) {
     const event = this.engine.peek().events.find((e) => e.id === eventId);
     if (!event || !this.state.eventMembers.some((m) => m.eventId === eventId))

@@ -77,7 +77,7 @@ try {
   await page.getByLabel("Name (optional, for your first visit)").fill("Prototype Organizer");
   await page.screenshot({ path: join(artifacts, "prototype-sign-in.png"), fullPage: true });
   await page.getByRole("button", { name: "Enter prototype" }).click();
-  await page.getByRole("button", { name: "Create your first event" }).click();
+  await page.getByRole("button", { name: "Create your event" }).click();
   await page.getByLabel("Event name").fill("Workspace prototype");
   await page.getByLabel("Date", { exact: true }).fill("2026-10-03");
   await page.getByLabel("Location").fill("Local rehearsal");
