@@ -10,7 +10,7 @@ A **user** normally has a verified email and stable internal identity. The expli
 
 ```mermaid
 flowchart TD
-  Login[Email link sign-in] --> User[User account]
+  Login[Email code or link sign-in] --> User[User account]
   User --> Create[Create event: become admin]
   User --> Discover[Explore open events, projects and teams]
   Discover --> Join[Join a team or create one]
@@ -94,7 +94,7 @@ Both browser coding providers and native terminal launchers receive the canonica
 
 | Stage | Participant | Admin |
 | --- | --- | --- |
-| Arrival | Open an email sign-in link and choose the event | Monitor people and teams |
+| Arrival | Enter the emailed sign-in code or open its link, then choose the event | Monitor people and teams |
 | Find a project | Browse briefs and existing teams; join or create one | Help people find teams; correct mistakes |
 | Work | Open My teams, then the workspace for a team | Check event-wide progress and shared changes |
 | First workspace visit | Sprite is prepared from that team’s committed repository; subsequent visits resume it | Help with failed provisioning |

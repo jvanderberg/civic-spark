@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 import { createApp } from "../apps/server/src/app.ts";
+import type { LoginEmail } from "../apps/server/src/email.ts";
 import type { Result } from "../packages/domain/src/types.ts";
 import { testIdentity } from "../tests/auth-fixture.ts";
 import { openAdminSection, openPortalMenu } from "./browser-portal-menu.ts";
@@ -72,7 +73,14 @@ export async function verifySiteEventPortal() {
     const pinned = events[1];
     assert(other && pinned);
     await current.app.close();
-    current = await createApp(root, false, origin, undefined, "email", pinned.event.id);
+    const outbox: LoginEmail[] = [];
+    const mailbox = {
+      configured: true,
+      async send(message: LoginEmail) {
+        outbox.push(message);
+      },
+    };
+    current = await createApp(root, false, origin, mailbox, "email", pinned.event.id);
     await current.app.listen({ host: "127.0.0.1", port });
     for (const theme of ["light", "dark"] as const) {
       for (const [width, height] of [
@@ -89,13 +97,53 @@ export async function verifySiteEventPortal() {
         await page.goto(origin);
         await page.getByRole("heading", { name: pinned.event.name, exact: true }).waitFor();
         assert.equal(await page.title(), pinned.event.name);
-        await page.getByLabel("Email address").fill("participant@example.test");
+        const email = `code-${width}-${height}-${theme}@example.test`;
+        await page.getByLabel("Email address").fill(email);
         await page.getByLabel("Email address").focus();
         await page
-          .getByRole("button", { name: "Email me a sign-in link" })
+          .getByRole("button", { name: "Email me a sign-in code" })
           .scrollIntoViewIfNeeded();
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
         await page.screenshot({ path: join(artifacts, `sign-in-${width}-${height}-${theme}.png`) });
+        // Code entry keeps the session in this browser even when a phone opens the link elsewhere.
+        await page.getByRole("button", { name: "Email me a sign-in code" }).tap();
+        await page.getByRole("heading", { name: "Check your email" }).waitFor();
+        const code = page.getByLabel("Sign-in code");
+        assert.equal(await code.getAttribute("autocomplete"), "one-time-code");
+        assert.equal(await code.getAttribute("inputmode"), "numeric");
+        await code.fill("000000");
+        const logged = errors.length;
+        await page.getByRole("button", { name: "Sign in", exact: true }).tap();
+        await page.getByText("That code is incorrect or has expired").waitFor();
+        // The rejected guess is the only expected console entry.
+        assert.deepEqual(errors.splice(logged), [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+        ]);
+        const message = outbox.findLast((entry) => entry.email === email);
+        assert(
+          message && /^\d{6}$/.test(message.code),
+          "The mailbox should receive a six-digit code",
+        );
+        await code.fill(message.code);
+        await code.focus();
+        const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+        await signIn.scrollIntoViewIfNeeded();
+        for (const target of [code, signIn]) {
+          const box = await target.boundingBox();
+          assert(box && box.y >= 0 && box.y + box.height <= height && box.height >= 44);
+        }
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        await page.screenshot({
+          path: join(artifacts, `sign-in-code-${width}-${height}-${theme}.png`),
+        });
+        await signIn.tap();
+        await page
+          .getByRole("heading", { name: "Check your email" })
+          .waitFor({ state: "detached" });
+        const signedIn = await (await page.request.get(`${origin}/api/session`)).json();
+        assert.equal(signedIn.user?.email, email);
+        assert.equal(signedIn.user?.emailVerified, true);
+        await context.clearCookies();
         await context.addCookies([participant.browserCookie]);
         await page.goto(origin);
         await page.getByRole("heading", { name: "Projects to explore", exact: true }).waitFor();
@@ -221,7 +269,7 @@ export async function verifySiteEventPortal() {
     );
     assert.deepEqual(errors, []);
     console.log(
-      "PASS: configured event with multiple underlying events; anonymous branding/title, participant project/team controls, admin project dialog, no switcher/create-event UI, stale workspace exclusion and valid workspace refresh, 360/390/desktop/short in both themes; clean console.",
+      "PASS: configured event with multiple underlying events; anonymous branding/title, email code sign-in with a rejected guess, participant project/team controls, admin project dialog, no switcher/create-event UI, stale workspace exclusion and valid workspace refresh, 360/390/desktop/short in both themes; clean console.",
     );
   } catch (error) {
     await page.screenshot({ path: join(artifacts, "failure.png"), fullPage: true });

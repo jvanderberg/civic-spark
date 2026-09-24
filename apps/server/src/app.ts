@@ -335,8 +335,15 @@ export async function createApp(
     method: ["GET", "POST"],
     url: "/api/auth/*",
     handler: async (request, reply) => {
+      const path = (request.url.split("?")[0] ?? "")
+        .replace(/\/{2,}/g, "/")
+        .replace(/\/$/, "")
+        .toLowerCase();
+      // Codes are only issued with a sign-in link; other code routes stay unreachable.
+      if (path.startsWith("/api/auth/email-otp/") || path === "/api/auth/forget-password/email-otp")
+        return reply.code(404).send({ error: "Not found" });
       if (
-        request.url.split("?")[0] === "/api/auth/sign-in/magic-link" &&
+        ["/api/auth/sign-in/magic-link", "/api/auth/sign-in/email-otp"].includes(path) &&
         !authentication.emailSignIn
       )
         return reply.code(503).send({ error: "Email sign-in is not configured yet" });

@@ -165,6 +165,8 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 ## Authenticated event and participant foundation
 
 - [x] Email-link signup/sign-in using Better Auth; verified database sessions
+- [x] Six-digit code in the same email for phones whose mail app opens links elsewhere; one-time, hashed, 10-minute, five attempts, cancelled by the link
+- [x] Gmail SMTP setup preset (no domain needed) and a `test-email` setup action; mocked transports only
 - [x] Configurable SMTP and Resend adapters; single-use, expiring, hashed login tokens
 - [x] Creator becomes event admin; promote members or add known accounts by verified email; retain last admin
 - [x] Server-enforced event roles and owner-only workspace access
@@ -197,7 +199,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 - [x] Waiting messages follow the copied T3 Code queue UI: dashed queued rows at the end of the conversation with Queued, Send now and Cancel, up to five in order, no composer banner and no stopping control. Send now stops the running turn and the server sends that message as the next prompt, because each turn is one harness request; Stop cancels the queue back into the composer.
 - [x] Auth/session/domain tests and separate-browser participant/admin workflow
 - [x] Live Sprite file API verification; remote temporary edit restored
-- [ ] Configure email sender and verify actual inbox delivery on the deployed origin
+- [ ] Configure email sender and verify actual inbox delivery on the deployed origin (Gmail account and app password pending; then `test-email`, deploy in email mode, phone sign-in)
 
 ## Required workspace experience
 

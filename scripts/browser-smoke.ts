@@ -53,7 +53,7 @@ for (const p of [adminPage, page]) {
 }
 try {
   await page.goto(address);
-  await page.getByRole("button", { name: "Email me a sign-in link" }).waitFor();
+  await page.getByRole("button", { name: "Email me a sign-in code" }).waitFor();
   assert.equal(await page.getByRole("button", { name: /Add person|Add participant/ }).count(), 0);
   assert.equal((await participant.request.get(`${address}/api/state`)).status(), 401);
   await page.screenshot({ path: join(artifacts, "sign-in.png"), fullPage: true });
@@ -64,13 +64,17 @@ try {
     await target.goto(address);
     await target.getByLabel("Email address").fill(email);
     await target.getByLabel("Name (optional, for your first visit)").fill(name);
-    await target.getByRole("button", { name: "Email me a sign-in link" }).click();
+    await target.getByRole("button", { name: "Email me a sign-in code" }).click();
     await target.getByRole("heading", { name: "Check your email" }).waitFor();
     if (target === page)
       await target.screenshot({ path: join(artifacts, "email-sent.png"), fullPage: true });
     const message = outbox.find((entry) => entry.email === email);
-    assert(message, "The test mailbox should receive the link");
-    await target.goto(message.url);
+    assert(message, "The test mailbox should receive the link and code");
+    // The organizer follows the link; the participant types the code in the requesting tab.
+    if (target === page) {
+      await target.getByLabel("Sign-in code").fill(message.code);
+      await target.getByRole("button", { name: "Sign in", exact: true }).click();
+    } else await target.goto(message.url);
     await openPortalMenu(target);
     await target.getByRole("button", { name: "Sign out", exact: true }).waitFor();
   }
@@ -385,7 +389,7 @@ try {
   );
   await openPortalMenu(page);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await page.getByRole("button", { name: "Email me a sign-in link" }).waitFor();
+  await page.getByRole("button", { name: "Email me a sign-in code" }).waitFor();
   assert.equal((await participant.request.get(`${address}/api/state`)).status(), 401);
   const anotherEvent = await organizer.request.post(`${address}/api/events`, {
     data: {
@@ -422,7 +426,7 @@ try {
   assert.deepEqual(briefRequests, [[], []]);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: separate authenticated admin/participant browsers; event ownership, admin Markdown projects, brief inheritance, event-scoped draft isolation, discovery, custom project, two teams, private files, sharing/ZIP, admin promotion, confirmed event removal/team deletion, shared-only team copy, per-team commits/files/diffs and history-preserving restore, light/dark/mobile, logout, clean console. Email-link signup uses the real auth endpoints and a test-only mailbox; external email delivery requires provider credentials.",
+    "PASS: separate authenticated admin/participant browsers; event ownership, admin Markdown projects, brief inheritance, event-scoped draft isolation, discovery, custom project, two teams, private files, sharing/ZIP, admin promotion, confirmed event removal/team deletion, shared-only team copy, per-team commits/files/diffs and history-preserving restore, light/dark/mobile, logout, clean console. Email signup by link and by code uses the real auth endpoints and a test-only mailbox; external email delivery requires provider credentials.",
   );
 } catch (error) {
   console.error({

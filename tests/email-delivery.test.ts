@@ -9,6 +9,7 @@ afterEach(() => {
 const message = {
   email: "person@example.test",
   url: "https://event.example/sign-in?token=test-only",
+  code: "123456",
 };
 
 it("requires explicit provider selection and complete configuration", async () => {
@@ -38,9 +39,10 @@ it("sends through Resend and reports provider failures without leaking their res
   await delivery.send(message);
   const sent = JSON.parse(fetch.mock.calls[0]?.[1].body);
   expect(sent.to).toEqual([message.email]);
-  expect(sent.subject).toBe("Your Civic Spark sign-in link");
-  expect(sent.text).toContain("Sign in to Civic Spark:");
+  expect(sent.subject).toBe("Civic Spark sign-in code: 123456");
+  expect(sent.text).toContain("Your Civic Spark sign-in code is 123456");
   expect(sent.text).toContain(message.url);
+  expect(sent.text).toContain("expire in 10 minutes");
   await expect(delivery.send(message)).rejects.toThrow(/^Email delivery failed$/);
 });
 
@@ -68,7 +70,11 @@ it.each([587, 465])(
     );
     await delivery.send(message);
     expect(sendMail).toHaveBeenCalledWith(
-      expect.objectContaining({ to: [message.email], text: expect.stringContaining(message.url) }),
+      expect.objectContaining({
+        to: [message.email],
+        subject: "Civic Spark sign-in code: 123456",
+        text: expect.stringContaining(message.url),
+      }),
     );
     await expect(delivery.send(message)).rejects.toThrow(/^Email delivery failed$/);
     await expect(delivery.send(message)).rejects.toThrow(/^Email delivery failed$/);

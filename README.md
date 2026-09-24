@@ -65,7 +65,7 @@ npm run test:mobile
 npm run test:hosted-preview-browser
 ```
 
-The browser test signs up two people through the real email-link endpoints using an in-memory test mailbox. A separate test-only session fixture supplies an extra coordinator account; no live email is sent. It checks event ownership, discovery, multi-team membership, custom briefs, private file access, contribution/ZIP, admin promotion, removal/revocation, logout, mobile layout, and browser errors. Screenshots are saved in ignored `artifacts/`.
+The browser test signs up two people through the real email endpoints, one by link and one by code, using an in-memory test mailbox. A separate test-only session fixture supplies an extra coordinator account; no live email is sent. It checks event ownership, discovery, multi-team membership, custom briefs, private file access, contribution/ZIP, admin promotion, removal/revocation, logout, mobile layout, and browser errors. Screenshots are saved in ignored `artifacts/`.
 
 Run `npm run check` first to build the assets used by browser checks. `npm run test:mobile` exercises phone touch flows at 360px/390px widths plus short and landscape viewports, including admin forms, repository controls, editing, Share, chat and unsupported-folder fallbacks. It uses disposable data and deterministic agent/preview responses, with screenshots in `artifacts/mobile/`. Physical iOS/Android keyboard and native-picker behavior still needs device rehearsal. `npm run test:terminal-browser` also checks xterm at phone sizes without cloud or model calls.
 

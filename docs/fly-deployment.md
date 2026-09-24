@@ -12,7 +12,7 @@ Choose app name, Fly organization, region, exact public HTTPS origin, Sprite org
 
 `proxyCidrs` specifies the immediate peers allowed to supply `Fly-Client-IP`. The example uses the Fly Machine proxy network; verify it in the selected deployment before inviting users. The generated app has a dedicated Fly network and listens on IPv4 `0.0.0.0`, not its IPv6 private-network address. Do not broaden trust to every address or add unrelated workloads to that network. `X-Forwarded-For`, host and proto do not establish identity or the canonical origin. TLS cookies derive from `BETTER_AUTH_URL`; application and WebSocket origins are exact. An untrusted peer's IP headers are ignored. On another provider use `CIVIC_SPARK_PROXY=none` or implement that provider's explicit peer boundary. No Git or Sprite operation depends on Fly private networking.
 
-Production defaults to `email` authentication and requires complete Resend or SMTP settings. SMTP permits port 587 with required STARTTLS or 465 with immediate TLS. Verify the sender domain externally. Local prototype sign-in remains unavailable publicly: a public bind, production environment or hosted deployment rejects prototype mode at startup.
+Production defaults to `email` authentication and requires complete Gmail, Resend or SMTP settings. SMTP permits port 587 with required STARTTLS or 465 with immediate TLS. Verify the sender domain externally. Local prototype sign-in remains unavailable publicly: a public bind, production environment or hosted deployment rejects prototype mode at startup.
 
 ## Explicit hosted demo
 
@@ -57,7 +57,7 @@ npm run check
 npm run test:deploy-context
 ```
 
-For SMTP set `emailProvider` to `smtp` and add `smtpHost` and `smtpPort` (465 or 587) in the public JSON. `emailFrom` is the verified sending address, optionally with a display name. A custom origin also requires its DNS and Fly certificate before sign-in; the default `app.fly.dev` certificate is managed by Fly.
+Without a domain of your own, set `emailProvider` to `gmail` and `emailFrom` to `Civic Spark <account@gmail.com>`; the helper fills in Google's SMTP host and port. See [Gmail](authentication.md#gmail-recommended-without-a-domain) for the account and app password. For another SMTP service set `emailProvider` to `smtp` and add `smtpHost` and `smtpPort` (465 or 587) in the public JSON. `emailFrom` is the verified sending address, optionally with a display name. A custom origin also requires its DNS and Fly certificate before sign-in; the default `app.fly.dev` certificate is managed by Fly.
 
 The generated `.data/fly/<app>/fly.toml` and ownership receipt are private operator state, excluded from Git and the image. Preserve the receipt when moving operator hosts. A preexisting app without its receipt is refused. If creation succeeded but the operator crashed before the receipt was written, inspect the app/org/network/volumes/Machines manually, then recover a receipt containing only its verified `app`, `org`, and `region`. Do not blindly adopt an existing app. The helper refuses extra Machines, unexpected volume names/regions/sizes, and changed organization/receipt inputs. Volume extension, recovery and region migration are separate coordinated operations.
 
@@ -74,7 +74,15 @@ CI may supply its Fly app/org provisioning token through Fly's supported environ
 
 Create a dedicated **Sprites token** in the selected organization using the Sprites account/token interface. Its documented CLI format is `org-slug/org-id/token-id/token-value`; the helper checks that contract and selected slug. That syntactic check does not prove authorization. The separate `verify-sprites` action performs an authenticated, read-only API list probe and discards all names/metadata. A Sprites organization token can manage that organization's Sprites; do not claim it is event-scoped or limited to a name prefix. Use a dedicated organization if unrelated resources require isolation. It is not a general Fly admin token.
 
-Save all managed credentials as a JSON object in a password manager or a mode-0600 file **outside the repository**. The required keys are `SPRITE_TOKEN`, `BETTER_AUTH_SECRET` (at least 32 random characters), and `RESEND_API_KEY`; for SMTP replace the Resend key with `SMTP_USER` and `SMTP_PASSWORD`. In explicit demo mode omit the email credentials. No real credentials belong in examples, shell history, command arguments or tickets. Keep the auth secret stable across repeat setup and Sprite token rotation.
+Save all managed credentials as a JSON object in a password manager or a mode-0600 file **outside the repository**. The required keys are `SPRITE_TOKEN`, `BETTER_AUTH_SECRET` (at least 32 random characters), and `RESEND_API_KEY`; for Gmail or SMTP replace the Resend key with `SMTP_USER` and `SMTP_PASSWORD`. For Gmail, `SMTP_USER` must be the `emailFrom` address and `SMTP_PASSWORD` its 16-letter app password.
+
+Before staging secrets, send a real message with the same settings and check that it reaches the inbox, not spam:
+
+```sh
+npx tsx scripts/fly-setup.ts test-email "$CIVIC_SPARK_SETUP" you@example.org < "$CIVIC_SPARK_SECRETS_FILE"
+```
+
+It reads only the email credentials, changes no cloud resources and logs no secret values. In explicit demo mode omit the email credentials. No real credentials belong in examples, shell history, command arguments or tickets. Keep the auth secret stable across repeat setup and Sprite token rotation.
 
 ```sh
 # Set this to an existing private JSON file outside this checkout; values are not argv.

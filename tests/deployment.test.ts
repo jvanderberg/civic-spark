@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import nodemailer from "nodemailer";
 import { afterEach, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { AgentSessions } from "../apps/server/src/agents.ts";
@@ -12,13 +13,16 @@ import {
   validateDeployment,
 } from "../apps/server/src/deployment.ts";
 import { loadDeploymentSecrets } from "../apps/server/src/deployment-secrets.ts";
+import { createEmailSender } from "../apps/server/src/email.ts";
 import { WorkspaceIntegrations } from "../apps/server/src/integrations.ts";
 import { TerminalSessions } from "../apps/server/src/terminal.ts";
 import { SpriteClient } from "../packages/sprites/src/client.ts";
 import { validateSpriteToken } from "../packages/sprites/src/credentials.ts";
 import {
   authorizeExisting,
+  emailSecrets,
   flyConfig,
+  flyEnv,
   provision,
   type Runner,
   secretInput,
@@ -271,6 +275,62 @@ it("plans a single-writer volume deployment and safely stages only allowed secre
   expect(() => secretInput(settings, { ...secrets, RESEND_API_KEY: "bad\nINJECT=1" })).toThrow(
     "multiline",
   );
+});
+it("configures Gmail SMTP from the account address and a normalized app password", () => {
+  const gmail = setupSchema.parse({
+    ...settings,
+    emailProvider: "gmail",
+    emailFrom: "Civic Spark <civicspark.signin@gmail.com>",
+  });
+  expect(flyEnv(gmail)).toMatchObject({
+    CIVIC_SPARK_AUTH_MODE: "email",
+    CIVIC_SPARK_EMAIL_PROVIDER: "smtp",
+    CIVIC_SPARK_EMAIL_FROM: "Civic Spark <civicspark.signin@gmail.com>",
+    SMTP_HOST: "smtp.gmail.com",
+    SMTP_PORT: "587",
+    SMTP_SECURE: "false",
+  });
+  const secrets = {
+    SPRITE_TOKEN: "test-sprites/org/id/test-only",
+    BETTER_AUTH_SECRET: "a".repeat(32),
+    SMTP_USER: "CivicSpark.Signin@gmail.com",
+    SMTP_PASSWORD: "abcd efgh ijkl mnop",
+  };
+  const staged = secretInput(gmail, secrets);
+  const envelope = JSON.parse(
+    Buffer.from(staged.trim().split("=").slice(1).join("="), "base64").toString(),
+  );
+  expect(envelope.SMTP_PASSWORD).toBe("abcdefghijklmnop");
+  expect(() => secretInput(gmail, { ...secrets, SMTP_PASSWORD: "account-password-1" })).toThrow(
+    "app password",
+  );
+  expect(() => secretInput(gmail, { ...secrets, SMTP_USER: "other@gmail.com" })).toThrow(
+    "emailFrom",
+  );
+  expect(() => secretInput(gmail, { ...secrets, RESEND_API_KEY: "x" })).toThrow("Unsupported");
+  expect(() => setupSchema.parse({ ...gmail, smtpHost: "smtp.example.test" })).toThrow(
+    "Gmail sets its own",
+  );
+  expect(() => setupSchema.parse({ ...gmail, emailFrom: "Civic Spark" })).toThrow(
+    "account address",
+  );
+  const sendMail = vi.fn().mockResolvedValue({ accepted: ["organizer@example.test"] });
+  const createTransport = vi
+    .spyOn(nodemailer, "createTransport")
+    .mockReturnValue({ sendMail } as unknown as ReturnType<typeof nodemailer.createTransport>);
+  // The test-email action sends with exactly the settings a deployment would use.
+  createEmailSender({ ...flyEnv(gmail), ...emailSecrets(gmail, secrets) });
+  expect(createTransport).toHaveBeenCalledWith(
+    expect.objectContaining({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      auth: { user: "CivicSpark.Signin@gmail.com", pass: "abcdefghijklmnop" },
+    }),
+  );
+  const demo = setupSchema.parse({ ...settings, authMode: "demo", emailProvider: undefined });
+  expect(flyEnv(demo)).not.toHaveProperty("CIVIC_SPARK_EMAIL_PROVIDER");
 });
 it("provisions idempotently, validates ownership and refuses extra Machines or unexpected volumes", () => {
   const root = mkdtempSync(join(tmpdir(), "civic-spark-setup-"));

@@ -96,6 +96,7 @@ export function App() {
       : "",
   );
   const [sentTo, setSentTo] = useState("");
+  const [sentName, setSentName] = useState("");
   const refreshVersion = useRef(0);
   const knownSession = useRef<SessionView | null>(null);
   // The session is fetched once per sign-in; background refreshes only poll
@@ -198,13 +199,34 @@ export function App() {
         });
         return;
       }
+      const name = String(form.get("name") ?? "").trim();
       await api("/auth/sign-in/magic-link", "POST", {
         email,
-        name: String(form.get("name") ?? "").trim(),
+        name,
         callbackURL: window.location.origin,
         errorCallbackURL: window.location.origin,
       });
+      setSentName(name);
       setSentTo(email);
+    });
+  }
+  function enterCode(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const otp = String(new FormData(e.currentTarget).get("code")).replace(/\D/g, "");
+    void run(async () => {
+      try {
+        await api("/auth/sign-in/email-otp", "POST", { email: sentTo, otp, name: sentName });
+      } catch (error) {
+        const status = apiStatus(error);
+        if (status === 400 || status === 403)
+          throw new Error(
+            status === 403
+              ? "Too many incorrect codes. Request a new code."
+              : "That code is incorrect or has expired. Check the latest email or request a new code.",
+          );
+        throw error;
+      }
+      setSentTo("");
     });
   }
   const event = state?.events.find((e) => e.id === eventId);
@@ -380,15 +402,37 @@ export function App() {
               : "Join a community event, find a project, and build together. Everything you need is in your browser."}
           </p>
           {sentTo ? (
-            <div className="email-sent" role="status">
+            <div className="email-sent">
               <h2>Check your email</h2>
-              <p>
-                We sent a sign-in link to <strong>{sentTo}</strong>. Open it to verify your email
-                and continue.
+              <p role="status">
+                We sent a sign-in code and link to <strong>{sentTo}</strong>.
               </p>
-              <p>The link is valid for 10 minutes and works once.</p>
-              <button type="button" className="text-link" onClick={() => setSentTo("")}>
-                Use another email or request a new link
+              <form className="login-actions" onSubmit={enterCode}>
+                <Field label="Sign-in code">
+                  <input
+                    name="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9 ]{6,7}"
+                    maxLength={7}
+                    required
+                    placeholder="123456"
+                  />
+                </Field>
+                <button type="submit" className="button primary email-sign-in" disabled={busy}>
+                  {busy ? "Please wait…" : "Sign in"}
+                </button>
+              </form>
+              <p>Or open the link in the email. Both expire in 10 minutes.</p>
+              <button
+                type="button"
+                className="text-link"
+                onClick={() => {
+                  setSentTo("");
+                  setError("");
+                }}
+              >
+                Use another email or request a new code
               </button>
             </div>
           ) : (
@@ -421,14 +465,14 @@ export function App() {
                     ? "Enter demo"
                     : session.authMode === "prototype"
                       ? "Enter prototype"
-                      : "Email me a sign-in link"}
+                      : "Email me a sign-in code"}
               </button>
               <p className="small-text muted">
                 {session.authMode === "demo"
                   ? "Unverified demo: anyone entering the same email can access that demo account. No verification email is sent."
                   : session.authMode === "prototype"
                     ? "Local prototype: enter any email. No verification email is sent. Use the same email to return to your account."
-                    : "New here? Your first sign-in link also creates and verifies your account."}
+                    : "New here? Signing in with your email also creates your account."}
               </p>
             </form>
           )}
