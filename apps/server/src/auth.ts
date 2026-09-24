@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { emailOTP, magicLink } from "better-auth/plugins";
 import Database from "better-sqlite3";
@@ -52,13 +51,6 @@ export async function createAuthentication(
       disableOriginCheck: false,
       disableCSRFCheck: false,
       ipAddress: { ipAddressHeaders: ["x-civic-spark-client-ip"] },
-    },
-    hooks: {
-      after: createAuthMiddleware(async (ctx) => {
-        const email = ctx.context.newSession?.user.email;
-        if (ctx.path === "/magic-link/verify" && email)
-          await ctx.context.internalAdapter.deleteVerificationByIdentifier(codeIdentifier(email));
-      }),
     },
     databaseHooks: {
       user: {

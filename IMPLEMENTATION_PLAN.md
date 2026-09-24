@@ -168,7 +168,7 @@ Recovered user scope: a compact list for dozens of Sprites with individual Pause
 ## Authenticated event and participant foundation
 
 - [x] Email-link signup/sign-in using Better Auth; verified database sessions
-- [x] Six-digit code in the same email for phones whose mail app opens links elsewhere; one-time, hashed, 10-minute, five attempts, cancelled by the link
+- [x] Six-digit code in the same email for phones whose mail app opens links elsewhere; one-time, hashed, 10-minute, five attempts, independent of the link
 - [x] Gmail SMTP setup preset (no domain needed) and a `test-email` setup action; mocked transports only
 - [x] `npm run site:bootstrap`: one interactive command that asks for settings and secrets (hidden), generates the auth secret, keeps everything in a private per-site directory, tests the Sprite token and email, provisions, stages secrets, deploys, and verifies Fly's proxy address through health. Fake Fly CLI tests only; not yet run against a new real app
 - [x] Configurable SMTP and Resend adapters; single-use, expiring, hashed login tokens

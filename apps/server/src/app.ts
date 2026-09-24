@@ -286,6 +286,9 @@ export async function createApp(
       return reply.code(403).send({ error: "Unrecognized host" });
     // Better Auth validates magic-link tokens and auth CSRF/origin rules.
     if (request.url.startsWith("/api/auth/")) return;
+    // Pages and assets load normally from links elsewhere (email, chat); only the API
+    // refuses cross-site requests.
+    if (!request.url.startsWith("/api/")) return;
     const origin = request.headers.origin;
     if (
       (origin &&
@@ -295,7 +298,6 @@ export async function createApp(
       request.headers["sec-fetch-site"] === "cross-site"
     )
       return reply.code(403).send({ error: "Cross-origin requests are disabled" });
-    if (!request.url.startsWith("/api/")) return;
     if (request.url.split("?")[0] === "/api/health") return;
     if (unverifiedSignIn && request.url === `/api/${authMode}/sign-in`) return;
     const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });

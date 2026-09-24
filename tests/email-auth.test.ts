@@ -56,6 +56,13 @@ it("verifies email with hashed single-use links and preserves the account on ret
       name: "participant",
     });
     expect((await app.inject({ url: "/api/state", headers: signed })).statusCode).toBe(200);
+    // The link is opened from a mail app: its redirect lands on the page as a cross-site
+    // navigation, which must load. The API still refuses cross-site requests.
+    const crossSite = { host: headers.host, cookie, "sec-fetch-site": "cross-site" };
+    const landing = await app.inject({ url: "/", headers: crossSite });
+    expect(landing.statusCode).not.toBe(403);
+    expect(landing.body).not.toContain("Cross-origin requests are disabled");
+    expect((await app.inject({ url: "/api/state", headers: crossSite })).statusCode).toBe(403);
     const replay = await redeem(message);
     expect(replay.headers.location).toContain("error=INVALID_TOKEN");
     expect(replay.cookies).toHaveLength(0);
@@ -189,11 +196,12 @@ it("signs in with the emailed code in the requesting browser, once, with bounded
     if (older.code !== newer.code) expect((await enter(older.code)).statusCode).toBe(400);
     expect((await enter(newer.code)).statusCode).toBe(200);
 
-    // Following the link cancels the code sent with it.
+    // Using the link leaves its code usable, so opening the link elsewhere first
+    // does not break signing in here.
     const linked = await request();
     const url = new URL(linked.url);
     expect((await app.inject({ url: url.pathname + url.search, headers })).statusCode).toBe(302);
-    expect((await enter(linked.code)).statusCode).toBe(400);
+    expect((await enter(linked.code)).statusCode).toBe(200);
 
     // Five wrong guesses discard the code.
     const guarded = await request();

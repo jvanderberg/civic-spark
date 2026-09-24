@@ -1,6 +1,6 @@
 # Email sign-in
 
-Civic Spark uses email for both signup and returning sign-in. Enter an email address and an optional name, and one email arrives with a six-digit code and a link. Type the code in the tab that asked for it, or open the link. Both verify the address and sign in, expire after 10 minutes and work once. Following the link cancels the code sent with it, and a newer email replaces the previous code. Five incorrect codes discard it. A returning user gets the same account and memberships. No password or Google/Apple app registration is needed.
+Civic Spark uses email for both signup and returning sign-in. Enter an email address and an optional name, and one email arrives with a six-digit code and a link. Type the code in the tab that asked for it, or open the link. Both verify the address and sign in, expire after 10 minutes and work once. A newer email replaces the previous code; using the link does not cancel the code, so opening the link on another device first still lets the code work here. Five incorrect codes discard it. A returning user gets the same account and memberships. No password or Google/Apple app registration is needed.
 
 The code exists for phones: mail apps often open links in their own browser, which would sign in there instead of the tab the person started in.
 
