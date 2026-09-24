@@ -277,6 +277,12 @@ export class AgentSessions {
     let queue = Promise.resolve();
     let queuedBytes = 0;
     socket.on("message", (raw) => {
+      // Liveness pings from the chat are answered at once, ahead of queued work, and
+      // are not participant activity: they must not keep a Sprite awake.
+      if (raw.toString() === '{"type":"ping"}') {
+        if (socket.readyState === 1) socket.send('{"type":"pong"}');
+        return;
+      }
       const bytes = Buffer.byteLength(raw.toString());
       if (bytes > agentWireByteLimit || queuedBytes + bytes > agentWireByteLimit) {
         socket.close(1009, "Agent request too large");

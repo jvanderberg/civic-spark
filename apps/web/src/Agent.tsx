@@ -237,6 +237,9 @@ export function Agent({
   updatedCallback.current = onUpdated;
   const readyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeat = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Checks the open connection is still answering; set per connection.
+  const probeConnection = useRef<() => void>(() => {});
   const retryCount = useRef(0);
   const readySince = useRef(0);
   const activity = useRef({ available, visible });
@@ -261,6 +264,7 @@ export function Agent({
       retryBlocked.current = false;
       if (readyTimeout.current) clearTimeout(readyTimeout.current);
       if (retryTimer.current) clearTimeout(retryTimer.current);
+      if (heartbeat.current) clearInterval(heartbeat.current);
       if (socket.current) {
         socket.current.onclose = null;
         socket.current.close();
@@ -276,6 +280,7 @@ export function Agent({
       retryBlocked.current = false;
       if (readyTimeout.current) clearTimeout(readyTimeout.current);
       if (retryTimer.current) clearTimeout(retryTimer.current);
+      if (heartbeat.current) clearInterval(heartbeat.current);
       if (socket.current) {
         socket.current.onclose = null;
         socket.current.close();
@@ -307,8 +312,19 @@ export function Agent({
       )
         void connectLatest.current(true);
     }
+    // Returning to the tab or the network checks the open connection straight away.
+    function returned() {
+      if (document.visibilityState === "visible" && socket.current?.readyState === WebSocket.OPEN)
+        probeConnection.current();
+    }
     window.addEventListener("online", online);
-    return () => window.removeEventListener("online", online);
+    window.addEventListener("online", returned);
+    document.addEventListener("visibilitychange", returned);
+    return () => {
+      window.removeEventListener("online", online);
+      window.removeEventListener("online", returned);
+      document.removeEventListener("visibilitychange", returned);
+    };
   }, []);
   useEffect(() => {
     if (visible && events.length && stickToBottom.current)
@@ -417,6 +433,35 @@ export function Agent({
       url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
       const connection = new WebSocket(url);
       socket.current = connection;
+      // A connection that died quietly (laptop sleep, network change) never reports a
+      // close, so the chat would queue into nothing. Unanswered pings reveal it and
+      // reconnect exactly as a close would.
+      if (heartbeat.current) clearInterval(heartbeat.current);
+      let unanswered = 0;
+      let patience = 0;
+      const ping = (timeout: number) => {
+        if (connection.readyState !== WebSocket.OPEN) return;
+        connection.send('{"type":"ping"}');
+        const now = Date.now();
+        if (!unanswered) {
+          unanswered = now;
+          patience = timeout;
+        } else patience = Math.min(patience, now - unanswered + timeout);
+      };
+      probeConnection.current = () => ping(10000);
+      let ticks = 0;
+      heartbeat.current = setInterval(() => {
+        if (unanswered && Date.now() - unanswered > patience) {
+          if (heartbeat.current) clearInterval(heartbeat.current);
+          const closed = connection.onclose;
+          connection.onclose = null;
+          connection.close();
+          closed?.call(connection, new CloseEvent("close", { code: 4000, reason: "No answer" }));
+          return;
+        }
+        ticks += 1;
+        if (ticks % 5 === 0) ping(20000);
+      }, 5000);
       setEvents([]);
       setResolved([]);
       setWorking(false);
@@ -435,6 +480,9 @@ export function Agent({
       let replaying = true;
       connection.onmessage = (message) => {
         if (socket.current !== connection || !mounted.current) return;
+        // Any frame proves the connection is alive.
+        unanswered = 0;
+        if (message.data === '{"type":"pong"}') return;
         const event = JSON.parse(message.data) as AgentEvent;
         if (event.type === "user" && event.id === submitted.current?.id)
           submitted.current.acknowledged = true;
@@ -559,6 +607,7 @@ export function Agent({
       };
       connection.onclose = (closed) => {
         if (socket.current !== connection || !mounted.current) return;
+        if (heartbeat.current) clearInterval(heartbeat.current);
         if (readyTimeout.current) clearTimeout(readyTimeout.current);
         pendingKey.current = null;
         setChecking(false);

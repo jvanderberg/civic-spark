@@ -180,6 +180,7 @@ try {
       }),
     );
     socket.onMessage((message) => {
+      if (message.toString() === '{"type":"ping"}') return socket.send('{"type":"pong"}');
       const input = JSON.parse(message.toString());
       if (input.type === "prompt") {
         assert(approved);

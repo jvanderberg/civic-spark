@@ -36,6 +36,8 @@ let connection: WebSocketRoute | undefined;
 let connections = 0;
 let restoreOnConnect = false;
 let rejectConnections = false;
+// Stops answering liveness pings without closing, like a connection lost in sleep.
+let silent = false;
 const history: AgentEvent[] = [];
 const teamHead = "a".repeat(40);
 const teamRemote = "b".repeat(40);
@@ -143,6 +145,11 @@ await page.routeWebSocket("**/api/workspaces/*/agent", (socket) => {
     return;
   }
   socket.onMessage((message) => {
+    // Like the server: answer liveness pings unless the test has silenced the link.
+    if (message.toString() === '{"type":"ping"}') {
+      if (!silent) socket.send('{"type":"pong"}');
+      return;
+    }
     const input = JSON.parse(message.toString()) as AgentInput;
     requests.push(input);
     if (input.type === "prompt" && input.queue && input.id) {
@@ -906,6 +913,21 @@ try {
   assert.equal(await page.locator(".agent-panel").getByRole("status").innerText(), "Working");
   assert.equal(requests.filter((request) => request.type === "configure").length, 3);
   assert.match(await page.locator(".chat-working").innerText(), /Working for [1-9]\d*m/);
+  // A connection that stops answering without closing (laptop sleep, network change)
+  // is checked when the tab is shown again and replaced, restoring the running turn.
+  silent = true;
+  const beforeSilence = connections;
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  const silenceDeadline = Date.now() + 25000;
+  while (connections === beforeSilence) {
+    assert(Date.now() < silenceDeadline, "Timed out: reconnect after a silent connection");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  silent = false;
+  await page.getByRole("button", { name: "Stop generation" }).waitFor();
+  await page
+    .getByText("I am adding the monthly comparison to the chart.", { exact: true })
+    .waitFor();
   assert.equal(await page.locator(".chat-thinking").isVisible(), true);
   await page.screenshot({
     animations: "disabled",

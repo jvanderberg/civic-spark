@@ -196,6 +196,7 @@ try {
           configuredProviders: [],
         });
         socket.onMessage((raw) => {
+          if (raw.toString() === '{"type":"ping"}') return socket.send('{"type":"pong"}');
           const input = JSON.parse(raw.toString()) as AgentInput;
           if (input.type === "configure") {
             assert.equal(input.key, "fixture-key");

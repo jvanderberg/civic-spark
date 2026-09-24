@@ -92,7 +92,10 @@ await page.route("**/agent/credentials", (route) =>
 await page.route("**/agent/prepare", (route) => route.fulfill({ json: { ready: true } }));
 await page.routeWebSocket("**/api/workspaces/*/agent", (socket) => {
   connection = socket;
-  socket.onMessage((message) => requests.push(JSON.parse(message.toString()) as AgentInput));
+  socket.onMessage((message) => {
+    if (message.toString() === '{"type":"ping"}') return socket.send('{"type":"pong"}');
+    requests.push(JSON.parse(message.toString()) as AgentInput);
+  });
   socket.send(
     JSON.stringify({
       type: "state",

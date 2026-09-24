@@ -299,3 +299,12 @@ it("takes one waiting message back by id, and sends one immediately when no turn
   expect(runner.written.at(-1)).toBe(JSON.stringify(direct));
   expect(runner.states().at(-1)?.queued).toEqual([]);
 });
+
+it("answers liveness pings at once without forwarding them or counting them as work", async () => {
+  const runner = start();
+  runner.socket.emit("message", '{"type":"ping"}');
+  expect(runner.socket.frames.at(-1)).toEqual({ type: "pong" });
+  await tick();
+  expect(runner.written).toEqual([]);
+  expect(runner.socket.frames.some((event) => event.type === "error")).toBe(false);
+});
