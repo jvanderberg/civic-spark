@@ -275,9 +275,6 @@ export async function unpackArchive(
   key: Buffer | null,
   stage: string,
   check: (manifest: Manifest) => void,
-  // Downloads skip the full Git/SQLite check: every file still matches its manifest
-  // checksum, and the tree was fully verified when the backup was sealed.
-  verify = true,
 ) {
   archive = resolve(archive);
   checkArchiveShape(archive);
@@ -309,7 +306,6 @@ export async function unpackArchive(
     // Links are inert metadata until all verification and database writes have completed.
   }
   requireOperatorFiles(join(stage, "operator"), manifest.operatorFiles);
-  if (!verify) return { manifest, verified: null };
   const verified = await verifyTree(join(stage, "data"), manifest.installation.authMode);
   if (JSON.stringify(verified) !== JSON.stringify(manifest.inventory))
     throw new Error("Restored inventory mismatch");

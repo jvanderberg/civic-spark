@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
+  createWriteStream,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -12,6 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pipeline } from "node:stream/promises";
 import Database from "better-sqlite3";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp } from "../apps/server/src/app.ts";
@@ -22,6 +24,7 @@ import {
   applyPendingRestore,
   backupDirectoryFor,
   currentRelease,
+  exportBackup,
   lastRestorePath,
   pendingRestorePath,
   type RestoreReport,
@@ -631,3 +634,62 @@ it("never runs Git synchronously while backups of many repositories are created 
   ].filter(([command]) => command === "git");
   expect(blockingGit).toEqual([]);
 }, 120000);
+
+it("streams downloads without the backup lock and refuses to delete a backup mid-download", async () => {
+  const base = privateBase();
+  const root = join(base, "data");
+  const f = await seed(root);
+  const created = await createBackup(f.app, f.eventId, f.admin);
+  const url = `/api/events/${f.eventId}/backups/${created.backupId}/download`;
+  // Hold a download open without reading it, as a slow browser would.
+  const open = await f.app.inject({ url, headers: headers(f.admin), payloadAsStream: true });
+  expect(open.statusCode).toBe(200);
+  // Nothing was unpacked to disk to produce it.
+  expect(readdirSync(backupDirectoryFor(root)).filter((name) => name.startsWith("."))).toEqual([]);
+  // Other downloads, listing and new backups proceed meanwhile.
+  expect((await f.app.inject({ url, headers: headers(f.admin) })).statusCode).toBe(200);
+  expect((await status(f.app, f.eventId, f.admin)).backups).toHaveLength(1);
+  expect((await createBackup(f.app, f.eventId, f.admin)).teams).toBe(1);
+  const deleting = await f.app.inject({
+    method: "DELETE",
+    url: `/api/events/${f.eventId}/backups/${created.backupId}`,
+    headers: headers(f.admin),
+    payload: { confirmed: true },
+  });
+  expect(deleting.statusCode).toBe(409);
+  expect(deleting.json().error).toBe(
+    "This backup is being downloaded. Delete it after the download finishes.",
+  );
+  const zipPath = join(base, "streamed.zip");
+  await pipeline(open.stream(), createWriteStream(zipPath));
+  const extracted = join(base, "streamed");
+  mkdirSync(extracted, { mode: 0o700 });
+  expect(await unzipFile(zipPath, extracted)).toContain("data/demo/state.sqlite");
+  const deleted = await f.app.inject({
+    method: "DELETE",
+    url: `/api/events/${f.eventId}/backups/${created.backupId}`,
+    headers: headers(f.admin),
+    payload: { confirmed: true },
+  });
+  expect(deleted.statusCode).toBe(200);
+});
+
+it("aborts a download when a stored file no longer matches its checksum", async () => {
+  const base = privateBase();
+  const root = join(base, "data");
+  const f = await seed(root);
+  const created = await createBackup(f.app, f.eventId, f.admin);
+  const directory = backupDirectoryFor(root);
+  const archive = join(directory, readdirSync(directory)[0] as string);
+  const blob = readdirSync(archive)
+    .filter((name) => /^\d{8}\.enc$/.test(name))
+    .map((name) => join(archive, name))
+    .find((path) => readFileSync(path).length > 64) as string;
+  const bytes = readFileSync(blob);
+  bytes[30] = (bytes[30] ?? 0) ^ 0xff;
+  writeFileSync(blob, bytes);
+  const { stream } = await exportBackup(directory, created.backupId);
+  await expect(pipeline(stream, createWriteStream(join(base, "broken.zip")))).rejects.toThrow(
+    "checksum mismatch",
+  );
+});
