@@ -244,7 +244,7 @@ try {
   assert.equal(await page.locator("dialog").count(), 0);
   assert.deepEqual(await page.getByLabel("Agent model").locator("option").allTextContents(), [
     "GLM",
-    "Opus 5",
+    "Opus 5.5",
   ]);
   assert.equal(await page.locator(".agent-panel .lucide-sparkles").count(), 0);
   await page.getByText("Send a message to start the conversation.", { exact: true }).waitFor();
@@ -789,7 +789,7 @@ try {
       ),
     "retry corrected workspace with key retained in memory",
   );
-  emit({ type: "configured", id: "claude", text: "Opus 5 ready" });
+  emit({ type: "configured", id: "claude", text: "Opus 5.5 ready" });
   await page
     .locator(".agent-panel")
     .getByRole("status")
@@ -891,7 +891,7 @@ try {
   assert.equal(requests.filter((request) => request.type === "configure").length, 3);
   // A real reload restores the same owned workspace and tab, resumes the saved
   // native provider, and reattaches to a currently running turn without a key.
-  emit({ type: "configured", id: "claude", text: "Opus 5 ready" });
+  emit({ type: "configured", id: "claude", text: "Opus 5.5 ready" });
   await page.getByLabel("Agent model").selectOption("claude");
   emit({ type: "user", id: "user-restored", text: "Now add the monthly comparison." });
   emit({

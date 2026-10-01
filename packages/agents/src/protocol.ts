@@ -6,7 +6,7 @@ export const agentModels = {
     model: "openrouter/z-ai/glm-5.3-flash",
     credential: "OpenRouter API key",
   },
-  claude: { label: "Opus 5", model: "claude-opus-5", credential: "Anthropic API key" },
+  claude: { label: "Opus 5.5", model: "claude-opus-5-5", credential: "Anthropic API key" },
 } as const;
 
 function messageForImage(error: unknown) {

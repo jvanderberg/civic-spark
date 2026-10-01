@@ -197,7 +197,7 @@ try {
       assert(requests.length > before, "No inference request captured");
       const request = requests.at(-1);
       assert(request);
-      assert.equal(request.model, provider === "claude" ? "claude-opus-5" : "z-ai/glm-5.3-flash");
+      assert.equal(request.model, provider === "claude" ? "claude-opus-5-5" : "z-ai/glm-5.3-flash");
       const content = JSON.stringify(request.messages);
       assert(content.includes(png), "Actual provider request lost image bytes on send/resume");
       assert(content.includes(provider === "claude" ? '"type":"image"' : '"type":"image_url"'));

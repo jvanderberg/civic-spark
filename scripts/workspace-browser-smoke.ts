@@ -385,7 +385,7 @@ try {
   await page.getByText("Send a message to start the conversation.", { exact: true }).waitFor();
   assert.deepEqual(await page.getByLabel("Agent model").locator("option").allTextContents(), [
     "GLM",
-    "Opus 5",
+    "Opus 5.5",
   ]);
   await page.screenshot({ path: join(artifacts, "workspace-agent.png"), fullPage: true });
   await page.getByRole("button", { name: "Terminal", exact: true }).click();

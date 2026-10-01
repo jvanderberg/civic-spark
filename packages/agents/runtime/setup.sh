@@ -10,7 +10,7 @@ flock -w 180 9
 fingerprint=$(sha256sum package.json package-lock.json setup.sh | sha256sum | cut -d ' ' -f 1)
 verify() {
   test "$(node_modules/opencode-ai/bin/opencode.exe --version 2>/dev/null)" = "1.18.31" &&
-  node_modules/@anthropic-ai/claude-code/bin/claude.exe --version 2>/dev/null | grep -q '^2\.1\.273 ' &&
+  node_modules/@anthropic-ai/claude-code/bin/claude.exe --version 2>/dev/null | grep -q '^2\.1\.286 ' &&
   node --input-type=module -e 'await import("@anthropic-ai/claude-agent-sdk"); await import("@opencode-ai/sdk/v2"); await import("zod")'
 }
 if test "$(cat .installed 2>/dev/null || true)" != "$fingerprint" || ! verify; then
@@ -36,5 +36,5 @@ chmod 755 "$runtime/bin/civic-spark"
 ln -sfn "$runtime/bin/civic-spark" "$runtime/node_modules/.bin/civic-spark"
 ln -sfn "$runtime/bin/civic-spark" /home/sprite/.local/bin/civic-spark
 test "$("$runtime/bin/opencode" --version 2>/dev/null)" = "1.18.31"
-"$runtime/bin/claude" --version 2>/dev/null | grep -q '^2\.1\.273 '
-printf 'Civic Spark runtime verified: OpenCode 1.18.31; Claude Code 2.1.273\n'
+"$runtime/bin/claude" --version 2>/dev/null | grep -q '^2\.1\.286 '
+printf 'Civic Spark runtime verified: OpenCode 1.18.31; Claude Code 2.1.286\n'

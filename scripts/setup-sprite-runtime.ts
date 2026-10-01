@@ -10,4 +10,4 @@ if (!(await new AgentSessions().prepare(sprite))) {
     "Runtime setup failed. Check Sprite connectivity, then rerun setup. No ready marker was written for a failed install.",
   );
 }
-console.log(`Runtime verified in ${sprite}: OpenCode 1.18.31; Claude Code 2.1.273`);
+console.log(`Runtime verified in ${sprite}: OpenCode 1.18.31; Claude Code 2.1.286`);

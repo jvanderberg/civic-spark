@@ -972,7 +972,7 @@ export function Agent({
                         <span>
                           {provider === "opencode"
                             ? "OpenCode · GLM 5.3 Flash"
-                            : "Claude Code · Opus 5"}
+                            : "Claude Code · Opus 5.5"}
                         </span>
                       </div>
                       <form
@@ -1214,7 +1214,7 @@ export function Agent({
                       }}
                     >
                       <option value="opencode">GLM</option>
-                      <option value="claude">Opus 5</option>
+                      <option value="claude">Opus 5.5</option>
                     </select>
                   </div>
                   <span className={ready || working ? "sr-only" : "chat-readiness"} role="status">

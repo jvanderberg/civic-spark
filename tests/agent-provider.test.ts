@@ -19,14 +19,14 @@ describe("Anthropic workspace authentication", () => {
   it("validates a scoped key without requiring a workspace ID", async () => {
     const request = vi.fn<typeof fetch>();
     request.mockResolvedValue(
-      new Response(JSON.stringify({ id: "claude-opus-5" }), {
+      new Response(JSON.stringify({ id: "claude-opus-5-5" }), {
         headers: { "anthropic-workspace-id": "wrkspc_Default123" },
       }),
     );
     expect(await verifyProviderKey("claude", "fixture-key", undefined, request)).toEqual({
       workspaceId: "wrkspc_Default123",
     });
-    expect(request.mock.calls[0]?.[0]).toBe("https://api.anthropic.com/v1/models/claude-opus-5");
+    expect(request.mock.calls[0]?.[0]).toBe("https://api.anthropic.com/v1/models/claude-opus-5-5");
     expect(request.mock.calls[0]?.[1]?.headers).not.toHaveProperty("anthropic-workspace-id");
   });
   it("sends an explicit workspace and never sends it to OpenRouter", async () => {

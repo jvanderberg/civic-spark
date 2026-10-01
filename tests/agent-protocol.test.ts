@@ -66,6 +66,6 @@ describe("agent connection failures", () => {
       agentInputSchema.parse({ type: "prompt", provider: "opencode", text: "test" }).type,
     ).toBe("prompt");
     expect(agentModels.opencode.model).toBe("openrouter/z-ai/glm-5.3-flash");
-    expect(agentModels.claude.model).toBe("claude-opus-5");
+    expect(agentModels.claude.model).toBe("claude-opus-5-5");
   });
 });
