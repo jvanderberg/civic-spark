@@ -5,27 +5,17 @@
 #
 # Usage: python3 cleanup-event.py <event-id>
 # Env:   CIVIC_SPARK_LOAD_ORIGIN (default https://civic-spark.fly.dev)
-#        CIVIC_SPARK_LOAD_ADMIN_EMAIL (demo admin identity; required)
+#        CIVIC_SPARK_LOAD_ADMIN_EMAIL (an owner or admin of the event; required)
+#        CIVIC_SPARK_LOAD_ADMIN_CODE_FILE (optional; see admin_session.py)
 # Afterwards compare `sprite -o <org> list` with the app: provider orphans are
 # destroyed by hand, never by this script.
-import json, os, sys, time, urllib.request, urllib.error, http.cookiejar
+import json, os, sys, time
+from admin_session import AdminSession
 event_id = sys.argv[1]
 origin = os.environ.get("CIVIC_SPARK_LOAD_ORIGIN", "https://civic-spark.fly.dev")
-admin = os.environ["CIVIC_SPARK_LOAD_ADMIN_EMAIL"]
-jar = http.cookiejar.CookieJar()
-op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-def call(path, method="GET", body=None):
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(origin + path, data=data, headers={"content-type": "application/json"} if data else {}, method=method)
-    try:
-        with op.open(req, timeout=600) as r:
-            text = r.read().decode()
-            return r.status, (json.loads(text) if text else None)
-    except urllib.error.HTTPError as e:
-        text = e.read().decode()
-        try: return e.code, json.loads(text)
-        except ValueError: return e.code, {"error": text[:200]}
-call("/api/demo/sign-in", "POST", {"email": admin, "name": ""})
+admin = AdminSession(origin, os.environ["CIVIC_SPARK_LOAD_ADMIN_EMAIL"])
+admin.sign_in()
+call = admin.call
 def inventory():
     status, body = call(f"/api/events/{event_id}/sprites")
     assert status == 200, (status, body)
@@ -66,3 +56,4 @@ status, state = call("/api/state")
 print("teams after:", len([t for t in state["teams"] if t["eventId"] == event_id]), "deleted", deleted)
 ev = next(e for e in state["events"] if e["id"] == event_id)
 print("projects kept:", len(ev["projects"]), "capacity", ev["capacity"])
+admin.sign_out()

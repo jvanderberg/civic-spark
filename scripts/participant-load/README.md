@@ -22,9 +22,11 @@ Git and are per-machine.
 | `telemetry.py` | Per-minute host telemetry from `loop` and `relay` records: event-loop delay, CPU, children, sockets, agent/terminal/HTTP counters. |
 | `cleanup-event.py` | Delete every Sprite and team of one event through the admin lifecycle APIs; keeps the event, projects and accounts. |
 
-All admin scripts read `CIVIC_SPARK_LOAD_ADMIN_EMAIL` (a demo admin identity of
-the event) and `CIVIC_SPARK_LOAD_ORIGIN` (default `https://civic-spark.fly.dev`).
-Demo sign-in accepts a name and email, not a password.
+All admin scripts read `CIVIC_SPARK_LOAD_ADMIN_EMAIL` (an owner or admin of the
+event) and `CIVIC_SPARK_LOAD_ORIGIN` (default `https://civic-spark.fly.dev`).
+Owners and admins sign in with an emailed code even in demo mode, so the scripts
+ask for it; set `CIVIC_SPARK_LOAD_ADMIN_CODE_FILE` to have them wait for the code
+in a file instead. Scripted participants still sign in by typing an email.
 
 ## One run, start to finish
 
