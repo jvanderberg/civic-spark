@@ -21,6 +21,7 @@ ran the cohort; the reports are the durable record. How to repeat a run is in
 | 2026-09-22 01:54 | 50 | 22/50; the OpenRouter balance ran out two minutes in and stopped 26 agents, two more were still working at 25 min; no running participant was idle-paused on v44 | 9a2cdc5 (v44) | credit outage, evidence only in `artifacts/participant-load/backend-20260922a/` |
 | 2026-09-22 04:45 | 1 | pass, 12m50s, Claude (Opus 5) end to end on the chat-fix release; real CTA data with sources | 36c4410 (v45) | canary only |
 | 2026-09-21 23:51 | 50 | 32/50 with the real-data prompt; all 32 archives carry real data with sources; sixteen five-minute idle holds during long turns, two file-list races; host 51 % peak, no platform errors | 63c2d57 (v43) | [run-20260921b.md](run-20260921b.md) |
+| 2026-09-30 01:18 | 50 | 43/50 on the rebuilt demo site; all 50 through agent preparation on the Opus 5.5 runtime; seven runner agentTurnMs expiries while GLM still worked; all 43 archives carry real data with sources; host 32 % peak, no 5xx/429 | 906ee5b (test-site v3) | [run-20260930j.md](run-20260930j.md) |
 
 ## Timeline of findings
 
